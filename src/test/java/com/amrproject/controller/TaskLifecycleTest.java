@@ -104,11 +104,12 @@ class TaskLifecycleTest extends AbstractIntegrationTest {
                 .andReturn().getResponse().getContentAsString();
         long taskId = objectMapper.readTree(createResponse).get("id").asLong();
 
+        // start()는 MOVE_TO_ORIGIN을 시뮬레이터가 자동으로 완료시킨다 (4단계).
+        // 남은 CONFIRM_LOAD, (자동 완료되는 MOVE_TO_DESTINATION 포함) CONFIRM_UNLOAD까지
+        // completeCurrentStep 두 번이면 작업이 SUCCEEDED에 도달한다.
         Robot robot = robotRepository.findById(robotId).orElseThrow();
         taskService.assignRobot(taskId, robot);
         taskService.start(taskId);
-        taskService.completeCurrentStep(taskId);
-        taskService.completeCurrentStep(taskId);
         taskService.completeCurrentStep(taskId);
         taskService.completeCurrentStep(taskId);
 

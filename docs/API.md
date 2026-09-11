@@ -226,8 +226,9 @@ Idempotency-Key: 8e2f1c...
 DESIGN.md §1/§4는 "로봇 없는 개발: 실제 통신 계약을 모사하는 가상 로봇"을 4단계(로봇 어댑터·시뮬레이터) 필수 요소로 명시한다. 이 API 문서에는 시뮬레이터용 엔드포인트가 없는데, 의도적인 제외다.
 
 - 시뮬레이터(가상 로봇)는 관리자/작업자가 쓰는 이 REST API가 아니라, **서버가 실제 로봇과 통신할 때 쓸 로봇 통신 채널**(§DESIGN.md 미확정 항목: MQTT/VDA 5050/제조사 API)을 통해 서버에 접속하는 것으로 가정한다. 즉 시뮬레이터는 "가짜 관리자/작업자"가 아니라 "가짜 로봇"이다.
-- 로봇 통신 규격이 정해지지 않아 이 채널의 API/프로토콜은 별도 문서에서 다룬다. 4단계 구현 시점에는 최소한 `robot_commands`를 수신하고 `command_events`/`robot_state_snapshots`에 대응하는 보고를 만들어내는 내부 인터페이스가 필요하며, 그 계약은 이 REST API가 아니라 그 별도 문서를 따른다.
-- 예외적으로 관리자가 시뮬레이터에 장애를 주입(통신 단절, 명령 실패 등 재현)하는 기능이 필요하다면, 이는 `/api/admin/*` 하위의 운영 전용 엔드포인트로 추가될 수 있다 — 현재는 범위에 넣지 않았다.
+- **4단계 구현 결과**: 로봇 통신 규격이 아직 미정이라, 실제 네트워크/브로커 대신 `RobotGateway` 인터페이스(포트) + `SimulatorRobotGateway`(인프로세스 어댑터)로 구현했다. `TaskService`가 MOVE 타입 단계를 시작할 때 `RobotCommand`를 만들어 이 게이트웨이에 넘기면, 시뮬레이터가 같은 트랜잭션 안에서 즉시 SENT→ACCEPTED→RUNNING→SUCCEEDED(또는 FAILED/UNKNOWN)까지 처리하고 `command_events`/`robot_current_states`/`robot_state_snapshots`를 기록한다. 실제 로봇 통신 규격이 정해지면 같은 `RobotGateway` 인터페이스의 다른 구현체(MQTT 등)로 교체하면 된다 — `TaskService`나 이 문서의 다른 API는 바뀌지 않는다.
+- 관리자가 시뮬레이터에 장애를 주입하는 기능은 운영 전용 엔드포인트로 추가했다: `POST /api/admin/robots/{robotId}/simulator/faults` (body: `{"type": "COMMAND_FAILURE" | "COMMUNICATION_LOSS"}`) — 해당 로봇에 대한 다음 명령 디스패치 한 번에만 적용되고 소비된다. 실제 제품 기능이 아니라 테스트/운영 보조 도구이며, 메모리에만 저장돼 재시작 시 초기화된다.
+- 로봇 상태 조회는 §2.4에 이미 정의된 `GET /api/admin/robots/{robotId}/state`, `GET /api/admin/robots/{robotId}/state-history`를 그대로 사용한다 (4단계에서 실제 구현).
 
 ---
 
