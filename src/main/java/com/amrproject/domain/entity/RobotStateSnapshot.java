@@ -65,8 +65,8 @@ public class RobotStateSnapshot {
     protected RobotStateSnapshot() {
     }
 
-    public RobotStateSnapshot(RobotCurrentState state) {
-        this.robot = state.getRobot();
+    public RobotStateSnapshot(Robot robot, RobotCurrentState state) {
+        this.robot = robot;
         this.connectionState = state.getConnectionState();
         this.operationMode = state.getOperationMode();
         this.motionState = state.getMotionState();

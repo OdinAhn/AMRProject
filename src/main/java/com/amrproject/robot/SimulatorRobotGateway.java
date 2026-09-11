@@ -57,7 +57,7 @@ public class SimulatorRobotGateway implements RobotGateway {
         if (fault == SimulatedFault.COMMUNICATION_LOSS) {
             command.markUnknown();
             recordCommandEvent(command, "TIMEOUT");
-            report(state, ConnectionState.OFFLINE, state.getOperationMode(), state.getMotionState(), state.getSafetyState());
+            report(robot, state, ConnectionState.OFFLINE, state.getOperationMode(), state.getMotionState(), state.getSafetyState());
             return;
         }
 
@@ -65,19 +65,19 @@ public class SimulatorRobotGateway implements RobotGateway {
         recordCommandEvent(command, "ACCEPTED");
 
         command.startRunning();
-        report(state, ConnectionState.ONLINE, OperationMode.AUTO, MotionState.MOVING, state.getSafetyState());
+        report(robot, state, ConnectionState.ONLINE, OperationMode.AUTO, MotionState.MOVING, state.getSafetyState());
         recordCommandEvent(command, "PROGRESS");
 
         if (fault == SimulatedFault.COMMAND_FAILURE) {
             command.fail();
             recordCommandEvent(command, "FAILED");
-            report(state, ConnectionState.ONLINE, OperationMode.AUTO, MotionState.IDLE, state.getSafetyState());
+            report(robot, state, ConnectionState.ONLINE, OperationMode.AUTO, MotionState.IDLE, state.getSafetyState());
             return;
         }
 
         command.succeed();
         recordCommandEvent(command, "SUCCEEDED");
-        report(state, ConnectionState.ONLINE, OperationMode.AUTO, MotionState.IDLE, state.getSafetyState());
+        report(robot, state, ConnectionState.ONLINE, OperationMode.AUTO, MotionState.IDLE, state.getSafetyState());
     }
 
     /** 다음 dispatch 한 번에 적용될 장애를 예약한다. */
@@ -90,7 +90,7 @@ public class SimulatorRobotGateway implements RobotGateway {
                 .orElseGet(() -> robotCurrentStateRepository.save(new RobotCurrentState(robot)));
     }
 
-    private void report(RobotCurrentState state, ConnectionState connection, OperationMode mode, MotionState motion, SafetyState safety) {
+    private void report(Robot robot, RobotCurrentState state, ConnectionState connection, OperationMode mode, MotionState motion, SafetyState safety) {
         state.report(
                 connection,
                 mode,
@@ -101,7 +101,7 @@ public class SimulatorRobotGateway implements RobotGateway {
                 state.getBatteryPct(),
                 Instant.now()
         );
-        robotStateSnapshotRepository.save(new RobotStateSnapshot(state));
+        robotStateSnapshotRepository.save(new RobotStateSnapshot(robot, state));
     }
 
     private void recordCommandEvent(RobotCommand command, String eventType) {

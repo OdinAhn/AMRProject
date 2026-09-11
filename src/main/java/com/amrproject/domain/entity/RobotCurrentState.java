@@ -5,9 +5,6 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
-import jakarta.persistence.JoinColumn;
-import jakarta.persistence.MapsId;
-import jakarta.persistence.OneToOne;
 import jakarta.persistence.Table;
 
 import java.time.Instant;
@@ -16,6 +13,10 @@ import java.time.Instant;
  * 로봇의 "현재" 상태만 담는 1:1 테이블 (docs/ERD.md §5 "robot_current_states").
  * 각 축은 독립적으로 전이된다 — docs/STATE_MACHINES.md §4.
  * current_node_id/pose는 지도 스키마(6단계) 전까지 보류.
+ *
+ * <p>robots와 PK를 공유하지만 연관관계(@OneToOne/@MapsId)로 매핑하지 않고
+ * robot_id를 단순 스칼라 값으로만 갖는다 — @MapsId는 Spring Data의
+ * save()가 merge()를 쓸 때 연관관계 해석 과정에서 충돌해 안전하지 않았다.
  */
 @Entity
 @Table(name = "robot_current_states")
@@ -24,11 +25,6 @@ public class RobotCurrentState {
     @Id
     @Column(name = "robot_id")
     private Long robotId;
-
-    @OneToOne(fetch = jakarta.persistence.FetchType.LAZY)
-    @MapsId
-    @JoinColumn(name = "robot_id")
-    private Robot robot;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "connection_state", nullable = false, length = 20)
@@ -70,7 +66,6 @@ public class RobotCurrentState {
     }
 
     public RobotCurrentState(Robot robot) {
-        this.robot = robot;
         this.robotId = robot.getId();
         this.connectionState = ConnectionState.OFFLINE;
         this.operationMode = OperationMode.MANUAL;
@@ -113,10 +108,6 @@ public class RobotCurrentState {
 
     public Long getRobotId() {
         return robotId;
-    }
-
-    public Robot getRobot() {
-        return robot;
     }
 
     public ConnectionState getConnectionState() {
