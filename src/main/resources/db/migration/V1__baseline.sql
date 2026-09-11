@@ -1,0 +1,2 @@
+-- Baseline migration placeholder.
+-- Schema tables are introduced starting in stage 2 (최소 운영 데이터) — see docs/ERD.md.
