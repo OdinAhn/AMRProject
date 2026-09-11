@@ -5,11 +5,11 @@ import com.amrproject.dto.request.CreateRobotRequest;
 import com.amrproject.dto.request.CreateSiteRequest;
 import com.amrproject.dto.request.CreateStationRequest;
 import com.amrproject.support.AbstractIntegrationTest;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.test.web.servlet.MockMvc;
+import tools.jackson.databind.json.JsonMapper;
 
 import static org.springframework.http.MediaType.APPLICATION_JSON;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -24,7 +24,7 @@ class StationAndRobotRegistrationTest extends AbstractIntegrationTest {
     private MockMvc mockMvc;
 
     @Autowired
-    private ObjectMapper objectMapper;
+    private JsonMapper objectMapper;
 
     @Test
     void 작업장_2개와_로봇_1대를_등록하고_조회할_수_있다() throws Exception {
