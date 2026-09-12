@@ -1,7 +1,11 @@
 package com.amrproject.robot;
 
+import com.amrproject.domain.entity.AlarmSeverity;
+import com.amrproject.domain.entity.AlarmSourceType;
+import com.amrproject.domain.entity.AlarmType;
 import com.amrproject.domain.entity.CommandEvent;
 import com.amrproject.domain.entity.ConnectionState;
+import com.amrproject.domain.entity.LoadState;
 import com.amrproject.domain.entity.LocalizationState;
 import com.amrproject.domain.entity.MotionState;
 import com.amrproject.domain.entity.OperationMode;
@@ -15,6 +19,7 @@ import com.amrproject.domain.entity.SafetyState;
 import com.amrproject.repository.CommandEventRepository;
 import com.amrproject.repository.RobotCurrentStateRepository;
 import com.amrproject.repository.RobotStateSnapshotRepository;
+import com.amrproject.service.AlarmService;
 import org.springframework.stereotype.Component;
 
 import java.time.Instant;
@@ -35,16 +40,19 @@ public class SimulatorRobotGateway implements RobotGateway {
     private final CommandEventRepository commandEventRepository;
     private final RobotCurrentStateRepository robotCurrentStateRepository;
     private final RobotStateSnapshotRepository robotStateSnapshotRepository;
+    private final AlarmService alarmService;
     private final Map<Long, SimulatedFault> pendingFaults = new ConcurrentHashMap<>();
 
     public SimulatorRobotGateway(
             CommandEventRepository commandEventRepository,
             RobotCurrentStateRepository robotCurrentStateRepository,
-            RobotStateSnapshotRepository robotStateSnapshotRepository
+            RobotStateSnapshotRepository robotStateSnapshotRepository,
+            AlarmService alarmService
     ) {
         this.commandEventRepository = commandEventRepository;
         this.robotCurrentStateRepository = robotCurrentStateRepository;
         this.robotStateSnapshotRepository = robotStateSnapshotRepository;
+        this.alarmService = alarmService;
     }
 
     @Override
@@ -54,6 +62,8 @@ public class SimulatorRobotGateway implements RobotGateway {
         SimulatedFault fault = pendingFaults.remove(robot.getId());
         boolean isCharging = command.getCommandType() == RobotCommandType.START_CHARGE;
         MotionState progressMotion = isCharging ? MotionState.CHARGING : MotionState.MOVING;
+        LocalizationState localization = fault == SimulatedFault.LOCALIZATION_LOSS ? LocalizationState.LOST : LocalizationState.LOCALIZED;
+        LoadState loadState = fault == SimulatedFault.LOAD_SENSOR_MISMATCH ? LoadState.UNKNOWN : LoadState.EMPTY;
 
         command.send();
         recordCommandEvent(command, "SENT");
@@ -61,7 +71,7 @@ public class SimulatorRobotGateway implements RobotGateway {
         if (fault == SimulatedFault.COMMUNICATION_LOSS) {
             command.markUnknown();
             recordCommandEvent(command, "TIMEOUT");
-            report(robot, state, ConnectionState.OFFLINE, state.getOperationMode(), state.getMotionState(), state.getSafetyState(), state.getBatteryPct());
+            report(robot, state, ConnectionState.OFFLINE, state.getOperationMode(), state.getMotionState(), state.getSafetyState(), localization, loadState, state.getBatteryPct());
             return;
         }
 
@@ -69,20 +79,20 @@ public class SimulatorRobotGateway implements RobotGateway {
         recordCommandEvent(command, "ACCEPTED");
 
         command.startRunning();
-        report(robot, state, ConnectionState.ONLINE, OperationMode.AUTO, progressMotion, state.getSafetyState(), state.getBatteryPct());
+        report(robot, state, ConnectionState.ONLINE, OperationMode.AUTO, progressMotion, state.getSafetyState(), localization, loadState, state.getBatteryPct());
         recordCommandEvent(command, "PROGRESS");
 
         if (fault == SimulatedFault.COMMAND_FAILURE) {
             command.fail();
             recordCommandEvent(command, "FAILED");
-            report(robot, state, ConnectionState.ONLINE, OperationMode.AUTO, MotionState.IDLE, state.getSafetyState(), state.getBatteryPct());
+            report(robot, state, ConnectionState.ONLINE, OperationMode.AUTO, MotionState.IDLE, state.getSafetyState(), localization, loadState, state.getBatteryPct());
             return;
         }
 
         command.succeed();
         recordCommandEvent(command, "SUCCEEDED");
         int batteryPct = isCharging ? targetBatteryPct(robot) : state.getBatteryPct();
-        report(robot, state, ConnectionState.ONLINE, OperationMode.AUTO, MotionState.IDLE, state.getSafetyState(), batteryPct);
+        report(robot, state, ConnectionState.ONLINE, OperationMode.AUTO, MotionState.IDLE, state.getSafetyState(), localization, loadState, batteryPct);
     }
 
     private int targetBatteryPct(Robot robot) {
@@ -108,18 +118,51 @@ public class SimulatorRobotGateway implements RobotGateway {
                 .orElseGet(() -> robotCurrentStateRepository.save(new RobotCurrentState(robot)));
     }
 
-    private void report(Robot robot, RobotCurrentState state, ConnectionState connection, OperationMode mode, MotionState motion, SafetyState safety, int batteryPct) {
-        state.report(
-                connection,
-                mode,
-                motion,
-                safety,
-                state.getLoadState(),
-                LocalizationState.LOCALIZED,
-                batteryPct,
-                Instant.now()
-        );
+    private void report(
+            Robot robot, RobotCurrentState state, ConnectionState connection, OperationMode mode, MotionState motion,
+            SafetyState safety, LocalizationState localization, LoadState loadState, int batteryPct
+    ) {
+        ConnectionState previousConnection = state.getConnectionState();
+        LocalizationState previousLocalization = state.getLocalizationState();
+        LoadState previousLoadState = state.getLoadState();
+
+        state.report(connection, mode, motion, safety, loadState, localization, batteryPct, Instant.now());
         robotStateSnapshotRepository.save(new RobotStateSnapshot(robot, state));
+
+        reconcileAlarms(robot, previousConnection, connection, previousLocalization, localization, previousLoadState, loadState);
+    }
+
+    /**
+     * 14단계: 로봇 상태 축이 정상↔이상으로 전이될 때 알람을 발생/자동 해소한다
+     * (docs/STATE_MACHINES.md §7). 관리자 확인이 필요 없는 일시적 이상은 다음 정상
+     * dispatch에서 자동 해소된다.
+     */
+    private void reconcileAlarms(
+            Robot robot,
+            ConnectionState previousConnection, ConnectionState connection,
+            LocalizationState previousLocalization, LocalizationState localization,
+            LoadState previousLoadState, LoadState loadState
+    ) {
+        if (connection == ConnectionState.OFFLINE && previousConnection != ConnectionState.OFFLINE) {
+            alarmService.raise(AlarmType.ROBOT_COMM_LOST, AlarmSeverity.WARNING, AlarmSourceType.ROBOT, robot.getId(),
+                    "로봇 통신이 두절되었습니다: " + robot.getCode());
+        } else if (connection != ConnectionState.OFFLINE && previousConnection == ConnectionState.OFFLINE) {
+            alarmService.autoResolve(AlarmType.ROBOT_COMM_LOST, AlarmSourceType.ROBOT, robot.getId());
+        }
+
+        if (localization == LocalizationState.LOST && previousLocalization != LocalizationState.LOST) {
+            alarmService.raise(AlarmType.LOCALIZATION_LOST, AlarmSeverity.WARNING, AlarmSourceType.ROBOT, robot.getId(),
+                    "로봇 위치 추정에 실패했습니다: " + robot.getCode());
+        } else if (localization != LocalizationState.LOST && previousLocalization == LocalizationState.LOST) {
+            alarmService.autoResolve(AlarmType.LOCALIZATION_LOST, AlarmSourceType.ROBOT, robot.getId());
+        }
+
+        if (loadState == LoadState.UNKNOWN && previousLoadState != LoadState.UNKNOWN) {
+            alarmService.raise(AlarmType.LOAD_EXCEPTION, AlarmSeverity.WARNING, AlarmSourceType.ROBOT, robot.getId(),
+                    "로봇 적재 센서 응답이 불확실합니다: " + robot.getCode());
+        } else if (loadState != LoadState.UNKNOWN && previousLoadState == LoadState.UNKNOWN) {
+            alarmService.autoResolve(AlarmType.LOAD_EXCEPTION, AlarmSourceType.ROBOT, robot.getId());
+        }
     }
 
     private void recordCommandEvent(RobotCommand command, String eventType) {

@@ -132,12 +132,12 @@
 | POST | `/api/admin/tasks/{taskId}/cancel` | 취소 요청 → 적재 전/하역 후면 즉시 `CANCELED`, 적재 중이면 `RECOVERY_REQUIRED`(8단계, 아래 참고) |
 | POST | `/api/admin/tasks/{taskId}/recover` | `RECOVERY_REQUIRED` 상태 개입: 재개 또는 최종 실패 처리 |
 | POST | `/api/admin/sites/{siteId}/dispatch` | 디스패치 사이클 실행 (7단계): `QUEUED` 작업 자동 배정 + 저배터리 로봇 자동 충전 작업 생성, 결과로 배정/생성된 taskId 목록 반환. 스케줄러가 없어 관리자가 필요할 때 호출한다 |
-| GET | `/api/admin/alarms` | **미구현** |
-| GET | `/api/admin/alarms/{alarmId}` | **미구현** |
-| POST | `/api/admin/alarms/{alarmId}/acknowledge` | **미구현** |
-| POST | `/api/admin/alarms/{alarmId}/resolve` | **미구현** |
+| GET | `/api/admin/alarms` | 알람 목록 (필터: status, severity, sourceType) |
+| GET | `/api/admin/alarms/{alarmId}` | 상세 |
+| POST | `/api/admin/alarms/{alarmId}/acknowledge` | 확인 처리 (`OPEN`→`ACKNOWLEDGED`. 이미 `ACKNOWLEDGED`면 200으로 현재 상태 반환, `RESOLVED`면 409) |
+| POST | `/api/admin/alarms/{alarmId}/resolve` | 해제 처리 (`OPEN`/`ACKNOWLEDGED`→`RESOLVED`. 이미 `RESOLVED`면 200으로 현재 상태 반환) |
 
-**알람(Alarm) 미구현**: `alarms`/`alarm_events` 테이블(ERD.md §4.10, STATE_MACHINES.md §7)은 초안 단계에 머물러 있고 실제 마이그레이션·엔티티·컨트롤러가 없다. 8단계(운영 장애 복구)에서 개입이 필요한 상황은 별도 알람 테이블 없이 `Task.status = RECOVERY_REQUIRED` + `task_events.payload`(사유) + `POST /api/admin/tasks/{taskId}/recover`로 대체 구현했다 — 위 표의 알람 엔드포인트는 이 대체 방식으로 대체되기 전 초안이므로 실제로 호출할 수 없다.
+**14단계 구현**: `alarms`/`alarm_events` 테이블과 위 4개 엔드포인트를 실제로 구현했다. 자동 발생 4종(`ROBOT_COMM_LOST`/`LOCALIZATION_LOST`/`LOAD_EXCEPTION`/`TASK_FAILED`) 중 로봇 관련 3종은 `SimulatorRobotGateway`가 연결/위치추정/적재 센서 상태를 보고할 때 이상→정상 전이를 감지해 자동 발생·자동 해소한다(정상 dispatch 한 번이면 해소). `TASK_FAILED`는 `TaskService.failRecovery()`(위 `recover`의 `FAIL`)에서 발생하며, 종료 상태라 자동 해소가 없어 관리자가 `acknowledge`/`resolve`로 직접 처리해야 한다. 같은 (알람 종류, 대상 종류, 대상 ID) 조합의 열린 알람은 항상 최대 1개다. `alarm_events`는 API로 노출하지 않는 내부 감사 로그다.
 
 `recover` 요청 본문 예시:
 

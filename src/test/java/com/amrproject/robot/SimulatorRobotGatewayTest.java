@@ -1,6 +1,8 @@
 package com.amrproject.robot;
 
 import com.amrproject.domain.entity.ConnectionState;
+import com.amrproject.domain.entity.LoadState;
+import com.amrproject.domain.entity.LocalizationState;
 import com.amrproject.domain.entity.MotionState;
 import com.amrproject.domain.entity.Robot;
 import com.amrproject.domain.entity.RobotCommand;
@@ -11,6 +13,7 @@ import com.amrproject.domain.entity.Site;
 import com.amrproject.repository.CommandEventRepository;
 import com.amrproject.repository.RobotCurrentStateRepository;
 import com.amrproject.repository.RobotStateSnapshotRepository;
+import com.amrproject.service.AlarmService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
@@ -30,6 +33,7 @@ class SimulatorRobotGatewayTest {
     private final CommandEventRepository commandEventRepository = Mockito.mock(CommandEventRepository.class);
     private final RobotCurrentStateRepository robotCurrentStateRepository = Mockito.mock(RobotCurrentStateRepository.class);
     private final RobotStateSnapshotRepository robotStateSnapshotRepository = Mockito.mock(RobotStateSnapshotRepository.class);
+    private final AlarmService alarmService = Mockito.mock(AlarmService.class);
 
     private SimulatorRobotGateway gateway;
     private Robot robot;
@@ -37,7 +41,7 @@ class SimulatorRobotGatewayTest {
 
     @BeforeEach
     void setUp() {
-        gateway = new SimulatorRobotGateway(commandEventRepository, robotCurrentStateRepository, robotStateSnapshotRepository);
+        gateway = new SimulatorRobotGateway(commandEventRepository, robotCurrentStateRepository, robotStateSnapshotRepository, alarmService);
 
         Site site = new Site("SITE-01", "테스트 물류센터");
         robot = new Robot("ROBOT-01", "1호기", null, null, site);
@@ -83,6 +87,28 @@ class SimulatorRobotGatewayTest {
 
         assertThat(command.getStatus()).isEqualTo(RobotCommandStatus.UNKNOWN);
         assertThat(state.getConnectionState()).isEqualTo(ConnectionState.OFFLINE);
+    }
+
+    @Test
+    void LOCALIZATION_LOSS를_주입하면_위치추정_상태가_LOST가_된다() {
+        gateway.injectFault(robot.getId(), SimulatedFault.LOCALIZATION_LOSS);
+
+        RobotCommand command = newCommand();
+        gateway.dispatch(command);
+
+        assertThat(command.getStatus()).isEqualTo(RobotCommandStatus.SUCCEEDED);
+        assertThat(state.getLocalizationState()).isEqualTo(LocalizationState.LOST);
+    }
+
+    @Test
+    void LOAD_SENSOR_MISMATCH를_주입하면_적재상태가_UNKNOWN이_된다() {
+        gateway.injectFault(robot.getId(), SimulatedFault.LOAD_SENSOR_MISMATCH);
+
+        RobotCommand command = newCommand();
+        gateway.dispatch(command);
+
+        assertThat(command.getStatus()).isEqualTo(RobotCommandStatus.SUCCEEDED);
+        assertThat(state.getLoadState()).isEqualTo(LoadState.UNKNOWN);
     }
 
     @Test

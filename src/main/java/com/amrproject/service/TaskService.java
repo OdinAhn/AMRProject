@@ -1,5 +1,8 @@
 package com.amrproject.service;
 
+import com.amrproject.domain.entity.AlarmSeverity;
+import com.amrproject.domain.entity.AlarmSourceType;
+import com.amrproject.domain.entity.AlarmType;
 import com.amrproject.domain.entity.ChargingSession;
 import com.amrproject.domain.entity.OutboxEvent;
 import com.amrproject.domain.entity.ResourceReservation;
@@ -75,6 +78,7 @@ public class TaskService {
     private final StationService stationService;
     private final RobotService robotService;
     private final RobotGateway robotGateway;
+    private final AlarmService alarmService;
 
     public TaskService(
             TaskRepository taskRepository,
@@ -88,7 +92,8 @@ public class TaskService {
             RobotCurrentStateRepository robotCurrentStateRepository,
             StationService stationService,
             RobotService robotService,
-            RobotGateway robotGateway
+            RobotGateway robotGateway,
+            AlarmService alarmService
     ) {
         this.taskRepository = taskRepository;
         this.taskStepRepository = taskStepRepository;
@@ -102,6 +107,7 @@ public class TaskService {
         this.stationService = stationService;
         this.robotService = robotService;
         this.robotGateway = robotGateway;
+        this.alarmService = alarmService;
     }
 
     @Transactional
@@ -354,6 +360,8 @@ public class TaskService {
         TaskStatus previous = task.getStatus();
         task.failFromRecovery();
         recordEvent(task, "RECOVERY_FAILED", previous, task.getStatus(), null);
+        alarmService.raise(AlarmType.TASK_FAILED, AlarmSeverity.CRITICAL, AlarmSourceType.TASK, task.getId(),
+                "작업이 복구 불가로 최종 실패 처리되었습니다: " + task.getTaskNo());
         releaseAssignment(task);
         releaseReservations(task.getCurrentAssignment().getRobot());
         return task;

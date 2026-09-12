@@ -526,7 +526,7 @@ This project has two, separate layers — keep both accurate when endpoints chan
 - Access tokens are self-signed HMAC-SHA256, not JWTs from a library — see `security/AccessTokenService`. Don't introduce a JWT dependency for this.
 - The frontend talks to the backend through the Vite dev proxy (`frontend/vite.config.ts`, `/api` → `localhost:8080`), not backend CORS config — prefer extending the proxy setup over adding CORS headers for local dev needs.
 - Task/robot responses include a backend-computed `allowedActions` array; the frontend renders buttons purely from that array rather than re-deriving allowed transitions client-side. Keep new actions consistent with this pattern.
-- `docs/API.md`, `docs/ERD.md`, and `docs/STATE_MACHINES.md` are design drafts (`v0`) written before/alongside implementation, so some documented endpoints/tables were never built (e.g. alarms, `loads`/`load_transfer_events`, `inbox_messages`, the SSE event stream) — these are explicitly marked **미구현** where they appear. Check for that marker before assuming a documented endpoint or table actually exists in code; grep the controller/entity/migration directly to confirm.
+- `docs/API.md`, `docs/ERD.md`, and `docs/STATE_MACHINES.md` are design drafts (`v0`) written before/alongside implementation, so some documented endpoints/tables were never built (e.g. `loads`/`load_transfer_events`, `inbox_messages`, `audit_logs`, the SSE event stream) — these are explicitly marked **미구현** where they appear. Check for that marker before assuming a documented endpoint or table actually exists in code; grep the controller/entity/migration directly to confirm. (Alarms — `alarms`/`alarm_events` — were implemented in stage 14 and are no longer in this unimplemented list.)
 
 ---
 
