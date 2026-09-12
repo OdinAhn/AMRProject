@@ -1,20 +1,21 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link, useParams } from "react-router";
-import { EdgePanel } from "../../components/maps/EdgePanel";
+import { MapCanvasEditor } from "../../components/maps/MapCanvasEditor";
 import { MapVersionHeaderCard } from "../../components/maps/MapVersionHeaderCard";
-import { NodePanel } from "../../components/maps/NodePanel";
 import { ZonePanel } from "../../components/maps/ZonePanel";
 import { PageHeader } from "../../components/ui";
 import { ApiError, api } from "../../lib/apiClient";
 import type {
   CreateEdgeRequest,
   CreateNodeRequest,
+  CreateObstacleRequest,
   CreateZoneRequest,
   EdgeResponse,
   MapVersionResponse,
   MapVersionValidationResponse,
   NodeResponse,
+  ObstacleResponse,
   ZoneResponse,
 } from "../../types/api";
 
@@ -23,8 +24,6 @@ export function MapVersionDetailPage() {
   const queryClient = useQueryClient();
   const [error, setError] = useState<string | null>(null);
   const [validation, setValidation] = useState<MapVersionValidationResponse | null>(null);
-  const [nodeResetToken, setNodeResetToken] = useState(0);
-  const [edgeResetToken, setEdgeResetToken] = useState(0);
   const [zoneResetToken, setZoneResetToken] = useState(0);
 
   const invalidateAll = () => {
@@ -43,6 +42,10 @@ export function MapVersionDetailPage() {
     queryKey: ["map-versions", versionId, "edges"],
     queryFn: () => api.get<EdgeResponse[]>(`/api/admin/map-versions/${versionId}/edges`),
   });
+  const obstaclesQuery = useQuery({
+    queryKey: ["map-versions", versionId, "obstacles"],
+    queryFn: () => api.get<ObstacleResponse[]>(`/api/admin/map-versions/${versionId}/obstacles`),
+  });
   const zonesQuery = useQuery({
     queryKey: ["map-versions", versionId, "zones"],
     queryFn: () => api.get<ZoneResponse[]>(`/api/admin/map-versions/${versionId}/zones`),
@@ -56,7 +59,6 @@ export function MapVersionDetailPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["map-versions", versionId, "nodes"] });
       invalidateAll();
-      setNodeResetToken((t) => t + 1);
       setError(null);
     },
     onError: (err) => setError(err instanceof ApiError ? err.message : "노드 추가에 실패했습니다."),
@@ -67,10 +69,19 @@ export function MapVersionDetailPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["map-versions", versionId, "edges"] });
       invalidateAll();
-      setEdgeResetToken((t) => t + 1);
       setError(null);
     },
     onError: (err) => setError(err instanceof ApiError ? err.message : "통로 추가에 실패했습니다."),
+  });
+
+  const addObstacle = useMutation({
+    mutationFn: (body: CreateObstacleRequest) => api.post<ObstacleResponse>(`/api/admin/map-versions/${versionId}/obstacles`, body),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["map-versions", versionId, "obstacles"] });
+      invalidateAll();
+      setError(null);
+    },
+    onError: (err) => setError(err instanceof ApiError ? err.message : "장애물 추가에 실패했습니다."),
   });
 
   const addZone = useMutation({
@@ -123,15 +134,18 @@ export function MapVersionDetailPage() {
       )}
 
       <div className="grid grid-cols-3 gap-4">
-        <NodePanel nodes={nodes} isDraft={!!isDraft} onAddNode={(body) => addNode.mutate(body)} isPending={addNode.isPending} resetToken={nodeResetToken} />
-        <EdgePanel
-          nodes={nodes}
-          edges={edgesQuery.data ?? []}
-          isDraft={!!isDraft}
-          onAddEdge={(body) => addEdge.mutate(body)}
-          isPending={addEdge.isPending}
-          resetToken={edgeResetToken}
-        />
+        <div className="col-span-2">
+          <MapCanvasEditor
+            nodes={nodes}
+            edges={edgesQuery.data ?? []}
+            obstacles={obstaclesQuery.data ?? []}
+            isDraft={!!isDraft}
+            onAddNode={(body) => addNode.mutate(body)}
+            onAddEdge={(body) => addEdge.mutate(body)}
+            onAddObstacle={(body) => addObstacle.mutate(body)}
+            isPending={addNode.isPending || addEdge.isPending || addObstacle.isPending}
+          />
+        </div>
         <ZonePanel
           nodes={nodes}
           zones={zonesQuery.data ?? []}
