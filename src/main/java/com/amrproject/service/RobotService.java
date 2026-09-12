@@ -14,6 +14,7 @@ import com.amrproject.domain.entity.Site;
 import com.amrproject.dto.request.CreateRobotConfigurationRequest;
 import com.amrproject.dto.request.CreateRobotRequest;
 import com.amrproject.dto.request.UpdateRobotLifecycleStatusRequest;
+import com.amrproject.dto.request.UpdateRobotRequest;
 import com.amrproject.exception.DuplicateResourceException;
 import com.amrproject.exception.EntityNotFoundException;
 import com.amrproject.exception.InvalidRequestException;
@@ -71,6 +72,17 @@ public class RobotService {
             return robotRepository.findBySiteId(siteId);
         }
         return robotRepository.findAll();
+    }
+
+    /** 로봇 기본정보(이름/모델/제조사) 수정 — code/site는 등록 후 변경하지 않는다 (17단계). */
+    @Transactional
+    public Robot update(Long id, UpdateRobotRequest request) {
+        Robot robot = getById(id);
+        String name = request.name() != null ? request.name() : robot.getName();
+        String model = request.model() != null ? request.model() : robot.getModel();
+        String manufacturer = request.manufacturer() != null ? request.manufacturer() : robot.getManufacturer();
+        robot.updateBasicInfo(name, model, manufacturer);
+        return robot;
     }
 
     /**

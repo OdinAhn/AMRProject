@@ -4,6 +4,7 @@ import com.amrproject.domain.entity.StationType;
 import com.amrproject.dto.request.CreateRobotRequest;
 import com.amrproject.dto.request.CreateSiteRequest;
 import com.amrproject.dto.request.CreateStationRequest;
+import com.amrproject.dto.request.UpdateRobotRequest;
 import com.amrproject.support.AbstractIntegrationTest;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -13,6 +14,7 @@ import tools.jackson.databind.json.JsonMapper;
 
 import static org.springframework.http.MediaType.APPLICATION_JSON;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -44,6 +46,21 @@ class StationAndRobotRegistrationTest extends AbstractIntegrationTest {
                 .andExpect(jsonPath("$[0].code").value("ROBOT-01"));
     }
 
+    @Test
+    void 로봇_기본정보를_수정할_수_있다() throws Exception {
+        Long siteId = createSite("SITE-02", "테스트 물류센터2");
+        Long robotId = createRobotAndGetId(siteId, "ROBOT-02", "2호기");
+
+        mockMvc.perform(patch("/api/admin/robots/{robotId}", robotId)
+                        .contentType(APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new UpdateRobotRequest("2호기(개명)", "Model-X", "제조사A"))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.name").value("2호기(개명)"))
+                .andExpect(jsonPath("$.model").value("Model-X"))
+                .andExpect(jsonPath("$.manufacturer").value("제조사A"))
+                .andExpect(jsonPath("$.code").value("ROBOT-02"));
+    }
+
     private Long createSite(String code, String name) throws Exception {
         String response = mockMvc.perform(post("/api/admin/sites")
                         .contentType(APPLICATION_JSON)
@@ -65,5 +82,14 @@ class StationAndRobotRegistrationTest extends AbstractIntegrationTest {
                         .contentType(APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(new CreateRobotRequest(code, name, null, null, siteId))))
                 .andExpect(status().isCreated());
+    }
+
+    private Long createRobotAndGetId(Long siteId, String code, String name) throws Exception {
+        String response = mockMvc.perform(post("/api/admin/robots")
+                        .contentType(APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new CreateRobotRequest(code, name, null, null, siteId))))
+                .andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString();
+        return objectMapper.readTree(response).get("id").asLong();
     }
 }
