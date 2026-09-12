@@ -4,7 +4,7 @@
 
 ## 공통 규칙
 
-- 인증 방식(JWT/세션 등)은 **미정**. 아래 모든 관리자/작업자 API는 `Authorization: Bearer <token>` 헤더를 가정하고 작성했으나, 실제 인증 메커니즘 확정 후 이 문서를 갱신한다.
+- **10단계 구현**: `Authorization: Bearer <token>` 방식으로 확정했다. 토큰은 표준 JWT가 아니라 서버가 직접 서명·검증하는 자체 토큰이다(`AccessTokenService`, HMAC-SHA256) — 이 서버 혼자 발급·검증을 다 하고 외부와 상호운용할 필요가 없어 라이브러리 없이 최소 구현했다. `/api/admin/**`은 `ADMIN` role, `/api/worker/**`는 `ADMIN`/`WORKER` role이 필요하다. `/api/external/**`은 외부 시스템 인증 방식이 아직 미정이라(로봇 통신 규격 미정과 연동) 계속 인증 없이 열려 있다.
 - 모든 응답은 JPA 엔티티가 아닌 DTO로 반환한다 (AGENTS.md 규칙).
 - 오류 응답은 공통 포맷을 사용한다.
 
@@ -42,7 +42,9 @@
 |---|---|---|
 | POST | `/api/auth/login` | 로그인, 토큰 발급 |
 | POST | `/api/auth/logout` | 로그아웃 |
-| GET | `/api/auth/me` | 현재 사용자 정보, 소속 role, 접근 가능 station 목록 |
+| GET | `/api/auth/me` | 현재 사용자 정보(username, displayName, role). 접근 가능 station 목록은 아직 응답에 포함하지 않는다 — 필요하면 `GET /api/admin/users/{userId}/station-assignments`로 별도 조회 |
+
+토큰이 상태 없는(stateless) 자체 서명 값이라 서버가 들고 있는 세션이 없다 — `logout`은 클라이언트가 토큰을 버리는 것으로 처리되고 서버 측 토큰 무효화(블랙리스트)는 구현하지 않는다.
 
 ---
 
@@ -245,7 +247,7 @@ DESIGN.md §1/§4는 "로봇 없는 개발: 실제 통신 계약을 모사하는
 
 ## 8. 열린 질문 (구현 전 확정 필요)
 
-- 인증 방식 (세션/JWT), 로봇 자체 인증 방식(게이트웨이 mTLS 등 — 로봇 통신 규격 미정과 연동).
+- ~~인증 방식~~ — 10단계에서 자체 서명 토큰으로 확정(§1 참고). 로봇 자체 인증 방식(게이트웨이 mTLS 등)과 외부 시스템(WMS/WCS) 인증은 여전히 미정 — 로봇 통신 규격/WMS 연동 대상 미정과 연동돼 있다.
 - `report-out-of-stock` 이후 작업 진행 정책과 WMS 재고 반영 여부.
 - 실시간 이벤트 팬아웃 인프라(Redis Pub/Sub vs Kafka vs in-memory) — 인스턴스 확장 시점에 확정.
 - 외부 연동 결과 회신 방식(webhook/polling)과 인증.

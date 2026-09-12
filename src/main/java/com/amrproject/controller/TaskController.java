@@ -1,13 +1,16 @@
 package com.amrproject.controller;
 
+import com.amrproject.domain.entity.User;
 import com.amrproject.dto.request.CreateTaskRequest;
 import com.amrproject.dto.request.ReportUnavailableRequest;
 import com.amrproject.dto.response.TaskResponse;
 import com.amrproject.service.TaskCreationResult;
 import com.amrproject.service.TaskService;
+import com.amrproject.service.UserService;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -17,24 +20,28 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * 작업자용 작업 API (docs/API.md §4). 인증이 아직 없어 requestedBy는 null로 기록한다.
+ * 작업자용 작업 API (docs/API.md §4).
  */
 @RestController
 @RequestMapping("/api/worker/tasks")
 public class TaskController {
 
     private final TaskService taskService;
+    private final UserService userService;
 
-    public TaskController(TaskService taskService) {
+    public TaskController(TaskService taskService, UserService userService) {
         this.taskService = taskService;
+        this.userService = userService;
     }
 
     @PostMapping
     public ResponseEntity<TaskResponse> create(
             @RequestHeader("Idempotency-Key") String idempotencyKey,
-            @Valid @RequestBody CreateTaskRequest request
+            @Valid @RequestBody CreateTaskRequest request,
+            Authentication authentication
     ) {
-        TaskCreationResult result = taskService.createTask(request, idempotencyKey, null);
+        User requestedBy = userService.getByUsername(authentication.getName());
+        TaskCreationResult result = taskService.createTask(request, idempotencyKey, requestedBy);
         TaskResponse response = TaskResponse.from(result.task(), taskService.getSteps(result.task().getId()));
         HttpStatus status = result.created() ? HttpStatus.CREATED : HttpStatus.OK;
         return ResponseEntity.status(status).body(response);

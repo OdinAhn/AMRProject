@@ -61,6 +61,11 @@ public class UserService {
         return userRepository.findAll();
     }
 
+    public User getByUsername(String username) {
+        return userRepository.findByUsername(username)
+                .orElseThrow(() -> new EntityNotFoundException("USER_NOT_FOUND", "사용자를 찾을 수 없습니다: " + username));
+    }
+
     @Transactional
     public User update(Long id, UpdateUserRequest request) {
         User user = getById(id);

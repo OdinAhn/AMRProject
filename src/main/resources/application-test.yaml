@@ -6,3 +6,7 @@ spring:
   flyway:
     enabled: true
     locations: classpath:db/migration
+
+app:
+  token:
+    secret: test-only-signing-secret-not-a-real-credential

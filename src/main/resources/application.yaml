@@ -2,6 +2,11 @@ spring:
   application:
     name: AMRProject
 
+app:
+  token:
+    secret: ${TOKEN_SIGNING_SECRET:}
+    expiry-minutes: ${TOKEN_EXPIRY_MINUTES:480}
+
 management:
   endpoints:
     web:
