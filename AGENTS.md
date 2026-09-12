@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-AMRProject is an AMR/AGV (autonomous mobile robot) fleet control system: a Spring Boot backend plus a React admin/worker frontend. See `docs/DESIGN.md` for the full design (business scope, state model, failure policy, staged implementation order) and the project root `README.md` for how to run everything. `docs/API.md`, `docs/ERD.md`, and `docs/STATE_MACHINES.md` are the authoritative contracts for endpoints, tables, and state transitions — keep them in sync with code changes.
+AMRProject is an AMR/AGV (autonomous mobile robot) fleet control system: a Spring Boot backend plus a React admin/worker frontend. See `docs/DESIGN.md` for the full design (business scope, state model, failure policy, staged implementation order) and the project root `README.md` for how to run everything. `docs/API.md`, `docs/ERD.md`, and `docs/STATE_MACHINES.md` are the authoritative contracts for endpoints, tables, and state transitions — keep them in sync with code changes. `docs/FIELD_VALIDATION.md` is the stage-13 field rollout runbook — out of this repo's software scope (needs real hardware/site), so it's documentation only, never a target for code changes.
 
 The backend is developed and verified without real robots: a simulator (`com.amrproject.robot`) mimics robot command/status behavior behind the same contract a real vendor integration would use.
 
@@ -18,7 +18,7 @@ Backend (`src/`):
 - Eclipse Paho (`org.eclipse.paho.client.mqttv3`) — MQTT client for `robot/mqtt/MqttRobotGateway` (stage 18), a second `RobotGateway` implementation speaking a reduced VDA 5050 subset. **Opt-in and off by default** (`app.robot-gateway.mqtt.enabled=false`) — `SimulatorRobotGateway` stays the active gateway unless explicitly enabled. See gotcha below for its synchronous-with-timeout design.
 - Jackson 3 — note the package is `tools.jackson.*`, not `com.fasterxml.jackson.*`
 - springdoc-openapi (Swagger UI / OpenAPI)
-- JUnit 5, Testcontainers (MySQL, Redis via `GenericContainer` + `@ServiceConnection`, Kafka via `testcontainers-kafka`'s `KafkaContainer` + `@DynamicPropertySource` — see gotcha below) for integration tests, Spring Security Test
+- JUnit 5, Testcontainers (MySQL, Redis via `GenericContainer` + `@ServiceConnection`, Kafka via `testcontainers-kafka`'s `KafkaContainer` + `@DynamicPropertySource` — see gotcha below) for integration tests, Spring Security Test. These three are shared by every test via `support/AbstractIntegrationTest`. A fourth container (Mosquitto) exists only in `robot/mqtt/MqttRobotGatewayTest`, started separately with its own `@DynamicPropertySource` — it's not added to the shared base since MQTT is opt-in and off for the rest of the suite.
 
 Frontend (`frontend/`):
 
@@ -62,7 +62,7 @@ src/main/java/com/amrproject/
 │   └── response/
 ├── exception/
 ├── security/   (access token issuance/validation)
-├── robot/      (robot adapter + simulator)
+├── robot/      (RobotGateway port + SimulatorRobotGateway; robot/mqtt/ has the opt-in MQTT/VDA5050 adapter, stage 18)
 └── config/
 ```
 
