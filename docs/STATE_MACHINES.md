@@ -210,6 +210,8 @@ stateDiagram-v2
     ABORTED --> [*]
 ```
 
+**7단계 구현**: 시뮬레이터가 충전을 즉시 처리해 `RESERVED`는 순간적으로만 존재한다. `DOCK_AND_CHARGE` 단계가 `RobotCommandType.START_CHARGE` 명령을 발행하면 `RESERVED→CHARGING`, 명령이 성공하면 배터리를 로봇 설정의 `chargingTargetPct`(없으면 100)까지 채우고 `CHARGING→COMPLETED`, 실패하면 `ABORTED`로 전이한다.
+
 ---
 
 ## 6. 자원 예약 (Resource Reservation — 통로/구역/정류지점)
@@ -222,6 +224,8 @@ stateDiagram-v2
     RELEASED --> [*]
     EXPIRED --> [*]
 ```
+
+**7단계 구현**: `resource_type`은 `STATION`만 실제로 사용한다 — `EDGE`/`ZONE` 기반 예약은 로봇의 현재 위치(노드) 추적이 아직 없어 계산할 수 없다 (`MOVE_TO_ORIGIN`의 출발 노드를 모름). MOVE 단계를 시작할 때 목적지 station을 예약하고, 그 station에서의 다음 확인 단계(`CONFIRM_LOAD`/`CONFIRM_UNLOAD`/`DOCK_AND_CHARGE`)가 성공할 때 해제한다 — "이동 중"이 아니라 "그 station을 실제로 점유하는 구간"을 예약 구간으로 본다. 용량(`stations.max_concurrent_robots`, `null`이면 무제한) 초과 시 예약 자체를 거부(409)한다 — 모든 처리가 한 트랜잭션 안에서 즉시 성공하거나 즉시 롤백되므로 로봇이 자원을 쥔 채 대기하며 순환 대기(교착)를 만드는 코드 경로가 없다. `EXPIRED`/`expires_at`은 스키마에만 있고 아직 채우지 않는다 — TTL은 비동기/실제 로봇 통신이 도입된 뒤 의미가 생긴다.
 
 - `EXPIRED`는 통신 단절 등으로 반납되지 않은 예약이 교통을 영구 차단하지 않도록 하는 안전장치다. TTL 값과 만료 시 실제 로봇 위치 재확인 절차는 7단계(다중 로봇 운영) 구현 시 확정한다.
 

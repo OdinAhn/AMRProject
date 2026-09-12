@@ -13,6 +13,7 @@ public record StationResponse(
         String name,
         StationType stationType,
         StationStatus status,
+        Integer maxConcurrentRobots,
         Instant createdAt,
         Instant updatedAt
 ) {
@@ -25,6 +26,7 @@ public record StationResponse(
                 station.getName(),
                 station.getStationType(),
                 station.getStatus(),
+                station.getMaxConcurrentRobots(),
                 station.getCreatedAt(),
                 station.getUpdatedAt()
         );

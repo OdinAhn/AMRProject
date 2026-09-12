@@ -125,9 +125,10 @@
 | GET | `/api/admin/tasks` | 전체 작업 조회 (필터: status, site, station, robot, 기간) |
 | GET | `/api/admin/tasks/{taskId}` | 상세 (단계, 배정 이력, 로봇 명령 포함) |
 | GET | `/api/admin/tasks/{taskId}/events` | 상태 전이 이력 (`task_events`) |
-| POST | `/api/admin/tasks/{taskId}/assign` | 로봇 지정 배정 (`robotId`) → `ASSIGNED` 후 즉시 첫 단계 시작 (자동 배정은 7단계 범위) |
+| POST | `/api/admin/tasks/{taskId}/assign` | 로봇 지정 배정 (`robotId`) → `ASSIGNED` 후 즉시 첫 단계 시작 |
 | POST | `/api/admin/tasks/{taskId}/cancel` | 취소 요청 → `CANCEL_REQUESTED` |
 | POST | `/api/admin/tasks/{taskId}/recover` | `RECOVERY_REQUIRED` 상태 개입: 재개 또는 최종 실패 처리 |
+| POST | `/api/admin/sites/{siteId}/dispatch` | 디스패치 사이클 실행 (7단계): `QUEUED` 작업 자동 배정 + 저배터리 로봇 자동 충전 작업 생성, 결과로 배정/생성된 taskId 목록 반환. 스케줄러가 없어 관리자가 필요할 때 호출한다 |
 | GET | `/api/admin/alarms` | 알람 목록 (필터: status, severity, source_type) |
 | GET | `/api/admin/alarms/{alarmId}` | 상세 |
 | POST | `/api/admin/alarms/{alarmId}/acknowledge` | 확인 처리 |
