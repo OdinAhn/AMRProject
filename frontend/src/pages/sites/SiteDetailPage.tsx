@@ -1,32 +1,17 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState, type FormEvent } from "react";
+import { useState } from "react";
 import { Link, useParams } from "react-router";
-import {
-  Badge,
-  Button,
-  Card,
-  ErrorBanner,
-  Field,
-  Input,
-  PageHeader,
-  Select,
-  Spinner,
-  Table,
-  Td,
-  Th,
-} from "../../components/ui";
+import { StationCreateForm } from "../../components/sites/StationCreateForm";
+import { StationTable } from "../../components/sites/StationTable";
+import { PageHeader, Spinner } from "../../components/ui";
 import { ApiError, api } from "../../lib/apiClient";
-import type { CreateStationRequest, SiteResponse, StationResponse, StationType } from "../../types/api";
-
-const STATION_TYPES: StationType[] = ["PICKUP", "DROPOFF", "WAITING", "CHARGING", "GENERIC"];
+import type { CreateStationRequest, SiteResponse, StationResponse } from "../../types/api";
 
 export function SiteDetailPage() {
   const { siteId } = useParams<{ siteId: string }>();
   const queryClient = useQueryClient();
-  const [code, setCode] = useState("");
-  const [name, setName] = useState("");
-  const [stationType, setStationType] = useState<StationType>("GENERIC");
   const [error, setError] = useState<string | null>(null);
+  const [resetToken, setResetToken] = useState(0);
 
   const siteQuery = useQuery({
     queryKey: ["sites", siteId],
@@ -42,8 +27,7 @@ export function SiteDetailPage() {
     mutationFn: (body: CreateStationRequest) => api.post<StationResponse>(`/api/admin/sites/${siteId}/stations`, body),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["sites", siteId, "stations"] });
-      setCode("");
-      setName("");
+      setResetToken((t) => t + 1);
       setError(null);
     },
     onError: (err) => setError(err instanceof ApiError ? err.message : "생성에 실패했습니다."),
@@ -54,11 +38,6 @@ export function SiteDetailPage() {
       api.patch(`/api/admin/stations/${stationId}`, { maxConcurrentRobots }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["sites", siteId, "stations"] }),
   });
-
-  const onSubmit = (e: FormEvent) => {
-    e.preventDefault();
-    createStation.mutate({ code, name, stationType });
-  };
 
   return (
     <div>
@@ -71,80 +50,20 @@ export function SiteDetailPage() {
         }
       />
 
-      <Card className="mb-4">
-        <h2 className="mb-3 text-sm font-semibold text-gray-700">작업장 추가</h2>
-        <form onSubmit={onSubmit} className="flex items-end gap-3">
-          <div className="w-32">
-            <Field label="코드">
-              <Input value={code} onChange={(e) => setCode(e.target.value)} required />
-            </Field>
-          </div>
-          <div className="flex-1">
-            <Field label="이름">
-              <Input value={name} onChange={(e) => setName(e.target.value)} required />
-            </Field>
-          </div>
-          <div className="w-40">
-            <Field label="유형">
-              <Select value={stationType} onChange={(e) => setStationType(e.target.value as StationType)}>
-                {STATION_TYPES.map((type) => (
-                  <option key={type} value={type}>
-                    {type}
-                  </option>
-                ))}
-              </Select>
-            </Field>
-          </div>
-          <Button type="submit" disabled={createStation.isPending}>
-            추가
-          </Button>
-        </form>
-        <ErrorBanner message={error} />
-      </Card>
+      <StationCreateForm
+        onSubmit={(body) => createStation.mutate(body)}
+        isPending={createStation.isPending}
+        error={error}
+        resetToken={resetToken}
+      />
 
-      <Card>
-        {stationsQuery.isLoading && <Spinner />}
-        {stationsQuery.data && (
-          <Table>
-            <thead>
-              <tr>
-                <Th>코드</Th>
-                <Th>이름</Th>
-                <Th>유형</Th>
-                <Th>상태</Th>
-                <Th>동시 최대 로봇 수</Th>
-              </tr>
-            </thead>
-            <tbody>
-              {stationsQuery.data.map((station) => (
-                <tr key={station.id}>
-                  <Td>{station.code}</Td>
-                  <Td>{station.name}</Td>
-                  <Td>
-                    <Badge tone="blue">{station.stationType}</Badge>
-                  </Td>
-                  <Td>{station.status}</Td>
-                  <Td>
-                    <input
-                      type="number"
-                      min={0}
-                      defaultValue={station.maxConcurrentRobots ?? ""}
-                      placeholder="무제한"
-                      className="w-24 rounded-md border border-gray-300 px-2 py-1 text-sm"
-                      onBlur={(e) => {
-                        const value = e.target.value === "" ? null : Number(e.target.value);
-                        if (value !== station.maxConcurrentRobots) {
-                          updateCapacity.mutate({ stationId: station.id, maxConcurrentRobots: value });
-                        }
-                      }}
-                    />
-                  </Td>
-                </tr>
-              ))}
-            </tbody>
-          </Table>
-        )}
-      </Card>
+      {stationsQuery.isLoading && <Spinner />}
+      {stationsQuery.data && (
+        <StationTable
+          stations={stationsQuery.data}
+          onUpdateCapacity={(stationId, maxConcurrentRobots) => updateCapacity.mutate({ stationId, maxConcurrentRobots })}
+        />
+      )}
     </div>
   );
 }
