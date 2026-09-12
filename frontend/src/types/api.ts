@@ -148,6 +148,15 @@ export interface EdgeResponse {
   maxCapacity: number | null;
 }
 
+export interface ObstacleResponse {
+  id: number;
+  mapVersionId: number;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
 export interface ZoneResponse {
   id: number;
   mapVersionId: number;
@@ -303,6 +312,13 @@ export interface CreateEdgeRequest {
   direction: EdgeDirection;
   distance?: number | null;
   maxCapacity?: number | null;
+}
+
+export interface CreateObstacleRequest {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
 }
 
 export interface CreateZoneRequest {
