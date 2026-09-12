@@ -2,19 +2,28 @@
 
 ## Project Overview
 
-This is a Spring Boot backend application.
+AMRProject is an AMR/AGV (autonomous mobile robot) fleet control system: a Spring Boot backend plus a React admin/worker frontend. See `docs/DESIGN.md` for the full design (business scope, state model, failure policy, staged implementation order) and the project root `README.md` for how to run everything. `docs/API.md`, `docs/ERD.md`, and `docs/STATE_MACHINES.md` are the authoritative contracts for endpoints, tables, and state transitions — keep them in sync with code changes.
+
+The backend is developed and verified without real robots: a simulator (`com.amrproject.robot`) mimics robot command/status behavior behind the same contract a real vendor integration would use.
 
 ### Tech Stack
 
-- Java 21
-- Spring Boot 3.x
-- Gradle
-- Spring MVC
-- Spring Data JPA
-- MySQL
-- JUnit 5
-- Mockito
-- Testcontainers
+Backend (`src/`):
+
+- Java 21, Gradle
+- Spring Boot 4.x, Spring MVC (webmvc), Spring Data JPA (Hibernate 7)
+- Spring Security 7 — custom self-signed HMAC-SHA256 access tokens (`security/AccessTokenService`), not a JWT library
+- MySQL 8.4, Flyway migrations
+- Jackson 3 — note the package is `tools.jackson.*`, not `com.fasterxml.jackson.*`
+- springdoc-openapi (Swagger UI / OpenAPI)
+- JUnit 5, Testcontainers (MySQL) for integration tests, Spring Security Test
+
+Frontend (`frontend/`):
+
+- React 19, Vite, TypeScript
+- Tailwind CSS v4 (`@tailwindcss/vite`, no `tailwind.config.js`)
+- React Router, TanStack Query
+- No automated frontend test suite by deliberate choice — frontend changes are verified by running the real backend + a real MySQL instance and walking through the feature in a browser (see `frontend/README.md`). Type-checking (`tsc -b` via `npm run build`) and `oxlint` are still required.
 
 Before making changes, inspect the existing project structure and follow established patterns rather than introducing new architectural patterns unnecessarily.
 
@@ -37,22 +46,25 @@ Before making changes, inspect the existing project structure and follow establi
 
 ## Project Structure
 
-Prefer the following layered structure unless the existing project uses a different established structure:
+The backend follows this layered structure under `com.amrproject`:
 
 ```
-src/main/java/
-└── com.example.project/
-    ├── controller/
-    ├── service/
-    ├── repository/
-    ├── domain/
-    │   └── entity/
-    ├── dto/
-    │   ├── request/
-    │   └── response/
-    ├── exception/
-    └── config/
+src/main/java/com/amrproject/
+├── controller/
+├── service/
+├── repository/
+├── domain/
+│   └── entity/
+├── dto/
+│   ├── request/
+│   └── response/
+├── exception/
+├── security/   (access token issuance/validation)
+├── robot/      (robot adapter + simulator)
+└── config/
 ```
+
+The frontend lives entirely under `frontend/` (see `frontend/README.md` for its internal layout — `src/pages`, `src/layouts`, `src/lib`, `src/components`, `src/types`) and is a separate npm project; it is not part of the Gradle build.
 
 ### Responsibilities
 
@@ -341,7 +353,16 @@ Use JUnit 5.
 
 Use Mockito only when mocking provides a meaningful isolation boundary.
 
-Prefer Testcontainers for integration tests involving PostgreSQL or other infrastructure dependencies.
+Prefer Testcontainers for integration tests involving MySQL or other infrastructure dependencies. `./gradlew test` requires Docker to be running.
+
+Most controller tests share one MySQL instance via Testcontainers and are not wrapped in `@Transactional`, so state persists across test methods in the same class — make setup idempotent (e.g. `findByX(...).orElseGet(() -> repository.save(...))`) rather than assuming a clean table per test.
+
+### Frontend
+
+There is no automated frontend test suite (deliberate scope decision, given the time/browser-count tradeoff). For any frontend change:
+
+- Run `npm run build` (type-checks via `tsc -b`, then builds).
+- Manually verify in a browser against a real backend + MySQL instance, exercising the actual golden path (see `frontend/README.md` and `docs/API.md` for the relevant endpoints/`allowedActions`).
 
 ---
 
@@ -500,6 +521,17 @@ Do not introduce Swagger/OpenAPI solely for a small change if the project does n
 
 ---
 
+## Project-Specific Gotchas
+
+- Jackson 3 in this Spring Boot version uses the `tools.jackson.*` package, not `com.fasterxml.jackson.*`.
+- `MockMvcBuilderCustomizer` lives at `org.springframework.boot.webmvc.test.autoconfigure.MockMvcBuilderCustomizer` in this Spring Boot version, not the older `org.springframework.boot.test.autoconfigure.web.servlet` path.
+- Most `@AutoConfigureMockMvc` controller tests get a default admin `Authorization` header injected automatically (see `TestSecurityHeaderConfig` / `TestAdminTokenProvider`) so they don't need to log in explicitly. A test that must authenticate as a specific non-default user should build its own `MockMvc` with `SecurityMockMvcConfigurers.springSecurity()` instead (see `AuthenticationTest`, `WorkerStationTest`).
+- Access tokens are self-signed HMAC-SHA256, not JWTs from a library — see `security/AccessTokenService`. Don't introduce a JWT dependency for this.
+- The frontend talks to the backend through the Vite dev proxy (`frontend/vite.config.ts`, `/api` → `localhost:8080`), not backend CORS config — prefer extending the proxy setup over adding CORS headers for local dev needs.
+- Task/robot responses include a backend-computed `allowedActions` array; the frontend renders buttons purely from that array rather than re-deriving allowed transitions client-side. Keep new actions consistent with this pattern.
+
+---
+
 ## Before Modifying Code
 
 Before making a change:
@@ -575,6 +607,8 @@ Do not:
 unless explicitly requested.
 
 Keep changes focused and easy to review.
+
+Staged feature work (one implementation step from `docs/DESIGN.md` §11) follows: branch `stage-N-<short-description>` off `main` → implement → test/build → commit → push → open a PR via `gh pr create` → merge via `gh pr merge --merge`. Small, non-staged changes (docs, fixes) can go straight to `main` if the user asks for it.
 
 ---
 
