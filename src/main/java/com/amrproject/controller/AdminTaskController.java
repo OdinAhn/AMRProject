@@ -1,12 +1,15 @@
 package com.amrproject.controller;
 
 import com.amrproject.domain.entity.TaskStatus;
+import com.amrproject.domain.entity.User;
 import com.amrproject.dto.request.AssignRobotRequest;
 import com.amrproject.dto.request.RecoverTaskRequest;
 import com.amrproject.dto.response.TaskEventResponse;
 import com.amrproject.dto.response.TaskResponse;
 import com.amrproject.service.TaskService;
+import com.amrproject.service.UserService;
 import jakarta.validation.Valid;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -22,9 +25,11 @@ import java.util.List;
 public class AdminTaskController {
 
     private final TaskService taskService;
+    private final UserService userService;
 
-    public AdminTaskController(TaskService taskService) {
+    public AdminTaskController(TaskService taskService, UserService userService) {
         this.taskService = taskService;
+        this.userService = userService;
     }
 
     /**
@@ -51,8 +56,9 @@ public class AdminTaskController {
     }
 
     @PostMapping("/{taskId}/cancel")
-    public TaskResponse cancel(@PathVariable Long taskId) {
-        taskService.requestCancel(taskId, null);
+    public TaskResponse cancel(@PathVariable Long taskId, Authentication authentication) {
+        User actor = userService.getByUsername(authentication.getName());
+        taskService.requestCancel(taskId, actor);
         return TaskResponse.from(taskService.getById(taskId), taskService.getSteps(taskId));
     }
 
