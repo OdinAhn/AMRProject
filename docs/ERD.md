@@ -542,9 +542,11 @@ erDiagram
 | battery_start_pct / battery_end_pct | INT | |
 | started_at / completed_at | DATETIME | |
 
-### 4.8 물품 (loads, load_transfer_events)
+### 4.8 물품 (loads, load_transfer_events) — **미구현**
 
-> **용어 구분**: `loads.status`(이 아래 표)와 로봇의 `load_state` 축(STATE_MACHINES.md §4.5, `EMPTY`/`LOADED`/`UNKNOWN`)은 서로 다른 개념이다. `loads.status`는 **업무 관점의 물품 상태**(주문/배송 단위 추적)이고, 로봇 `load_state`는 **로봇 적재 센서의 실시간 값**이다. 둘의 연결 규칙: 작업자가 "로봇 보내기"(적재 확인)를 누르면 `loads.status → LOADED`로 바뀌지만, 이는 로봇 센서값을 그대로 신뢰하는 것이 아니라 **작업자의 육안 확인**을 기록하는 것이다. 로봇 `load_state`가 `EMPTY`인데 `loads.status`가 `LOADED`인 불일치(예: 물품이 로봇에서 떨어짐)는 별도 알람(`alarms`)으로 처리한다.
+`loads`/`load_transfer_events` 테이블은 마이그레이션·엔티티가 없다. `report-out-of-stock`(재고 없음) API가 8단계에서 "정책 미정"으로 보류된 것과 같은 이유로, 이 테이블들도 함께 보류 상태다(`docs/API.md` §4 참고). 현재 구현은 물품 단위 추적 없이 `task_steps`(`CONFIRM_LOAD`/`CONFIRM_UNLOAD`)만으로 적재·하역을 확인한다.
+
+> **용어 구분**: `loads.status`(이 아래 표)와 로봇의 `load_state` 축(STATE_MACHINES.md §4.5, `EMPTY`/`LOADED`/`UNKNOWN`)은 서로 다른 개념이다. `loads.status`는 **업무 관점의 물품 상태**(주문/배송 단위 추적)이고, 로봇 `load_state`는 **로봇 적재 센서의 실시간 값**이다. 둘의 연결 규칙: 작업자가 "로봇 보내기"(적재 확인)를 누르면 `loads.status → LOADED`로 바뀌지만, 이는 로봇 센서값을 그대로 신뢰하는 것이 아니라 **작업자의 육안 확인**을 기록하는 것이다. 로봇 `load_state`가 `EMPTY`인데 `loads.status`가 `LOADED`인 불일치(예: 물품이 로봇에서 떨어짐)는 별도 알람(`alarms`)으로 처리한다 — `alarms`도 미구현이므로(§4.10 참고) 이 불일치 처리 자체가 아직 없다.
 
 **loads**
 | 컬럼 | 타입 | 설명 |
@@ -568,6 +570,8 @@ erDiagram
 
 ### 4.9 이벤트 (outbox_events, inbox_messages)
 
+`outbox_events`는 구현되어 있다(`OutboxEvent` 엔티티, `OutboxEventStatus`: `PENDING`/`PUBLISHED`/`FAILED`). **`inbox_messages`는 미구현** — 외부/로봇 메시지 중복 제거는 이 별도 테이블 대신 리소스별 UNIQUE 제약(`tasks.idempotency_key` 등, `docs/API.md` 공통 규칙 참고)으로 처리한다.
+
 **outbox_events**
 | 컬럼 | 타입 | 설명 |
 |---|---|---|
@@ -590,7 +594,9 @@ erDiagram
 | status | VARCHAR | `RECEIVED`, `PROCESSED`, `IGNORED`, `FAILED` |
 | received_at / processed_at | DATETIME | |
 
-### 4.10 운영 (alarms, alarm_events, audit_logs)
+### 4.10 운영 (alarms, alarm_events, audit_logs) — **미구현**
+
+세 테이블 모두 마이그레이션·엔티티가 없다. 8단계(운영 장애 복구)에서 개입이 필요한 상황은 `alarms` 대신 `Task.status = RECOVERY_REQUIRED` + `task_events.payload`(사유) + `POST /api/admin/tasks/{taskId}/recover`로 대체 구현했다(`docs/API.md` §3 참고). `audit_logs`는 대체 구현 없이 그대로 미구현 상태다.
 
 **alarms**
 | 컬럼 | 타입 | 설명 |

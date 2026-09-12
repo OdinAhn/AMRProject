@@ -231,7 +231,9 @@ stateDiagram-v2
 
 ---
 
-## 7. 알람 (Alarm)
+## 7. 알람 (Alarm) — **미구현**
+
+`alarms`/`alarm_events` 테이블과 이 상태 전이는 구현되지 않았다(`ERD.md` §4.10, `API.md` §3 참고). 8단계(운영 장애 복구)에서 개입이 필요한 상황은 이 알람 FSM 대신 `Task.status = RECOVERY_REQUIRED` + `recover` API(§1 참고)로 대체 구현했다.
 
 ```mermaid
 stateDiagram-v2
@@ -278,7 +280,9 @@ stateDiagram-v2
 
 ---
 
-## 10. 물품 (Load)
+## 10. 물품 (Load) — **미구현**
+
+`loads` 테이블과 이 상태 전이는 구현되지 않았다(`ERD.md` §4.8 참고). 현재는 물품 단위 추적 없이 `task_steps`(`CONFIRM_LOAD`/`CONFIRM_UNLOAD`)만으로 적재·하역을 확인하며, `EXCEPTION`에 해당하는 `report-out-of-stock`도 8단계에서 정책 미정으로 보류됐다(`API.md` §4).
 
 ```mermaid
 stateDiagram-v2
