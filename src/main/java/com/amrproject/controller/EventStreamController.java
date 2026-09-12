@@ -1,0 +1,91 @@
+package com.amrproject.controller;
+
+import com.amrproject.config.RedisConfig;
+import com.amrproject.domain.entity.OutboxEvent;
+import com.amrproject.domain.entity.OutboxEventStatus;
+import com.amrproject.dto.response.EventEnvelope;
+import com.amrproject.repository.OutboxEventRepository;
+import org.springframework.data.redis.connection.Message;
+import org.springframework.data.redis.connection.MessageListener;
+import org.springframework.data.redis.listener.RedisMessageListenerContainer;
+import org.springframework.data.redis.listener.Topic;
+import org.springframework.data.redis.listener.ChannelTopic;
+import org.springframework.http.MediaType;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestHeader;
+import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
+import tools.jackson.databind.json.JsonMapper;
+
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.util.List;
+
+/**
+ * 15단계: 실시간 이벤트 SSE 스트림 (docs/API.md §5). Task/알람 이벤트를 아웃박스
+ * 릴레이({@link com.amrproject.service.OutboxPublisher})가 발행하는 Redis 채널을 그대로 중계한다.
+ * siteId/stationId 쿼리 필터는 이번 단계 범위 밖 — 전체 스트림을 그대로 전달한다.
+ */
+@RestController
+public class EventStreamController {
+
+    private static final Topic TOPIC = new ChannelTopic(RedisConfig.EVENT_CHANNEL);
+
+    private final OutboxEventRepository outboxEventRepository;
+    private final RedisMessageListenerContainer listenerContainer;
+    private final JsonMapper jsonMapper;
+
+    public EventStreamController(
+            OutboxEventRepository outboxEventRepository,
+            RedisMessageListenerContainer listenerContainer,
+            JsonMapper jsonMapper
+    ) {
+        this.outboxEventRepository = outboxEventRepository;
+        this.listenerContainer = listenerContainer;
+        this.jsonMapper = jsonMapper;
+    }
+
+    @GetMapping(path = "/api/events/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public SseEmitter stream(@RequestHeader(value = "Last-Event-ID", required = false) Long lastEventId) {
+        SseEmitter emitter = new SseEmitter(0L);
+
+        if (lastEventId != null) {
+            List<OutboxEvent> backlog =
+                    outboxEventRepository.findByIdGreaterThanAndStatusOrderByIdAsc(lastEventId, OutboxEventStatus.PUBLISHED);
+            for (OutboxEvent event : backlog) {
+                if (!send(emitter, event.getId(), EventEnvelope.from(event))) {
+                    return emitter;
+                }
+            }
+        }
+
+        MessageListener listener = (message, pattern) -> onMessage(emitter, message);
+        listenerContainer.addMessageListener(listener, TOPIC);
+
+        Runnable unsubscribe = () -> listenerContainer.removeMessageListener(listener, TOPIC);
+        emitter.onCompletion(unsubscribe);
+        emitter.onTimeout(unsubscribe);
+        emitter.onError(ex -> unsubscribe.run());
+
+        return emitter;
+    }
+
+    private void onMessage(SseEmitter emitter, Message message) {
+        try {
+            String json = new String(message.getBody(), StandardCharsets.UTF_8);
+            emitter.send(SseEmitter.event().data(json, MediaType.APPLICATION_JSON));
+        } catch (IOException e) {
+            emitter.completeWithError(e);
+        }
+    }
+
+    private boolean send(SseEmitter emitter, Long eventId, EventEnvelope envelope) {
+        try {
+            emitter.send(SseEmitter.event().id(String.valueOf(eventId)).data(jsonMapper.writeValueAsString(envelope), MediaType.APPLICATION_JSON));
+            return true;
+        } catch (IOException e) {
+            emitter.completeWithError(e);
+            return false;
+        }
+    }
+}
