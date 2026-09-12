@@ -44,12 +44,12 @@ stateDiagram-v2
 | ASSIGNED | RECOVERY_REQUIRED | 배정 직후 명령 전송/응답 실패 | |
 | RUNNING | SUCCEEDED | 마지막 단계 SUCCEEDED | |
 | RUNNING | PAUSED | 관리자 일시정지, 로봇 PROTECTIVE_STOP 등 | 화면 정지 요청과 로봇 실제 안전 정지는 별도 축(§4 참고) — task.PAUSED는 업무 흐름 정지일 뿐, 로봇 안전 상태와 동일시하지 않는다 |
-| RUNNING | CANCEL_REQUESTED | 취소 요청 | **미정**: 적재 완료 후(물품을 실은 채) 취소 가능 여부·절차는 정책 미확정. 하역 없이 취소하면 물품이 로봇에 남는 문제 — 구현 전 결정 필요 |
+| RUNNING | CANCEL_REQUESTED | 취소 요청 | 8단계에서 정책 확정 — 아래 참고 |
 | RUNNING | RECOVERY_REQUIRED | 명령 실패, 통신 단절, 서버 재시작 후 로봇 실제 상태와 불일치 | 재시도 전 반드시 로봇/설비 실제 상태 확인 (DESIGN.md §9) |
 | PAUSED | RUNNING | 재개 | |
 | PAUSED | CANCEL_REQUESTED | 취소 요청 | |
-| CANCEL_REQUESTED | CANCELED | 로봇이 안전하게 정지/복귀 확인됨 | |
-| CANCEL_REQUESTED | RECOVERY_REQUIRED | 취소 명령 응답 없음/실패 | |
+| CANCEL_REQUESTED | CANCELED | 적재 전이거나 하역까지 끝난 상태 | 8단계: 동기 시뮬레이터라 "취소 명령을 보내고 응답을 기다리는" 절차가 없어 즉시 확정한다 |
+| CANCEL_REQUESTED | RECOVERY_REQUIRED | 적재 중(물품이 로봇에 있음) | 8단계: 물품을 실은 채 임의로 취소를 확정하지 않고 운영자가 `recover`(RESUME/FAIL)로 결정하게 한다 — 취소 명령 응답 없음/실패도 같은 경로 |
 | RECOVERY_REQUIRED | RUNNING | 상태 대조 결과 정상, 남은 단계부터 재개 | |
 | RECOVERY_REQUIRED | FAILED | 자동 복구 불가, 운영자가 최종 실패 처리 | 감사 로그 필수 |
 
@@ -315,7 +315,6 @@ stateDiagram-v2
 
 ## 12. 열린 질문 (구현 전 확정 필요)
 
-- Task `RUNNING` 중(특히 물품 적재 후) 취소 요청 시 처리 절차 — 목적지까지 강제 이동 후 취소인지, 중간 지점에서 되돌리는지는 운반 장치/현장 정책에 달려 있어 미정.
 - `TaskStep.SKIPPED` 사용 여부 — 조건부 단계 도입 전까지는 스키마에만 존재하고 로직에서 미사용으로 둘지 결정 필요.
 - `safety_state.EMERGENCY_STOP` 해제를 원격으로 허용할지(현재는 현장 수동 해제만 가정) — 로봇 제조사 사양 확인 후 결정.
 - 자원 예약 TTL 값과 만료 처리 시 로봇 위치 재확인 로직의 구체적 절차.

@@ -12,4 +12,10 @@ public interface TaskRepository extends JpaRepository<Task, Long> {
     Optional<Task> findByIdempotencyKey(String idempotencyKey);
 
     List<Task> findBySiteIdAndStatusOrderByPriorityDescCreatedAtAsc(Long siteId, TaskStatus status);
+
+    List<Task> findBySiteId(Long siteId);
+
+    List<Task> findByStatus(TaskStatus status);
+
+    List<Task> findBySiteIdAndStatus(Long siteId, TaskStatus status);
 }

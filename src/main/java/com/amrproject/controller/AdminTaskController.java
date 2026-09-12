@@ -1,5 +1,6 @@
 package com.amrproject.controller;
 
+import com.amrproject.domain.entity.TaskStatus;
 import com.amrproject.dto.request.AssignRobotRequest;
 import com.amrproject.dto.request.RecoverTaskRequest;
 import com.amrproject.dto.response.TaskEventResponse;
@@ -11,6 +12,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
@@ -23,6 +25,19 @@ public class AdminTaskController {
 
     public AdminTaskController(TaskService taskService) {
         this.taskService = taskService;
+    }
+
+    /**
+     * 재접속 대조(8단계): station/robot/기간 필터는 아직 미구현 (docs/API.md §3).
+     */
+    @GetMapping
+    public List<TaskResponse> getAll(
+            @RequestParam(required = false) Long siteId,
+            @RequestParam(required = false) TaskStatus status
+    ) {
+        return taskService.getAll(siteId, status).stream()
+                .map(task -> TaskResponse.from(task, taskService.getSteps(task.getId())))
+                .toList();
     }
 
     @GetMapping("/{taskId}")
