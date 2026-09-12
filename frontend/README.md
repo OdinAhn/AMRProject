@@ -42,5 +42,5 @@ npm run lint    # oxlint
 
 ## 참고
 
-- 백엔드 API 계약: `../docs/API.md` (응답의 `allowedActions` 배열로 화면에 노출할 버튼을 결정한다). 문서에 **미구현**으로 표시된 엔드포인트(알람, 로봇 기본정보 수정, SSE 실시간 이벤트 등)는 실제로 호출할 수 없다 — 화면 구현 전에 해당 컨트롤러가 실제로 있는지 확인한다. 실시간성이 필요한 화면은 현재 SSE 대신 TanStack Query `refetchInterval` 폴링을 쓴다 (예: `WorkerStationTasksPage`).
+- 백엔드 API 계약: `../docs/API.md` (응답의 `allowedActions` 배열로 화면에 노출할 버튼을 결정한다). 문서에 **미구현**으로 표시된 엔드포인트(로봇 기본정보 수정, SSE 실시간 이벤트 등)는 실제로 호출할 수 없다 — 화면 구현 전에 해당 컨트롤러가 실제로 있는지 확인한다. 실시간성이 필요한 화면은 현재 SSE 대신 TanStack Query `refetchInterval` 폴링을 쓴다 (예: `WorkerStationTasksPage`). 관리자용 알람 조회/확인·해제 API(`/api/admin/alarms`)는 14단계에서 구현됐지만 아직 이 화면(프론트엔드)은 없다.
 - 저장소 전체 개발 규칙: `../AGENTS.md`

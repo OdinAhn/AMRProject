@@ -231,17 +231,17 @@ stateDiagram-v2
 
 ---
 
-## 7. 알람 (Alarm) — **미구현**
+## 7. 알람 (Alarm)
 
-`alarms`/`alarm_events` 테이블과 이 상태 전이는 구현되지 않았다(`ERD.md` §4.10, `API.md` §3 참고). 8단계(운영 장애 복구)에서 개입이 필요한 상황은 이 알람 FSM 대신 `Task.status = RECOVERY_REQUIRED` + `recover` API(§1 참고)로 대체 구현했다.
+**14단계 구현**: `alarms`/`alarm_events`(`ERD.md` §4.10, `API.md` §3 참고). 다이어그램과 다른 점 두 가지 — ① `OPEN → RESOLVED`는 "자동 해소"뿐 아니라 관리자가 확인 단계를 건너뛰고 바로 `resolve`를 호출하는 경우에도 일어난다(단순화). ② `RESOLVED → OPEN`(재발생)은 미구현이다 — 같은 (alarm_type, source_type, source_id) 조합이 다시 발생하면 기존 row를 재사용하지 않고 새 알람 row를 만든다. `alarm_events.event_type`도 `RAISED`/`ACKNOWLEDGED`/`RESOLVED` 3종만 실제로 쓰고 `REOPENED`는 미사용이다. 8단계(운영 장애 복구)에서 이미 확정된 개입 흐름(`Task.status = RECOVERY_REQUIRED` + `recover` API, §1 참고)은 그대로 유지되며, 이 알람 FSM으로 대체되지 않는다 — `TASK_FAILED` 알람은 `recover`가 작업을 최종 실패 처리할 때 **함께** 발생하는 별도 신호다.
 
 ```mermaid
 stateDiagram-v2
     [*] --> OPEN
     OPEN --> ACKNOWLEDGED : 운영자 확인
     ACKNOWLEDGED --> RESOLVED : 조치 완료
-    OPEN --> RESOLVED : 자동 해소 (원인 소멸 감지)
-    RESOLVED --> OPEN : 재발생 (alarm_events: REOPENED)
+    OPEN --> RESOLVED : 자동 해소 또는 확인 없이 바로 해제
+    RESOLVED --> OPEN : (미구현) 재발생 시 새 알람 row 생성으로 대체
 ```
 
 ---
