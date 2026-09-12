@@ -373,6 +373,7 @@ Kafka를 도입하는 구성에서도 실제 명령 송신은 저장된 명령 �
 | 20. 프론트엔드 컴포넌트 분리 | 11~19단계에서 만든 모든 화면을 얇은 페이지 셸(`useQuery`/`useMutation` + 조합)과 `src/components/<domain>/` 하위 소형 컴포넌트로 리팩터링(기능 변경 없음) | `npm run build` 통과, 실제 백엔드로 대표 플로우(생성·상세·배정·취소·로봇 호출) 전부 회귀 없이 동작 |
 | 21. 로봇 기본정보 수정 화면 | 로봇 상세 화면에 `RobotBasicInfoForm` 추가 — 17단계 API `PATCH /api/admin/robots/{robotId}` 사용, 백엔드 변경 없음 | 실제 백엔드로 이름/모델/제조사 저장 후 새로고침해도 값이 유지됨 |
 | 22. 백엔드 패키지 분리 | `domain/entity`, `dto/request`, `dto/response`, `repository` 4개 패키지를 `alarm`/`user`/`site`/`map`/`robot`/`task`/`event` 도메인 하위 패키지로 재배치(기능 변경 없음, `controller`/`service`는 범위 밖) | `./gradlew compileJava compileTestJava test build` 전부 통과, 128개 파일 이동이 전부 `git rename`으로 인식됨 |
+| 23. 백엔드 패키지 분리(컨트롤러·서비스) | 22단계와 같은 방식으로 `controller`, `service`도 동일한 7개 도메인 하위 패키지로 재배치(기능 변경 없음) | `./gradlew compileJava compileTestJava test build` 전부 통과, 26개 파일 이동이 전부 `git rename`으로 인식됨 |
 
 Redis·Kafka를 채택한다면 프로젝트 기반 단계에서 개발 환경을 구성하고, 해당 데이터·이벤트 기능을 구현할 때 연결한다. Kubernetes도 채택 시 초기 배포 골격을 준비하고, 백엔드 완료 전에 다중 인스턴스와 재시작을 검증한다.
 
