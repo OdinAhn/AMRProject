@@ -370,6 +370,7 @@ Kafka를 도입하는 구성에서도 실제 명령 송신은 저장된 명령 �
 | 17. 로봇 기본정보 수정 | `PATCH /api/admin/robots/{robotId}`(name/model/manufacturer) | 등록된 로봇의 기본정보를 API로 수정 가능 |
 | 18. 로봇 통신(MQTT/VDA5050) | `RobotGateway`의 두 번째 구현체 `MqttRobotGateway`(옵트인, 기본 비활성) — VDA5050 축소 구현, 동기식-타임아웃(3초) 방식 | 로컬 MQTT 브로커+가상 VDA5050 로봇으로 명령 발행부터 완료까지 검증 |
 | 19. 프론트엔드(알람·실시간 이벤트) | 관리자 화면에 `/alarms`, `/events` 추가. `AlarmResponse`에 `allowedActions` 추가, SSE 인증에 쿼리 파라미터 폴백 추가. 수동 검증 중 `OutboxPublisher`의 head-of-line 블로킹 버그 발견·수정(§API.md §5 참고) | 브라우저에서 알람 확인·해제, 실시간 이벤트 피드가 실제로 동작 |
+| 20. 프론트엔드 컴포넌트 분리 | 11~19단계에서 만든 모든 화면을 얇은 페이지 셸(`useQuery`/`useMutation` + 조합)과 `src/components/<domain>/` 하위 소형 컴포넌트로 리팩터링(기능 변경 없음) | `npm run build` 통과, 실제 백엔드로 대표 플로우(생성·상세·배정·취소·로봇 호출) 전부 회귀 없이 동작 |
 
 Redis·Kafka를 채택한다면 프로젝트 기반 단계에서 개발 환경을 구성하고, 해당 데이터·이벤트 기능을 구현할 때 연결한다. Kubernetes도 채택 시 초기 배포 골격을 준비하고, 백엔드 완료 전에 다중 인스턴스와 재시작을 검증한다.
 
