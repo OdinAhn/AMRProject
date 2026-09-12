@@ -511,13 +511,10 @@ on JPA entities.
 
 ## API Documentation
 
-If the project uses OpenAPI/Swagger:
+This project has two, separate layers — keep both accurate when endpoints change:
 
-- Update API documentation when endpoints change.
-- Keep request/response schemas accurate.
-- Document important error responses.
-
-Do not introduce Swagger/OpenAPI solely for a small change if the project does not already use it.
+- **`docs/API.md`** is the hand-written, authoritative contract (written before/alongside implementation, per stage). Update it whenever an endpoint, request/response field, or `allowedActions` value changes, and mark anything not actually implemented as **미구현** rather than leaving it looking real (see Project-Specific Gotchas).
+- **springdoc-openapi** (Swagger UI / OpenAPI, already a dependency) generates a live spec from the controllers automatically at `/swagger-ui.html` / `/v3/api-docs` — no manual annotation work is required for it to stay accurate, but it only reflects what's implemented, not the design intent `docs/API.md` also captures (open questions, deferred features, rationale).
 
 ---
 
@@ -529,6 +526,7 @@ Do not introduce Swagger/OpenAPI solely for a small change if the project does n
 - Access tokens are self-signed HMAC-SHA256, not JWTs from a library — see `security/AccessTokenService`. Don't introduce a JWT dependency for this.
 - The frontend talks to the backend through the Vite dev proxy (`frontend/vite.config.ts`, `/api` → `localhost:8080`), not backend CORS config — prefer extending the proxy setup over adding CORS headers for local dev needs.
 - Task/robot responses include a backend-computed `allowedActions` array; the frontend renders buttons purely from that array rather than re-deriving allowed transitions client-side. Keep new actions consistent with this pattern.
+- `docs/API.md`, `docs/ERD.md`, and `docs/STATE_MACHINES.md` are design drafts (`v0`) written before/alongside implementation, so some documented endpoints/tables were never built (e.g. alarms, `loads`/`load_transfer_events`, `inbox_messages`, the SSE event stream) — these are explicitly marked **미구현** where they appear. Check for that marker before assuming a documented endpoint or table actually exists in code; grep the controller/entity/migration directly to confirm.
 
 ---
 
