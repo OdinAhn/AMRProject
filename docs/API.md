@@ -200,6 +200,8 @@ Idempotency-Key: 8e2f1c...
 
 **15단계 구현**: `GET /api/events/stream`을 Redis Pub/Sub 기반으로 구현했다. `outbox_events`(Task 이벤트는 3단계부터, 알람 이벤트는 14단계부터 기록됨)를 `OutboxPublisher`가 1초 주기로 폴링해 Redis 채널 `amr.events`로 발행하고 `PUBLISHED`로 마킹한다 — 로봇 상태 보고(고빈도)는 스로틀링 설계가 아직 없어 이번 범위에서 제외했다(아래 열린 질문 참고).
 
+**16단계 구현**: 같은 `OutboxPublisher`가 같은 이벤트를 Kafka 토픽 `amr.events`(파티션 1, 복제 1)에도 함께 발행한다 — Redis는 실시간 팬아웃(SSE), Kafka는 나중에 다른 시스템이 재구독/재생할 수 있는 내구성 있는 이벤트 로그 역할이다. 이 앱 내부에는 Kafka 컨슈머가 없다(프로듀서만).
+
 | Method | Path | 설명 |
 |---|---|---|
 | GET | `/api/events/stream` | SSE 스트림. `Last-Event-ID` 헤더로 재접속 시 그 이후 이벤트를 먼저 재생한 뒤 실시간 구독으로 전환한다. **`siteId`/`stationId` 쿼리 필터는 미구현** — 전체 이벤트를 그대로 전달하므로 클라이언트가 필요하면 걸러 써야 한다 |
@@ -227,7 +229,7 @@ Idempotency-Key: 8e2f1c...
 
 - 로봇 상태 보고(고빈도)를 이 스트림에 포함하는 것 — 위치 업데이트가 완료 이벤트를 밀어내지 않도록 스로틀링(`robot.state.updated`를 초 단위로 묶어 보내는 등) 설계가 필요하다.
 - `siteId`/`stationId` 쿼리 필터 — `outbox_events`에 siteId가 없어 Task를 다시 join해야 한다.
-- Kafka로의 이벤트 로그 발행(16단계 예정) — 지금은 Redis로만 발행하고 `outbox_events`가 유일한 영속 이력이다.
+- Kafka 토픽의 파티션/복제 전략 — 지금은 단일 브로커 개발 환경 기준 파티션 1·복제 1. 운영 규모에서 재검토 필요.
 
 ---
 

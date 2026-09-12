@@ -14,10 +14,10 @@ Backend (`src/`):
 - Spring Boot 4.x, Spring MVC (webmvc), Spring Data JPA (Hibernate 7)
 - Spring Security 7 — custom self-signed HMAC-SHA256 access tokens (`security/AccessTokenService`), not a JWT library
 - MySQL 8.4, Flyway migrations
-- Redis (Pub/Sub) — real-time event fanout for `GET /api/events/stream` (stage 15); a scheduled `OutboxPublisher` relays `outbox_events` rows to it. Kafka is planned (stage 16) for a separate durable event-log role, not fanout.
+- Redis (Pub/Sub) — real-time event fanout for `GET /api/events/stream` (stage 15). Kafka (stage 16) — durable event log, not fanout. A single scheduled `OutboxPublisher` (`service/OutboxPublisher`) relays `outbox_events` rows to both; no `@KafkaListener` exists in this app (Kafka is producer-only here, for future external subscribers).
 - Jackson 3 — note the package is `tools.jackson.*`, not `com.fasterxml.jackson.*`
 - springdoc-openapi (Swagger UI / OpenAPI)
-- JUnit 5, Testcontainers (MySQL + Redis, via `GenericContainer` + `@ServiceConnection`) for integration tests, Spring Security Test
+- JUnit 5, Testcontainers (MySQL, Redis via `GenericContainer` + `@ServiceConnection`, Kafka via `testcontainers-kafka`'s `KafkaContainer` + `@DynamicPropertySource` — see gotcha below) for integration tests, Spring Security Test
 
 Frontend (`frontend/`):
 
@@ -528,6 +528,8 @@ This project has two, separate layers — keep both accurate when endpoints chan
 - The frontend talks to the backend through the Vite dev proxy (`frontend/vite.config.ts`, `/api` → `localhost:8080`), not backend CORS config — prefer extending the proxy setup over adding CORS headers for local dev needs.
 - Task/robot responses include a backend-computed `allowedActions` array; the frontend renders buttons purely from that array rather than re-deriving allowed transitions client-side. Keep new actions consistent with this pattern.
 - `docs/API.md`, `docs/ERD.md`, and `docs/STATE_MACHINES.md` are design drafts (`v0`) written before/alongside implementation, so some documented endpoints/tables were never built (e.g. `loads`/`load_transfer_events`, `inbox_messages`, `audit_logs`) — these are explicitly marked **미구현** where they appear. Check for that marker before assuming a documented endpoint or table actually exists in code; grep the controller/entity/migration directly to confirm. (Alarms — stage 14 — and the SSE event stream — stage 15, Redis-backed — are implemented and no longer in this unimplemented list.)
+- This Spring Boot version ships **no Kafka autoconfiguration** anywhere (`spring-kafka`'s jar and `spring-boot-autoconfigure` both lack it, unlike Redis/JPA which get a dedicated `spring-boot-data-redis`-style module) — `KafkaTemplate`/`KafkaAdmin`/`ProducerFactory` beans must be declared by hand (see `config/KafkaConfig`). Injecting `KafkaTemplate<String, String>` only works because that config declares it with that exact generic type — do not rely on autoconfiguration existing for any future Kafka work.
+- The Testcontainers Kafka module's Gradle coordinate is `org.testcontainers:testcontainers-kafka` (not `org.testcontainers:kafka`, which is stuck on the old 1.x line and conflicts with this project's testcontainers 2.x). Its `KafkaContainer` also isn't recognized by `@ServiceConnection` here — register `spring.kafka.bootstrap-servers` manually via `@DynamicPropertySource` instead (see `support/AbstractIntegrationTest`).
 
 ---
 
