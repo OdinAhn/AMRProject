@@ -40,6 +40,14 @@ public class Robot extends BaseAuditableEntity {
     @Column(name = "lifecycle_status", nullable = false, length = 20)
     private RobotLifecycleStatus lifecycleStatus;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "desired_config_id")
+    private RobotConfiguration desiredConfiguration;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "applied_config_id")
+    private RobotConfiguration appliedConfiguration;
+
     protected Robot() {
     }
 
@@ -54,6 +62,14 @@ public class Robot extends BaseAuditableEntity {
 
     public void changeLifecycleStatus(RobotLifecycleStatus status) {
         this.lifecycleStatus = status;
+    }
+
+    public void assignDesiredConfiguration(RobotConfiguration configuration) {
+        this.desiredConfiguration = configuration;
+    }
+
+    public void markConfigurationApplied(RobotConfiguration configuration) {
+        this.appliedConfiguration = configuration;
     }
 
     public Long getId() {
@@ -82,5 +98,13 @@ public class Robot extends BaseAuditableEntity {
 
     public RobotLifecycleStatus getLifecycleStatus() {
         return lifecycleStatus;
+    }
+
+    public RobotConfiguration getDesiredConfiguration() {
+        return desiredConfiguration;
+    }
+
+    public RobotConfiguration getAppliedConfiguration() {
+        return appliedConfiguration;
     }
 }

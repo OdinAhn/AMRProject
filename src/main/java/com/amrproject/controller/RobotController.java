@@ -1,8 +1,10 @@
 package com.amrproject.controller;
 
+import com.amrproject.dto.request.CreateRobotConfigurationRequest;
 import com.amrproject.dto.request.CreateRobotRequest;
 import com.amrproject.dto.request.InjectFaultRequest;
 import com.amrproject.dto.request.UpdateRobotLifecycleStatusRequest;
+import com.amrproject.dto.response.RobotConfigurationResponse;
 import com.amrproject.dto.response.RobotResponse;
 import com.amrproject.dto.response.RobotStateResponse;
 import com.amrproject.service.RobotService;
@@ -65,6 +67,20 @@ public class RobotController {
     @GetMapping("/{robotId}/state-history")
     public List<RobotStateResponse> getStateHistory(@PathVariable Long robotId) {
         return robotStateService.getStateHistory(robotId).stream().map(RobotStateResponse::from).toList();
+    }
+
+    @PostMapping("/{robotId}/configurations")
+    public ResponseEntity<RobotConfigurationResponse> createConfiguration(
+            @PathVariable Long robotId,
+            @Valid @RequestBody CreateRobotConfigurationRequest request
+    ) {
+        RobotConfigurationResponse response = RobotConfigurationResponse.from(robotService.createConfiguration(robotId, request));
+        return ResponseEntity.status(HttpStatus.CREATED).body(response);
+    }
+
+    @GetMapping("/{robotId}/configurations")
+    public List<RobotConfigurationResponse> getConfigurations(@PathVariable Long robotId) {
+        return robotService.getConfigurations(robotId).stream().map(RobotConfigurationResponse::from).toList();
     }
 
     /**

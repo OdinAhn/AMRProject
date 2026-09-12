@@ -7,6 +7,7 @@ import com.amrproject.domain.entity.MotionState;
 import com.amrproject.domain.entity.OperationMode;
 import com.amrproject.domain.entity.Robot;
 import com.amrproject.domain.entity.RobotCommand;
+import com.amrproject.domain.entity.RobotConfiguration;
 import com.amrproject.domain.entity.RobotCurrentState;
 import com.amrproject.domain.entity.RobotStateSnapshot;
 import com.amrproject.domain.entity.SafetyState;
@@ -83,6 +84,14 @@ public class SimulatorRobotGateway implements RobotGateway {
     /** 다음 dispatch 한 번에 적용될 장애를 예약한다. */
     public void injectFault(Long robotId, SimulatedFault fault) {
         pendingFaults.put(robotId, fault);
+    }
+
+    /**
+     * 실제 로봇 통신이 없어 요청 즉시 적용 성공으로 처리한다 (4단계 명령 처리와 동일한 방식).
+     */
+    @Override
+    public void applyConfiguration(RobotConfiguration configuration) {
+        configuration.getRobot().markConfigurationApplied(configuration);
     }
 
     private RobotCurrentState currentStateOf(Robot robot) {

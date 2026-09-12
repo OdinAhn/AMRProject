@@ -13,6 +13,8 @@ public record RobotResponse(
         String manufacturer,
         Long siteId,
         RobotLifecycleStatus lifecycleStatus,
+        Integer desiredConfigVersion,
+        Integer appliedConfigVersion,
         Instant createdAt,
         Instant updatedAt
 ) {
@@ -26,6 +28,8 @@ public record RobotResponse(
                 robot.getManufacturer(),
                 robot.getSite().getId(),
                 robot.getLifecycleStatus(),
+                robot.getDesiredConfiguration() != null ? robot.getDesiredConfiguration().getVersionNo() : null,
+                robot.getAppliedConfiguration() != null ? robot.getAppliedConfiguration().getVersionNo() : null,
                 robot.getCreatedAt(),
                 robot.getUpdatedAt()
         );

@@ -78,11 +78,16 @@
 | GET | `/api/admin/map-versions/{versionId}` | 버전 상세 (nodes/edges/zones 요약 포함) |
 | POST | `/api/admin/map-versions/{versionId}/validate` | 검증 실행 → 성공 시 `VALIDATED`, 실패 시 오류 목록 반환 |
 | POST | `/api/admin/map-versions/{versionId}/activate` | 활성화 → 기존 `ACTIVE` 버전은 `ARCHIVED`로 전환 |
+| POST | `/api/admin/map-versions/{versionId}/nodes` | 노드 생성 (`DRAFT`에서만 허용) |
 | GET | `/api/admin/map-versions/{versionId}/nodes` | 노드 목록 |
+| POST | `/api/admin/map-versions/{versionId}/edges` | 통로 생성 (`DRAFT`에서만 허용) |
 | GET | `/api/admin/map-versions/{versionId}/edges` | 통로 목록 |
+| POST | `/api/admin/map-versions/{versionId}/zones` | 구역 생성 (`DRAFT`에서만 허용, `nodeIds` 포함) |
 | GET | `/api/admin/map-versions/{versionId}/zones` | 구역 목록 |
 
 `VALIDATED`가 아닌 버전은 `activate` 호출 시 409. `DRAFT`/`ARCHIVED` 상태에서 노드·통로·구역을 조회할 수는 있지만, 운영 로직(배정/교통)은 오직 `ACTIVE` 버전만 사용한다.
+
+**6단계 구현 결과**: 지도 파일 저장소/형식이 아직 미정이라(DESIGN.md 미확정 항목) 파일 업로드→서버 파싱은 구현하지 않았다. 대신 노드/통로/구역 생성 엔드포인트(POST)를 임시 저작 도구로 추가했다 — `POST .../versions`의 `filePath`/`coordinateSystem`은 참고용 메타데이터일 뿐이고, 실제 토폴로지는 이 엔드포인트들로 직접 입력한다. 지도 파일 형식이 정해지면 파싱 파이프라인으로 교체하고 이 엔드포인트들은 유지하거나 내부 구현으로 재사용할 수 있다.
 
 ### 2.4 로봇 (Robot)
 
