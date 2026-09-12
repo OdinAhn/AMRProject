@@ -41,5 +41,10 @@ services:
       KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
 
+  mosquitto:
+    image: eclipse-mosquitto:1.6.15
+    ports:
+      - "1883:1883"
+
 volumes:
   amr_mysql_data:

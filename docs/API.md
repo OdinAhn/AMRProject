@@ -244,7 +244,7 @@ Idempotency-Key: 8e2f1c...
 
 결과 회신 방식 중 **웹훅은 미구현** — DESIGN.md의 "기존 WMS/WCS 유무" 미확정 항목과 연동돼 있어(콜백 URL/인증 방식이 실제 대상에 따라 달라짐), 실제 연동 대상이 정해진 뒤 확정한다. 폴링(`GET`)만으로 "외부 요청부터 결과 회신까지 추적"은 가능하다.
 
-실제 로봇 통신(제조사 규격)·리프트/컨베이어 등 설비 인터록·WMS 재고 연동은 여전히 미구현이다 — 전부 어떤 벤더/시스템을 쓸지가 안 정해진 조달 결정이라 임의로 스펙을 만들지 않는다. 로봇 쪽은 `RobotGateway` 포트(§7 참고)가 이미 이 교체를 위해 존재하므로, 실제 규격이 정해지면 새 어댑터 구현체만 추가하면 된다.
+리프트/컨베이어 등 설비 인터록·WMS 재고 연동은 여전히 미구현이다 — 어떤 벤더/시스템을 쓸지가 안 정해진 조달 결정이라 임의로 스펙을 만들지 않는다. 로봇 통신은 18단계에서 MQTT/VDA5050 어댑터가 옵트인으로 추가됐다(§7 참고) — 다만 이는 실제 로봇 벤더 선정과는 별개다: 여전히 실제 로봇은 없고, VDA5050을 지원하지 않는 벤더가 선정되면 `RobotGateway` 포트의 또 다른 구현체로 교체하면 된다.
 
 ---
 
@@ -256,6 +256,16 @@ DESIGN.md §1/§4는 "로봇 없는 개발: 실제 통신 계약을 모사하는
 - **4단계 구현 결과**: 로봇 통신 규격이 아직 미정이라, 실제 네트워크/브로커 대신 `RobotGateway` 인터페이스(포트) + `SimulatorRobotGateway`(인프로세스 어댑터)로 구현했다. `TaskService`가 MOVE 타입 단계를 시작할 때 `RobotCommand`를 만들어 이 게이트웨이에 넘기면, 시뮬레이터가 같은 트랜잭션 안에서 즉시 SENT→ACCEPTED→RUNNING→SUCCEEDED(또는 FAILED/UNKNOWN)까지 처리하고 `command_events`/`robot_current_states`/`robot_state_snapshots`를 기록한다. 실제 로봇 통신 규격이 정해지면 같은 `RobotGateway` 인터페이스의 다른 구현체(MQTT 등)로 교체하면 된다 — `TaskService`나 이 문서의 다른 API는 바뀌지 않는다.
 - 관리자가 시뮬레이터에 장애를 주입하는 기능은 운영 전용 엔드포인트로 추가했다: `POST /api/admin/robots/{robotId}/simulator/faults` (body: `{"type": "COMMAND_FAILURE" | "COMMUNICATION_LOSS"}`) — 해당 로봇에 대한 다음 명령 디스패치 한 번에만 적용되고 소비된다. 실제 제품 기능이 아니라 테스트/운영 보조 도구이며, 메모리에만 저장돼 재시작 시 초기화된다.
 - 로봇 상태 조회는 §2.4에 이미 정의된 `GET /api/admin/robots/{robotId}/state`, `GET /api/admin/robots/{robotId}/state-history`를 그대로 사용한다 (4단계에서 실제 구현).
+
+### MQTT/VDA 5050 어댑터 (18단계, 옵트인)
+
+`RobotGateway`의 두 번째 구현체 `MqttRobotGateway`를 추가했다 — `app.robot-gateway.mqtt.enabled=true`(기본 `false`)일 때만 활성화되고, 꺼져 있으면 지금처럼 `SimulatorRobotGateway`가 그대로 쓰인다. 실제 로봇은 여전히 없어 로컬 MQTT 브로커(Mosquitto)와 테스트용 "가상 VDA5050 로봇"으로만 검증했다.
+
+- **토픽**: 로봇당 `uagv/v2/{manufacturer}/{serialNumber}/order`(발행)와 `.../state`(구독) 두 개만 쓴다. `connection` 토픽(LWT 기반 온라인·오프라인 알림)은 이번 범위에 없다.
+- **VDA5050 축소 구현**: `order`는 목적지 station 하나짜리 단일 노드(`nodes: [{nodeId, sequenceId, released}]`)만 담는다 — edges/actions 등 전체 스펙의 나머지는 구현하지 않았다. `state`는 `orderId`/`driving`/`errors`/`batteryState.batteryCharge`만 본다. `driving:false`(또는 `errors` 존재)인 state가 오면 주문이 끝난 것으로 판단한다.
+- **동기식-타임아웃 한계**: `RobotGateway.dispatch()`는 계약상 동기식이지만 실제 MQTT 통신은 비동기다. 이 어댑터는 주문을 발행한 뒤 일치하는 `orderId`의 state를 **3초** 동안 기다렸다가 결과를 반환한다 — 3초 안에 못 받으면 `UNKNOWN`(로봇 상태는 OFFLINE으로 보고돼 14단계 `ROBOT_COMM_LOST` 알람과 그대로 연동된다). **실제 로봇은 응답이 이보다 훨씬 늦을 수 있어 이 방식은 프로덕션에 적합하지 않다** — 진짜 비동기 처리로 전환하려면 `TaskService`의 명령 완료 처리 흐름 자체를 재설계해야 한다(이번 범위 밖).
+- **설정 적용은 미구현**: `applyConfiguration()`은 시뮬레이터와 동일하게 즉시 성공 처리만 한다 — 실제 로봇에 설정을 적용하는 프로토콜은 정해지지 않았다.
+- 관련 환경 변수: `ROBOT_GATEWAY_MQTT_ENABLED`, `MQTT_BROKER_URL`(기본 `tcp://localhost:1883`), `MQTT_MANUFACTURER`(기본 `AMRProject`).
 
 ---
 

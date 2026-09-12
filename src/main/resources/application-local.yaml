@@ -23,6 +23,11 @@ spring:
 app:
   token:
     secret: ${TOKEN_SIGNING_SECRET:local-dev-only-secret-change-me}
+  robot-gateway:
+    mqtt:
+      enabled: ${ROBOT_GATEWAY_MQTT_ENABLED:false}
+      broker-url: ${MQTT_BROKER_URL:tcp://localhost:1883}
+      manufacturer: ${MQTT_MANUFACTURER:AMRProject}
 
 logging:
   level:
