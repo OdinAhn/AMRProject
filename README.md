@@ -71,9 +71,9 @@ Flyway 마이그레이션은 `src/main/resources/db/migration`에 있으며, 애
 | 문서 | 내용 |
 |---|---|
 | `docs/DESIGN.md` | 전체 설계, 미확정 항목, 상태 모델, 장애 정책, 구현 단계별 완료 기준 |
-| `docs/API.md` | 엔드포인트별 요청/응답, `allowedActions` 계약 |
-| `docs/STATE_MACHINES.md` | 작업/로봇 등 상태 전이 다이어그램 |
-| `docs/ERD.md` | 테이블 구조 |
+| `docs/API.md` | 엔드포인트별 요청/응답, `allowedActions` 계약 (알람·SSE 등 **미구현** 항목 표시 포함) |
+| `docs/STATE_MACHINES.md` | 작업/로봇 등 상태 전이 다이어그램 (일부 **미구현** 표시 포함) |
+| `docs/ERD.md` | 테이블 구조 (일부 **미구현** 표시 포함) |
 | `AGENTS.md` | 이 저장소에서 작업할 때 지키는 개발 규칙(계층 구조, 변경 범위, 테스트 컨벤션 등) |
 
 ## 진행 상태
