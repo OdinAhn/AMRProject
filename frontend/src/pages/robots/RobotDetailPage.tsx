@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link, useParams } from "react-router";
+import { RobotBasicInfoForm } from "../../components/robots/RobotBasicInfoForm";
 import { RobotConfigForm } from "../../components/robots/RobotConfigForm";
 import { RobotConfigHistoryTable } from "../../components/robots/RobotConfigHistoryTable";
 import { RobotLifecyclePanel } from "../../components/robots/RobotLifecyclePanel";
@@ -13,12 +14,14 @@ import type {
   RobotLifecycleStatus,
   RobotResponse,
   RobotStateResponse,
+  UpdateRobotRequest,
 } from "../../types/api";
 
 export function RobotDetailPage() {
   const { robotId } = useParams<{ robotId: string }>();
   const queryClient = useQueryClient();
   const [configError, setConfigError] = useState<string | null>(null);
+  const [basicInfoError, setBasicInfoError] = useState<string | null>(null);
 
   const robotQuery = useQuery({
     queryKey: ["robots", robotId],
@@ -34,6 +37,15 @@ export function RobotDetailPage() {
   const configsQuery = useQuery({
     queryKey: ["robots", robotId, "configurations"],
     queryFn: () => api.get<RobotConfigurationResponse[]>(`/api/admin/robots/${robotId}/configurations`),
+  });
+
+  const updateBasicInfo = useMutation({
+    mutationFn: (body: UpdateRobotRequest) => api.patch<RobotResponse>(`/api/admin/robots/${robotId}`, body),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["robots", robotId] });
+      setBasicInfoError(null);
+    },
+    onError: (err) => setBasicInfoError(err instanceof ApiError ? err.message : "기본정보 수정에 실패했습니다."),
   });
 
   const updateLifecycle = useMutation({
@@ -65,6 +77,16 @@ export function RobotDetailPage() {
           </Link>
         }
       />
+
+      {robot && (
+        <RobotBasicInfoForm
+          key={robot.id}
+          robot={robot}
+          onSubmit={(body) => updateBasicInfo.mutate(body)}
+          isPending={updateBasicInfo.isPending}
+          error={basicInfoError}
+        />
+      )}
 
       {robot && <RobotLifecyclePanel robot={robot} onChangeStatus={(status) => updateLifecycle.mutate(status)} />}
 

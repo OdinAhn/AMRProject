@@ -4,7 +4,7 @@ AMRProject 백엔드(Spring Boot)를 위한 관리자·작업자 화면. React 1
 
 프로젝트 전체 개요와 백엔드 실행 방법은 저장소 루트의 [README.md](../README.md)를 참고한다.
 
-**진행 상태**: 11~12단계(관리자 화면, 작업자 화면)에 더해 19단계(알람 화면, 실시간 이벤트 화면)까지 구현돼 있다. 20단계에서 11~19단계 화면 전부를 페이지(데이터 조회/변경 + 조합만 남김) + `src/components/<domain>/` 하위 소형 컴포넌트로 리팩터링했다(기능 변경 없음). 17단계(로봇 기본정보 수정)와 18단계(MQTT/VDA5050)는 화면이 필요 없거나(MQTT는 순수 백엔드 인프라) 아직 화면을 안 붙였다 — 자세한 내용은 아래 "참고" 절 참고.
+**진행 상태**: 11~12단계(관리자 화면, 작업자 화면)에 더해 19단계(알람 화면, 실시간 이벤트 화면)까지 구현돼 있다. 20단계에서 11~19단계 화면 전부를 페이지(데이터 조회/변경 + 조합만 남김) + `src/components/<domain>/` 하위 소형 컴포넌트로 리팩터링했다(기능 변경 없음). 21단계에서 로봇 상세 화면에 기본정보(이름/모델/제조사) 수정 폼을 추가했다(17단계 API `PATCH /api/admin/robots/{robotId}`를 사용). 18단계(MQTT/VDA5050)는 순수 백엔드 인프라라 화면이 필요 없다 — 자세한 내용은 아래 "참고" 절 참고.
 
 ## 실행
 
@@ -32,7 +32,7 @@ npm run lint    # oxlint
 | `src/components/ui.tsx` | 공용 UI 프리미티브 (버튼, 카드, 뱃지, 폼 요소, 테이블 등) |
 | `src/components/auth/` | `LoginForm` |
 | `src/components/sites/` | `SiteCreateForm`, `SiteTable`, `StationCreateForm`, `StationTable` |
-| `src/components/robots/` | `RobotCreateForm`, `RobotTable`, `RobotLifecyclePanel`, `RobotStatePanel`, `RobotConfigForm`, `RobotConfigHistoryTable` |
+| `src/components/robots/` | `RobotCreateForm`, `RobotTable`, `RobotBasicInfoForm`, `RobotLifecyclePanel`, `RobotStatePanel`, `RobotConfigForm`, `RobotConfigHistoryTable` |
 | `src/components/maps/` | `MapCreateForm`, `MapTable`, `VersionCreateForm`, `VersionTable`, `MapVersionHeaderCard`, `NodePanel`, `EdgePanel`, `ZonePanel` |
 | `src/components/tasks/` | `TaskFilters`, `TaskTable`, `TaskActionsPanel`, `TaskStepsTable`, `TaskEventsTable` |
 | `src/components/dispatch/` | `DispatchForm`, `DispatchResultSummary` |
@@ -59,5 +59,5 @@ npm run lint    # oxlint
 
 - 백엔드 API 계약: `../docs/API.md` (응답의 `allowedActions` 배열로 화면에 노출할 버튼을 결정한다). 문서에 **미구현**으로 표시된 엔드포인트는 실제로 호출할 수 없다 — 화면 구현 전에 해당 컨트롤러가 실제로 있는지 확인한다.
 - **실시간 이벤트(`/events`)는 브라우저 네이티브 `EventSource`를 쓴다** — 커스텀 헤더를 못 보내 `Authorization` 대신 `?access_token=` 쿼리 파라미터로 토큰을 붙인다(`useEventStream.ts`). 백엔드가 이 경로에 한해서만 쿼리 파라미터 토큰을 허용한다(19단계, `TokenAuthenticationFilter`) — 토큰이 URL에 노출되는 트레이드오프는 `../docs/API.md` §5에 명시. 기존 화면들(작업 목록 등)은 여전히 TanStack Query `refetchInterval` 폴링을 쓴다 — 전면 SSE 전환은 하지 않았다.
-- 로봇 기본정보 수정 API(`PATCH /api/admin/robots/{robotId}`, 17단계)는 백엔드엔 있지만 아직 화면이 없다. MQTT/VDA5050(18단계)은 순수 백엔드 인프라라 애초에 화면이 필요 없다.
+- 로봇 기본정보 수정(`PATCH /api/admin/robots/{robotId}`, 17단계)은 로봇 상세 화면의 `RobotBasicInfoForm`(21단계)으로 구현돼 있다. MQTT/VDA5050(18단계)은 순수 백엔드 인프라라 애초에 화면이 필요 없다.
 - 저장소 전체 개발 규칙: `../AGENTS.md`

@@ -267,6 +267,12 @@ export interface UpdateRobotLifecycleStatusRequest {
   lifecycleStatus: RobotLifecycleStatus;
 }
 
+export interface UpdateRobotRequest {
+  name?: string | null;
+  model?: string | null;
+  manufacturer?: string | null;
+}
+
 export interface CreateRobotConfigurationRequest {
   maxPayloadKg: number;
   maxSpeedMps: number;
