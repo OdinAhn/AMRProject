@@ -196,34 +196,38 @@ Idempotency-Key: 8e2f1c...
 
 ---
 
-## 5. 실시간 이벤트 (공통) — **미구현**
+## 5. 실시간 이벤트 (공통)
 
-이 섹션 전체가 아직 구현되지 않은 설계 초안이다. `GET /api/events/stream`은 존재하지 않으며, 11~12단계 프론트엔드(관리자/작업자 화면)는 TanStack Query의 `refetchInterval`(예: 5초) 폴링으로 대체했다. 이벤트 팬아웃 인프라(§8 열린 질문 참고)가 확정되면 이 섹션을 실제 구현으로 교체한다.
+**15단계 구현**: `GET /api/events/stream`을 Redis Pub/Sub 기반으로 구현했다. `outbox_events`(Task 이벤트는 3단계부터, 알람 이벤트는 14단계부터 기록됨)를 `OutboxPublisher`가 1초 주기로 폴링해 Redis 채널 `amr.events`로 발행하고 `PUBLISHED`로 마킹한다 — 로봇 상태 보고(고빈도)는 스로틀링 설계가 아직 없어 이번 범위에서 제외했다(아래 열린 질문 참고).
 
 | Method | Path | 설명 |
 |---|---|---|
-| GET | `/api/events/stream` | (설계 초안) SSE 스트림 (query: `siteId`, `stationId`, `Last-Event-ID` 헤더로 재접속 복구) |
+| GET | `/api/events/stream` | SSE 스트림. `Last-Event-ID` 헤더로 재접속 시 그 이후 이벤트를 먼저 재생한 뒤 실시간 구독으로 전환한다. **`siteId`/`stationId` 쿼리 필터는 미구현** — 전체 이벤트를 그대로 전달하므로 클라이언트가 필요하면 걸러 써야 한다 |
 
 ### 이벤트 봉투(envelope)
 
 ```json
 {
-  "eventId": "018f...-ulid",
-  "eventType": "task.step.completed",
-  "aggregateType": "TASK",
-  "aggregateId": 4231,
-  "stateVersion": 7,
-  "payload": { "...": "..." },
-  "occurredAt": "2026-09-11T10:03:21Z"
+  "eventId": 8,
+  "eventType": "alarm.raised",
+  "aggregateType": "ALARM",
+  "aggregateId": 1,
+  "stateVersion": null,
+  "payload": "작업이 복구 불가로 최종 실패 처리되었습니다: ...",
+  "occurredAt": "2026-09-12T11:22:59.736161Z"
 }
 ```
 
-- `eventId`는 정렬 가능한 ULID. 클라이언트는 재접속 시 `Last-Event-ID`로 누락분을 복구하거나, 복구 실패 시 `GET /api/worker/stations/{stationId}/tasks`로 전체 재조회한다.
-- `stateVersion`은 대상 리소스(예: `robot_current_states.state_version`)의 버전과 비교해 오래된 이벤트를 무시하는 데 사용한다.
-- 이벤트 타입은 최소 두 그룹으로 분리해 **위치 업데이트가 완료 이벤트를 밀어내지 않도록** 한다.
-  - 고빈도/스로틀 대상: `robot.state.updated` (위치·배터리 등, 초 단위)
-  - 필수 전달 대상: `task.step.completed`, `task.status.changed`, `alarm.raised` 등
-- 여러 API 인스턴스에 연결된 사용자에게 이벤트를 전달하는 방식(Redis Pub/Sub, Kafka 등)은 **DESIGN.md §7의 Redis/Kafka 도입 결정 이후 확정**한다. 초기 구현(1~2 인스턴스)에서는 단일 프로세스 in-memory 브로드캐스트로 시작 가능.
+- `eventId`는 설계 초안의 ULID 대신 **`outbox_events.id`(BIGINT AUTO_INCREMENT)**를 그대로 쓴다 — 단일 DB 시스템이라 정렬 가능한 정수 ID로 충분하다. `Last-Event-ID` 헤더도 이 정수값을 그대로 받는다.
+- `stateVersion`은 Task/Alarm에는 별도 버전 카운터가 없어 **항상 `null`**이다. 로봇 상태 이벤트가 추가되면(아래 열린 질문) `robot_current_states.state_version`으로 채워질 예정이다.
+- `payload`는 `outbox_events.payload_json`을 그대로 문자열로 전달한다 — 대부분의 Task 이벤트는 `null`이고, 취소 사유·알람 메시지처럼 실제 내용이 있는 경우만 채워진다. 전체 최신 상태가 필요하면 클라이언트가 해당 리소스를 다시 조회한다(예: `GET /api/worker/stations/{stationId}/tasks`).
+- 재접속 복구 실패 시(너무 오래돼 필요한 백로그가 없는 등) 클라이언트는 전체 재조회로 대체한다.
+
+### 열린 질문 (미구현 남은 부분)
+
+- 로봇 상태 보고(고빈도)를 이 스트림에 포함하는 것 — 위치 업데이트가 완료 이벤트를 밀어내지 않도록 스로틀링(`robot.state.updated`를 초 단위로 묶어 보내는 등) 설계가 필요하다.
+- `siteId`/`stationId` 쿼리 필터 — `outbox_events`에 siteId가 없어 Task를 다시 join해야 한다.
+- Kafka로의 이벤트 로그 발행(16단계 예정) — 지금은 Redis로만 발행하고 `outbox_events`가 유일한 영속 이력이다.
 
 ---
 
@@ -257,7 +261,7 @@ DESIGN.md §1/§4는 "로봇 없는 개발: 실제 통신 계약을 모사하는
 
 - ~~인증 방식~~ — 10단계에서 자체 서명 토큰으로 확정(§1 참고). 로봇 자체 인증 방식(게이트웨이 mTLS 등)과 외부 시스템(WMS/WCS) 인증은 여전히 미정 — 로봇 통신 규격/WMS 연동 대상 미정과 연동돼 있다.
 - `report-out-of-stock` 이후 작업 진행 정책과 WMS 재고 반영 여부.
-- 실시간 이벤트 팬아웃 인프라(Redis Pub/Sub vs Kafka vs in-memory) — 인스턴스 확장 시점에 확정.
+- ~~실시간 이벤트 팬아웃 인프라~~ — 15단계에서 Redis Pub/Sub으로 확정(§5 참고). Kafka는 팬아웃이 아니라 이벤트 로그 용도로 16단계에서 추가 예정.
 - 외부 연동 결과 회신 방식(webhook/polling)과 인증.
 - 관리자 "지도 검증(`validate`)"의 구체적 검증 규칙(연결성, 고립 노드, 폭 등) — 지도 데이터 형식이 정해진 뒤 상세화.
 - 상태 전이 API의 "이미 완료된 요청은 200으로 현재 상태 반환" 규칙이 모든 전이 액션에 예외 없이 적용 가능한지 — 예: `report-out-of-stock`처럼 부작용이 큰 액션도 재요청 시 아무 일 없다는 듯 200을 줘도 되는지는 액션별로 재검토 필요.

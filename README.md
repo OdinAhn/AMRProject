@@ -22,7 +22,7 @@
 ## 백엔드 실행
 
 ```bash
-# MySQL 기동
+# MySQL + Redis 기동
 docker compose up -d
 
 # 애플리케이션 실행 (local 프로필: MySQL 8.4, localhost:3306)
@@ -37,6 +37,7 @@ SPRING_PROFILES_ACTIVE=local TOKEN_SIGNING_SECRET=<임의의-서명-키> ./gradl
 |---|---|---|
 | `DB_HOST` / `DB_PORT` / `DB_NAME` | `localhost` / `3306` / `amr_project` | MySQL 접속 정보 |
 | `DB_USERNAME` / `DB_PASSWORD` | `amr` / `amr` | MySQL 계정 |
+| `REDIS_HOST` / `REDIS_PORT` | `localhost` / `6379` | 실시간 이벤트(SSE) 팬아웃용 Redis 접속 정보 |
 | `TOKEN_SIGNING_SECRET` | (필수, 기본값 없음) | 액세스 토큰 서명용 비밀키 |
 | `TOKEN_EXPIRY_MINUTES` | `480` | 액세스 토큰 만료 시간(분) |
 
@@ -78,4 +79,4 @@ Flyway 마이그레이션은 `src/main/resources/db/migration`에 있으며, 애
 
 ## 진행 상태
 
-`docs/DESIGN.md` §11에 정의된 13단계 중 1~12단계(프로젝트 기반부터 작업자 화면까지)를 구현·검증 완료했다. 13단계(현장 검증)는 실제 로봇·실제 현장이 필요한 운영 활동으로, 이 저장소의 소프트웨어 구현 범위에는 포함하지 않는다. 이후 사용자 요청으로 확장 단계(14. 알람)를 추가 구현 중이다.
+`docs/DESIGN.md` §11에 정의된 13단계 중 1~12단계(프로젝트 기반부터 작업자 화면까지)를 구현·검증 완료했다. 13단계(현장 검증)는 실제 로봇·실제 현장이 필요한 운영 활동으로, 이 저장소의 소프트웨어 구현 범위에는 포함하지 않는다. 이후 사용자 요청으로 확장 단계(14. 알람, 15. 실시간 이벤트)를 추가 구현 중이다.

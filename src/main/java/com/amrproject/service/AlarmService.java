@@ -6,10 +6,12 @@ import com.amrproject.domain.entity.AlarmSeverity;
 import com.amrproject.domain.entity.AlarmSourceType;
 import com.amrproject.domain.entity.AlarmStatus;
 import com.amrproject.domain.entity.AlarmType;
+import com.amrproject.domain.entity.OutboxEvent;
 import com.amrproject.domain.entity.User;
 import com.amrproject.exception.EntityNotFoundException;
 import com.amrproject.repository.AlarmEventRepository;
 import com.amrproject.repository.AlarmRepository;
+import com.amrproject.repository.OutboxEventRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -27,10 +29,12 @@ public class AlarmService {
 
     private final AlarmRepository alarmRepository;
     private final AlarmEventRepository alarmEventRepository;
+    private final OutboxEventRepository outboxEventRepository;
 
-    public AlarmService(AlarmRepository alarmRepository, AlarmEventRepository alarmEventRepository) {
+    public AlarmService(AlarmRepository alarmRepository, AlarmEventRepository alarmEventRepository, OutboxEventRepository outboxEventRepository) {
         this.alarmRepository = alarmRepository;
         this.alarmEventRepository = alarmEventRepository;
+        this.outboxEventRepository = outboxEventRepository;
     }
 
     @Transactional
@@ -40,6 +44,7 @@ public class AlarmService {
         }
         Alarm alarm = alarmRepository.save(new Alarm(alarmType, severity, sourceType, sourceId, message));
         alarmEventRepository.save(new AlarmEvent(alarm, "RAISED", message, null));
+        recordOutboxEvent(alarm, "alarm.raised", message);
     }
 
     @Transactional
@@ -48,6 +53,7 @@ public class AlarmService {
                 .ifPresent(alarm -> {
                     alarm.autoResolve();
                     alarmEventRepository.save(new AlarmEvent(alarm, "RESOLVED", "자동 해소", null));
+                    recordOutboxEvent(alarm, "alarm.resolved", null);
                 });
     }
 
@@ -59,6 +65,7 @@ public class AlarmService {
         }
         alarm.acknowledge(actor);
         alarmEventRepository.save(new AlarmEvent(alarm, "ACKNOWLEDGED", null, actor));
+        recordOutboxEvent(alarm, "alarm.acknowledged", null);
         return alarm;
     }
 
@@ -70,7 +77,12 @@ public class AlarmService {
         }
         alarm.resolve(actor);
         alarmEventRepository.save(new AlarmEvent(alarm, "RESOLVED", null, actor));
+        recordOutboxEvent(alarm, "alarm.resolved", null);
         return alarm;
+    }
+
+    private void recordOutboxEvent(Alarm alarm, String eventType, String payload) {
+        outboxEventRepository.save(new OutboxEvent("ALARM", alarm.getId(), eventType, payload));
     }
 
     public Alarm getById(Long alarmId) {

@@ -14,9 +14,10 @@ Backend (`src/`):
 - Spring Boot 4.x, Spring MVC (webmvc), Spring Data JPA (Hibernate 7)
 - Spring Security 7 — custom self-signed HMAC-SHA256 access tokens (`security/AccessTokenService`), not a JWT library
 - MySQL 8.4, Flyway migrations
+- Redis (Pub/Sub) — real-time event fanout for `GET /api/events/stream` (stage 15); a scheduled `OutboxPublisher` relays `outbox_events` rows to it. Kafka is planned (stage 16) for a separate durable event-log role, not fanout.
 - Jackson 3 — note the package is `tools.jackson.*`, not `com.fasterxml.jackson.*`
 - springdoc-openapi (Swagger UI / OpenAPI)
-- JUnit 5, Testcontainers (MySQL) for integration tests, Spring Security Test
+- JUnit 5, Testcontainers (MySQL + Redis, via `GenericContainer` + `@ServiceConnection`) for integration tests, Spring Security Test
 
 Frontend (`frontend/`):
 
@@ -526,7 +527,7 @@ This project has two, separate layers — keep both accurate when endpoints chan
 - Access tokens are self-signed HMAC-SHA256, not JWTs from a library — see `security/AccessTokenService`. Don't introduce a JWT dependency for this.
 - The frontend talks to the backend through the Vite dev proxy (`frontend/vite.config.ts`, `/api` → `localhost:8080`), not backend CORS config — prefer extending the proxy setup over adding CORS headers for local dev needs.
 - Task/robot responses include a backend-computed `allowedActions` array; the frontend renders buttons purely from that array rather than re-deriving allowed transitions client-side. Keep new actions consistent with this pattern.
-- `docs/API.md`, `docs/ERD.md`, and `docs/STATE_MACHINES.md` are design drafts (`v0`) written before/alongside implementation, so some documented endpoints/tables were never built (e.g. `loads`/`load_transfer_events`, `inbox_messages`, `audit_logs`, the SSE event stream) — these are explicitly marked **미구현** where they appear. Check for that marker before assuming a documented endpoint or table actually exists in code; grep the controller/entity/migration directly to confirm. (Alarms — `alarms`/`alarm_events` — were implemented in stage 14 and are no longer in this unimplemented list.)
+- `docs/API.md`, `docs/ERD.md`, and `docs/STATE_MACHINES.md` are design drafts (`v0`) written before/alongside implementation, so some documented endpoints/tables were never built (e.g. `loads`/`load_transfer_events`, `inbox_messages`, `audit_logs`) — these are explicitly marked **미구현** where they appear. Check for that marker before assuming a documented endpoint or table actually exists in code; grep the controller/entity/migration directly to confirm. (Alarms — stage 14 — and the SSE event stream — stage 15, Redis-backed — are implemented and no longer in this unimplemented list.)
 
 ---
 
