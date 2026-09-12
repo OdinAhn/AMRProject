@@ -22,9 +22,11 @@ import com.amrproject.domain.entity.TaskStepStatus;
 import com.amrproject.domain.entity.TaskStepType;
 import com.amrproject.domain.entity.TaskType;
 import com.amrproject.domain.entity.User;
+import com.amrproject.dto.request.CreateExternalTaskRequest;
 import com.amrproject.dto.request.CreateTaskRequest;
 import com.amrproject.dto.request.RecoveryResolution;
 import com.amrproject.exception.EntityNotFoundException;
+import com.amrproject.exception.InvalidRequestException;
 import com.amrproject.exception.InvalidStateTransitionException;
 import com.amrproject.repository.ChargingSessionRepository;
 import com.amrproject.repository.OutboxEventRepository;
@@ -109,9 +111,41 @@ public class TaskService {
                 return new TaskCreationResult(existing.get(), false);
             }
         }
+        return createTransportTask(request.originStationId(), request.destinationStationId(), requestedBy, idempotencyKey, null);
+    }
 
-        Station origin = stationService.getById(request.originStationId());
-        Station destination = stationService.getById(request.destinationStationId());
+    /**
+     * 외부 시스템 작업 접수 (9단계, API.md §6). 작업자 API와 달리 Idempotency-Key
+     * 헤더가 필수가 아니다 — 호출자의 externalRef 자체가 멱등키 역할을 할 수 있어
+     * 둘 중 하나만 있으면 된다.
+     */
+    @Transactional
+    public TaskCreationResult createExternalTask(CreateExternalTaskRequest request, String idempotencyKey) {
+        if (idempotencyKey == null && request.externalRef() == null) {
+            throw new InvalidRequestException(
+                    "EXTERNAL_TASK_KEY_REQUIRED", "Idempotency-Key 헤더 또는 externalRef 중 하나는 필수입니다."
+            );
+        }
+        if (idempotencyKey != null) {
+            Optional<Task> existing = taskRepository.findByIdempotencyKey(idempotencyKey);
+            if (existing.isPresent()) {
+                return new TaskCreationResult(existing.get(), false);
+            }
+        }
+        if (request.externalRef() != null) {
+            Optional<Task> existing = taskRepository.findByExternalRef(request.externalRef());
+            if (existing.isPresent()) {
+                return new TaskCreationResult(existing.get(), false);
+            }
+        }
+        return createTransportTask(request.originStationId(), request.destinationStationId(), null, idempotencyKey, request.externalRef());
+    }
+
+    private TaskCreationResult createTransportTask(
+            Long originStationId, Long destinationStationId, User requestedBy, String idempotencyKey, String externalRef
+    ) {
+        Station origin = stationService.getById(originStationId);
+        Station destination = stationService.getById(destinationStationId);
         Site site = origin.getSite();
 
         Task task = new Task(
@@ -123,7 +157,7 @@ public class TaskService {
                 destination,
                 requestedBy,
                 idempotencyKey,
-                null
+                externalRef
         );
         taskRepository.save(task);
 
@@ -134,6 +168,13 @@ public class TaskService {
 
         recordEvent(task, "CREATED", null, task.getStatus(), requestedBy);
         return new TaskCreationResult(task, true);
+    }
+
+    public Task getByExternalRef(String externalRef) {
+        return taskRepository.findByExternalRef(externalRef)
+                .orElseThrow(() -> new EntityNotFoundException(
+                        "TASK_NOT_FOUND", "externalRef로 작업을 찾을 수 없습니다: " + externalRef
+                ));
     }
 
     /**
