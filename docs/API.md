@@ -150,15 +150,18 @@
 
 | Method | Path | 설명 |
 |---|---|---|
-| GET | `/api/worker/stations` | 내 권한이 있는 작업장 목록 |
-| GET | `/api/worker/stations/{stationId}/tasks` | 해당 작업장의 진행 중/대기 작업 |
+| GET | `/api/worker/stations` | 내 권한이 있는 작업장 목록 (`user_station_assignments` 기준) |
+| GET | `/api/worker/stations/{stationId}/tasks` | 해당 작업장의 진행 중/대기 작업 (`SUCCEEDED`/`CANCELED`/`FAILED` 제외) |
+| GET | `/api/worker/sites/{siteId}/stations` | (12단계) 로봇 호출 시 목적지 선택용 — 그 site의 station 전체 조회 |
 | GET | `/api/worker/tasks/{taskId}` | 작업 상세 + `allowedActions` |
 | POST | `/api/worker/tasks` | **로봇 호출** — 운반 요청 생성 (`Idempotency-Key` 필수) |
 | POST | `/api/worker/tasks/{taskId}/dispatch` | **로봇 보내기** — 적재 완료 확인 후 다음 이동 요청 |
 | POST | `/api/worker/tasks/{taskId}/confirm-unload` | **하역 완료** — 물품 인계 확인, 단계 완료 |
-| POST | `/api/worker/tasks/{taskId}/report-out-of-stock` | **재고 없음** — 예외 기록, 진행 보류 |
-| POST | `/api/worker/tasks/{taskId}/report-unavailable` | **작업 불가** — 사유 기록, 운영자 처리 요청 |
-| POST | `/api/worker/tasks/{taskId}/cancel` | **호출 취소** |
+| POST | `/api/worker/tasks/{taskId}/report-out-of-stock` | **재고 없음** — **미구현** (8단계에서 정책 미정으로 확정, `loads`/`load_transfer_events` 없이는 구현 안 함) |
+| POST | `/api/worker/tasks/{taskId}/report-unavailable` | **작업 불가** — 사유 기록, `RECOVERY_REQUIRED`로 전이(8단계) |
+| POST | `/api/worker/tasks/{taskId}/cancel` | **호출 취소** — `AdminTaskController`와 동일한 `TaskService.requestCancel` 재사용(12단계) |
+
+**12단계 구현**: 위 세 엔드포인트(`GET /stations`, `GET /stations/{id}/tasks`, `POST .../cancel`)가 이번에 실제로 채워졌다. `GET /api/worker/stations/{stationId}/tasks`와 `GET /api/worker/sites/{siteId}/stations`는 station 단위 접근 제어(요청한 사용자가 그 station/site에 실제 권한이 있는지)를 아직 검사하지 않는다 — role 기반 검사(`WORKER`/`ADMIN`)만 적용된다. 세밀한 소유권 검사는 알려진 제한사항으로 남긴다.
 
 ### 로봇 호출 요청 예시
 

@@ -8,6 +8,7 @@ const NAV_ITEMS = [
   { to: "/tasks", label: "작업" },
   { to: "/dispatch", label: "디스패치" },
   { to: "/users", label: "사용자" },
+  { to: "/worker/stations", label: "작업자 화면" },
 ];
 
 export function AdminLayout() {

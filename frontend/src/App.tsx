@@ -1,5 +1,6 @@
 import { Navigate, Route, Routes } from "react-router";
 import { AdminLayout } from "./layouts/AdminLayout";
+import { WorkerLayout } from "./layouts/WorkerLayout";
 import { ProtectedRoute } from "./lib/auth";
 import { DispatchPage } from "./pages/dispatch/DispatchPage";
 import { LoginPage } from "./pages/LoginPage";
@@ -14,6 +15,8 @@ import { TaskDetailPage } from "./pages/tasks/TaskDetailPage";
 import { TasksPage } from "./pages/tasks/TasksPage";
 import { UserDetailPage } from "./pages/users/UserDetailPage";
 import { UsersPage } from "./pages/users/UsersPage";
+import { WorkerStationTasksPage } from "./pages/worker/WorkerStationTasksPage";
+import { WorkerStationsPage } from "./pages/worker/WorkerStationsPage";
 
 function App() {
   return (
@@ -40,6 +43,18 @@ function App() {
         <Route path="dispatch" element={<DispatchPage />} />
         <Route path="users" element={<UsersPage />} />
         <Route path="users/:userId" element={<UserDetailPage />} />
+      </Route>
+      <Route
+        path="/worker"
+        element={
+          <ProtectedRoute>
+            <WorkerLayout />
+          </ProtectedRoute>
+        }
+      >
+        <Route index element={<Navigate to="/worker/stations" replace />} />
+        <Route path="stations" element={<WorkerStationsPage />} />
+        <Route path="stations/:stationId/tasks" element={<WorkerStationTasksPage />} />
       </Route>
     </Routes>
   );
