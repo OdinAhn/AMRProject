@@ -2,7 +2,9 @@ import { Navigate, Route, Routes } from "react-router";
 import { AdminLayout } from "./layouts/AdminLayout";
 import { WorkerLayout } from "./layouts/WorkerLayout";
 import { ProtectedRoute } from "./lib/auth";
+import { AlarmsPage } from "./pages/alarms/AlarmsPage";
 import { DispatchPage } from "./pages/dispatch/DispatchPage";
+import { EventsPage } from "./pages/events/EventsPage";
 import { LoginPage } from "./pages/LoginPage";
 import { MapVersionDetailPage } from "./pages/maps/MapVersionDetailPage";
 import { MapVersionsPage } from "./pages/maps/MapVersionsPage";
@@ -43,6 +45,8 @@ function App() {
         <Route path="dispatch" element={<DispatchPage />} />
         <Route path="users" element={<UsersPage />} />
         <Route path="users/:userId" element={<UserDetailPage />} />
+        <Route path="alarms" element={<AlarmsPage />} />
+        <Route path="events" element={<EventsPage />} />
       </Route>
       <Route
         path="/worker"

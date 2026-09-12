@@ -7,6 +7,8 @@ import com.amrproject.domain.entity.AlarmStatus;
 import com.amrproject.domain.entity.AlarmType;
 
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 
 public record AlarmResponse(
         Long id,
@@ -20,11 +22,19 @@ public record AlarmResponse(
         Long acknowledgedBy,
         Instant resolvedAt,
         Long resolvedBy,
+        List<String> allowedActions,
         Instant createdAt,
         Instant updatedAt
 ) {
 
     public static AlarmResponse from(Alarm alarm) {
+        List<String> allowedActions = new ArrayList<>();
+        if (alarm.getStatus() == AlarmStatus.OPEN) {
+            allowedActions.add("ACKNOWLEDGE");
+            allowedActions.add("RESOLVE");
+        } else if (alarm.getStatus() == AlarmStatus.ACKNOWLEDGED) {
+            allowedActions.add("RESOLVE");
+        }
         return new AlarmResponse(
                 alarm.getId(),
                 alarm.getAlarmType(),
@@ -37,6 +47,7 @@ public record AlarmResponse(
                 alarm.getAcknowledgedBy() != null ? alarm.getAcknowledgedBy().getId() : null,
                 alarm.getResolvedAt(),
                 alarm.getResolvedBy() != null ? alarm.getResolvedBy().getId() : null,
+                allowedActions,
                 alarm.getCreatedAt(),
                 alarm.getUpdatedAt()
         );

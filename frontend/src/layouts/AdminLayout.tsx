@@ -8,6 +8,8 @@ const NAV_ITEMS = [
   { to: "/tasks", label: "작업" },
   { to: "/dispatch", label: "디스패치" },
   { to: "/users", label: "사용자" },
+  { to: "/alarms", label: "알람" },
+  { to: "/events", label: "실시간 이벤트" },
   { to: "/worker/stations", label: "작업자 화면" },
 ];
 

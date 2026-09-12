@@ -139,6 +139,8 @@
 
 **14단계 구현**: `alarms`/`alarm_events` 테이블과 위 4개 엔드포인트를 실제로 구현했다. 자동 발생 4종(`ROBOT_COMM_LOST`/`LOCALIZATION_LOST`/`LOAD_EXCEPTION`/`TASK_FAILED`) 중 로봇 관련 3종은 `SimulatorRobotGateway`가 연결/위치추정/적재 센서 상태를 보고할 때 이상→정상 전이를 감지해 자동 발생·자동 해소한다(정상 dispatch 한 번이면 해소). `TASK_FAILED`는 `TaskService.failRecovery()`(위 `recover`의 `FAIL`)에서 발생하며, 종료 상태라 자동 해소가 없어 관리자가 `acknowledge`/`resolve`로 직접 처리해야 한다. 같은 (알람 종류, 대상 종류, 대상 ID) 조합의 열린 알람은 항상 최대 1개다. `alarm_events`는 API로 노출하지 않는 내부 감사 로그다.
 
+**19단계**: 응답에 `allowedActions`를 추가했다(Task/Robot 응답과 같은 패턴) — `OPEN`→`["ACKNOWLEDGE","RESOLVE"]`, `ACKNOWLEDGED`→`["RESOLVE"]`, `RESOLVED`→`[]`. 관리자 화면(`/alarms`)이 이 배열만 보고 버튼을 그린다.
+
 `recover` 요청 본문 예시:
 
 ```json
@@ -202,9 +204,13 @@ Idempotency-Key: 8e2f1c...
 
 **16단계 구현**: 같은 `OutboxPublisher`가 같은 이벤트를 Kafka 토픽 `amr.events`(파티션 1, 복제 1)에도 함께 발행한다 — Redis는 실시간 팬아웃(SSE), Kafka는 나중에 다른 시스템이 재구독/재생할 수 있는 내구성 있는 이벤트 로그 역할이다. 이 앱 내부에는 Kafka 컨슈머가 없다(프로듀서만).
 
+**19단계에서 발견한 버그**: `OutboxPublisher`가 PENDING 이벤트를 순서대로 발행하는 반복문 전체를 하나의 `try` 없이 돌려서, 이벤트 하나(예: Kafka 브로커 unreachable)가 예외를 던지면 그 뒤에 있는 모든 PENDING 이벤트가 매 주기(1초)마다 영원히 처리되지 못하는 head-of-line 블로킹이 있었다. 지금은 이벤트별로 발행을 시도하고 실패한 것만 PENDING으로 남겨(다음 주기 재시도) 나머지는 계속 처리한다.
+
 | Method | Path | 설명 |
 |---|---|---|
 | GET | `/api/events/stream` | SSE 스트림. `Last-Event-ID` 헤더로 재접속 시 그 이후 이벤트를 먼저 재생한 뒤 실시간 구독으로 전환한다. **`siteId`/`stationId` 쿼리 필터는 미구현** — 전체 이벤트를 그대로 전달하므로 클라이언트가 필요하면 걸러 써야 한다 |
+
+**19단계 — 인증**: 브라우저 네이티브 `EventSource`는 커스텀 헤더(`Authorization`)를 보낼 수 없다. 이 경로에 한해서만 `TokenAuthenticationFilter`가 `Authorization` 헤더가 없을 때 `access_token` 쿼리 파라미터를 대체 토큰 소스로 허용한다(다른 모든 엔드포인트는 그대로 헤더만 받는다). **트레이드오프**: 접근 토큰이 URL에 노출된다(서버 로그, 브라우저 히스토리 등) — 내부 관리자 도구 성격상 허용했지만, 프로덕션에서 더 넓게 쓰려면 단기 전용 스트림 토큰 발급 같은 방식으로 교체해야 한다. 프론트엔드는 관리자 화면 `/events`에서 `new EventSource(\`/api/events/stream?access_token=${token}\`)`로 사용한다.
 
 ### 이벤트 봉투(envelope)
 
@@ -224,6 +230,7 @@ Idempotency-Key: 8e2f1c...
 - `stateVersion`은 Task/Alarm에는 별도 버전 카운터가 없어 **항상 `null`**이다. 로봇 상태 이벤트가 추가되면(아래 열린 질문) `robot_current_states.state_version`으로 채워질 예정이다.
 - `payload`는 `outbox_events.payload_json`을 그대로 문자열로 전달한다 — 대부분의 Task 이벤트는 `null`이고, 취소 사유·알람 메시지처럼 실제 내용이 있는 경우만 채워진다. 전체 최신 상태가 필요하면 클라이언트가 해당 리소스를 다시 조회한다(예: `GET /api/worker/stations/{stationId}/tasks`).
 - 재접속 복구 실패 시(너무 오래돼 필요한 백로그가 없는 등) 클라이언트는 전체 재조회로 대체한다.
+- **19단계 수정**: 처음엔 백로그 재생 메시지에만 SSE `id`를 붙이고 실시간 구독 메시지엔 안 붙였다 — 그러면 한동안 라이브로만 받은 클라이언트가 재접속할 때 `Last-Event-ID`가 오래된 값에 머무는 버그가 있었다. 지금은 `EventStreamController`가 라이브 메시지도 페이로드를 파싱해 `eventId`로 `id`를 붙인다.
 
 ### 열린 질문 (미구현 남은 부분)
 
