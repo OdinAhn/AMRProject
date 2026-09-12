@@ -343,3 +343,35 @@ export interface UpdateUserRequest {
 export interface CreateStationAssignmentRequest {
   stationId: number;
 }
+
+export type AlarmType = "ROBOT_COMM_LOST" | "LOCALIZATION_LOST" | "TASK_FAILED" | "LOAD_EXCEPTION";
+export type AlarmSeverity = "INFO" | "WARNING" | "CRITICAL";
+export type AlarmStatus = "OPEN" | "ACKNOWLEDGED" | "RESOLVED";
+export type AlarmSourceType = "ROBOT" | "TASK" | "STATION" | "SYSTEM";
+
+export interface AlarmResponse {
+  id: number;
+  alarmType: AlarmType;
+  severity: AlarmSeverity;
+  sourceType: AlarmSourceType;
+  sourceId: number;
+  status: AlarmStatus;
+  message: string | null;
+  acknowledgedAt: string | null;
+  acknowledgedBy: number | null;
+  resolvedAt: string | null;
+  resolvedBy: number | null;
+  allowedActions: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface EventEnvelope {
+  eventId: number;
+  eventType: string;
+  aggregateType: string;
+  aggregateId: number;
+  stateVersion: number | null;
+  payload: string | null;
+  occurredAt: string;
+}

@@ -369,6 +369,7 @@ Kafka를 도입하는 구성에서도 실제 명령 송신은 저장된 명령 �
 | 16. 실시간 이벤트(Kafka 로그) | 같은 `OutboxPublisher`가 Kafka 토픽 `amr.events`에도 발행 — 내구성 있는 이벤트 로그(재구독용, 컨슈머는 이 앱 밖) | 발행된 이벤트가 Kafka 토픽에 실제로 도착 |
 | 17. 로봇 기본정보 수정 | `PATCH /api/admin/robots/{robotId}`(name/model/manufacturer) | 등록된 로봇의 기본정보를 API로 수정 가능 |
 | 18. 로봇 통신(MQTT/VDA5050) | `RobotGateway`의 두 번째 구현체 `MqttRobotGateway`(옵트인, 기본 비활성) — VDA5050 축소 구현, 동기식-타임아웃(3초) 방식 | 로컬 MQTT 브로커+가상 VDA5050 로봇으로 명령 발행부터 완료까지 검증 |
+| 19. 프론트엔드(알람·실시간 이벤트) | 관리자 화면에 `/alarms`, `/events` 추가. `AlarmResponse`에 `allowedActions` 추가, SSE 인증에 쿼리 파라미터 폴백 추가. 수동 검증 중 `OutboxPublisher`의 head-of-line 블로킹 버그 발견·수정(§API.md §5 참고) | 브라우저에서 알람 확인·해제, 실시간 이벤트 피드가 실제로 동작 |
 
 Redis·Kafka를 채택한다면 프로젝트 기반 단계에서 개발 환경을 구성하고, 해당 데이터·이벤트 기능을 구현할 때 연결한다. Kubernetes도 채택 시 초기 배포 골격을 준비하고, 백엔드 완료 전에 다중 인스턴스와 재시작을 검증한다.
 

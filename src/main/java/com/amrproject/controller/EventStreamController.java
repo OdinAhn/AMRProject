@@ -70,10 +70,15 @@ public class EventStreamController {
         return emitter;
     }
 
+    /**
+     * 19단계: 라이브 메시지에도 SSE id를 붙인다 — 안 붙이면 백로그 재생 이후 계속
+     * 라이브로만 받은 클라이언트가 재접속할 때 Last-Event-ID가 오래된 값에 머문다.
+     */
     private void onMessage(SseEmitter emitter, Message message) {
         try {
             String json = new String(message.getBody(), StandardCharsets.UTF_8);
-            emitter.send(SseEmitter.event().data(json, MediaType.APPLICATION_JSON));
+            EventEnvelope envelope = jsonMapper.readValue(json, EventEnvelope.class);
+            emitter.send(SseEmitter.event().id(String.valueOf(envelope.eventId())).data(json, MediaType.APPLICATION_JSON));
         } catch (IOException e) {
             emitter.completeWithError(e);
         }

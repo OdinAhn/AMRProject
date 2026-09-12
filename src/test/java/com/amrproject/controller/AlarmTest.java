@@ -28,6 +28,7 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.http.MediaType.APPLICATION_JSON;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -155,9 +156,17 @@ class AlarmTest extends AbstractIntegrationTest {
         Alarm alarm = openAlarm(AlarmType.TASK_FAILED, AlarmSourceType.TASK, taskId);
         assertThat(alarm.getStatus()).isEqualTo(AlarmStatus.OPEN);
 
+        mockMvc.perform(get("/api/admin/alarms/{alarmId}", alarm.getId()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.allowedActions[0]").value("ACKNOWLEDGE"))
+                .andExpect(jsonPath("$.allowedActions[1]").value("RESOLVE"))
+                .andExpect(jsonPath("$.allowedActions.length()").value(2));
+
         mockMvc.perform(post("/api/admin/alarms/{alarmId}/acknowledge", alarm.getId()))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.status").value("ACKNOWLEDGED"));
+                .andExpect(jsonPath("$.status").value("ACKNOWLEDGED"))
+                .andExpect(jsonPath("$.allowedActions[0]").value("RESOLVE"))
+                .andExpect(jsonPath("$.allowedActions.length()").value(1));
 
         // 이미 ACKNOWLEDGED인 알람에 재요청하면 그대로 현재 상태를 반환한다 (멱등).
         mockMvc.perform(post("/api/admin/alarms/{alarmId}/acknowledge", alarm.getId()))
@@ -166,7 +175,8 @@ class AlarmTest extends AbstractIntegrationTest {
 
         mockMvc.perform(post("/api/admin/alarms/{alarmId}/resolve", alarm.getId()))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.status").value("RESOLVED"));
+                .andExpect(jsonPath("$.status").value("RESOLVED"))
+                .andExpect(jsonPath("$.allowedActions.length()").value(0));
 
         // 이미 RESOLVED인 알람에 재요청하면 그대로 현재 상태를 반환한다 (멱등).
         mockMvc.perform(post("/api/admin/alarms/{alarmId}/resolve", alarm.getId()))
