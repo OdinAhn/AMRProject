@@ -18,7 +18,7 @@ import com.amrproject.repository.robot.CommandEventRepository;
 import com.amrproject.repository.robot.RobotCurrentStateRepository;
 import com.amrproject.repository.robot.RobotStateSnapshotRepository;
 import com.amrproject.robot.RobotGateway;
-import com.amrproject.service.AlarmService;
+import com.amrproject.service.alarm.AlarmService;
 import org.eclipse.paho.client.mqttv3.IMqttDeliveryToken;
 import org.eclipse.paho.client.mqttv3.MqttCallback;
 import org.eclipse.paho.client.mqttv3.MqttClient;

@@ -1,0 +1,40 @@
+package com.amrproject.service.map;
+
+import com.amrproject.domain.entity.map.MapEntity;
+import com.amrproject.domain.entity.site.Site;
+import com.amrproject.dto.request.map.CreateMapRequest;
+import com.amrproject.exception.EntityNotFoundException;
+import com.amrproject.repository.map.MapRepository;
+import com.amrproject.service.site.SiteService;
+import java.util.List;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+@Service
+@Transactional(readOnly = true)
+public class MapService {
+
+    private final MapRepository mapRepository;
+    private final SiteService siteService;
+
+    public MapService(MapRepository mapRepository, SiteService siteService) {
+        this.mapRepository = mapRepository;
+        this.siteService = siteService;
+    }
+
+    @Transactional
+    public MapEntity create(Long siteId, CreateMapRequest request) {
+        Site site = siteService.getById(siteId);
+        return mapRepository.save(new MapEntity(site, request.name()));
+    }
+
+    public MapEntity getById(Long id) {
+        return mapRepository.findById(id)
+                .orElseThrow(() -> new EntityNotFoundException("MAP_NOT_FOUND", "지도를 찾을 수 없습니다: " + id));
+    }
+
+    public List<MapEntity> getBySite(Long siteId) {
+        siteService.getById(siteId);
+        return mapRepository.findBySiteId(siteId);
+    }
+}

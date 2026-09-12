@@ -16,7 +16,7 @@ import com.amrproject.dto.request.task.RecoveryResolution;
 import com.amrproject.repository.alarm.AlarmRepository;
 import com.amrproject.repository.robot.RobotRepository;
 import com.amrproject.robot.SimulatedFault;
-import com.amrproject.service.TaskService;
+import com.amrproject.service.task.TaskService;
 import com.amrproject.support.AbstractIntegrationTest;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;

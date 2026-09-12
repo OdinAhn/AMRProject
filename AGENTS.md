@@ -14,7 +14,7 @@ Backend (`src/`):
 - Spring Boot 4.x, Spring MVC (webmvc), Spring Data JPA (Hibernate 7)
 - Spring Security 7 — custom self-signed HMAC-SHA256 access tokens (`security/AccessTokenService`), not a JWT library
 - MySQL 8.4, Flyway migrations
-- Redis (Pub/Sub) — real-time event fanout for `GET /api/events/stream` (stage 15). Kafka (stage 16) — durable event log, not fanout. A single scheduled `OutboxPublisher` (`service/OutboxPublisher`) relays `outbox_events` rows to both; no `@KafkaListener` exists in this app (Kafka is producer-only here, for future external subscribers).
+- Redis (Pub/Sub) — real-time event fanout for `GET /api/events/stream` (stage 15). Kafka (stage 16) — durable event log, not fanout. A single scheduled `OutboxPublisher` (`service/event/OutboxPublisher`) relays `outbox_events` rows to both; no `@KafkaListener` exists in this app (Kafka is producer-only here, for future external subscribers).
 - Eclipse Paho (`org.eclipse.paho.client.mqttv3`) — MQTT client for `robot/mqtt/MqttRobotGateway` (stage 18), a second `RobotGateway` implementation speaking a reduced VDA 5050 subset. **Opt-in and off by default** (`app.robot-gateway.mqtt.enabled=false`) — `SimulatorRobotGateway` stays the active gateway unless explicitly enabled. See gotcha below for its synchronous-with-timeout design.
 - Jackson 3 — note the package is `tools.jackson.*`, not `com.fasterxml.jackson.*`
 - springdoc-openapi (Swagger UI / OpenAPI)
@@ -53,9 +53,11 @@ The backend follows this layered structure under `com.amrproject`:
 ```
 src/main/java/com/amrproject/
 ├── controller/
-├── service/
-├── repository/
 │   └── <domain>/   (alarm, user, site, map, robot, task, event — see below)
+├── service/
+│   └── <domain>/
+├── repository/
+│   └── <domain>/
 ├── domain/
 │   └── entity/
 │       └── <domain>/
@@ -70,7 +72,7 @@ src/main/java/com/amrproject/
 └── config/
 ```
 
-`controller`/`service` stay flat (one class per resource, not nested). `repository`, `domain/entity`, and `dto/request`/`dto/response` are each split into the same 7 domain sub-packages (22단계) so a class's location signals what it belongs to at a glance:
+`controller`, `service`, `repository`, `domain/entity`, and `dto/request`/`dto/response` are all split into the same 7 domain sub-packages (22~23단계) so a class's location signals what it belongs to at a glance:
 
 | 하위 패키지 | 대표 내용 |
 |---|---|
@@ -82,7 +84,7 @@ src/main/java/com/amrproject/
 | `task` | 작업, 단계, 배정, 이력, 자원 예약(`ResourceReservation`) |
 | `event` | 아웃박스 이벤트(Outbox → Redis/Kafka 릴레이) |
 
-공통 기반 클래스는 하위 패키지로 옮기지 않고 루트에 둔다: `domain.entity.BaseAuditableEntity`, `dto.response.ErrorResponse`. 새 엔티티/DTO/리포지토리를 추가할 때는 해당 도메인 하위 패키지에 넣는다 — 애매하면 그 클래스를 실제로 쓰는 서비스가 어느 도메인인지로 판단한다(예: `ResourceReservation`은 지도가 아니라 `TaskService`가 쓰므로 `task`).
+공통 기반 클래스는 하위 패키지로 옮기지 않고 루트에 둔다: `domain.entity.BaseAuditableEntity`, `dto.response.ErrorResponse`. 새 컨트롤러/서비스/엔티티/DTO/리포지토리를 추가할 때는 해당 도메인 하위 패키지에 넣는다 — 애매하면 그 클래스가 다루는 리소스나(컨트롤러) 그 클래스를 실제로 쓰는 서비스가 어느 도메인인지로 판단한다(예: `ResourceReservation`은 지도가 아니라 `TaskService`가 쓰므로 `task`; `DispatchController`/`DispatchService`도 배차 대상이 작업이므로 `task`).
 
 The frontend lives entirely under `frontend/` (see `frontend/README.md` for its internal layout — `src/pages`, `src/layouts`, `src/lib`, `src/components`, `src/types`) and is a separate npm project; it is not part of the Gradle build.
 

@@ -13,7 +13,7 @@ import com.amrproject.domain.entity.site.Site;
 import com.amrproject.repository.robot.CommandEventRepository;
 import com.amrproject.repository.robot.RobotCurrentStateRepository;
 import com.amrproject.repository.robot.RobotStateSnapshotRepository;
-import com.amrproject.service.AlarmService;
+import com.amrproject.service.alarm.AlarmService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;

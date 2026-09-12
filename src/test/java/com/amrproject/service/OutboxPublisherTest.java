@@ -4,14 +4,14 @@ import com.amrproject.config.KafkaConfig;
 import com.amrproject.domain.entity.event.OutboxEvent;
 import com.amrproject.domain.entity.event.OutboxEventStatus;
 import com.amrproject.repository.event.OutboxEventRepository;
+import com.amrproject.service.event.OutboxPublisher;
+import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.kafka.core.KafkaTemplate;
 import tools.jackson.databind.json.JsonMapper;
-
-import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;

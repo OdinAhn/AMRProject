@@ -3,7 +3,11 @@ package com.amrproject.service;
 import com.amrproject.config.KafkaConfig;
 import com.amrproject.domain.entity.event.OutboxEvent;
 import com.amrproject.repository.event.OutboxEventRepository;
+import com.amrproject.service.event.OutboxPublisher;
 import com.amrproject.support.AbstractIntegrationTest;
+import java.time.Duration;
+import java.util.List;
+import java.util.Properties;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
@@ -11,10 +15,6 @@ import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-
-import java.time.Duration;
-import java.util.List;
-import java.util.Properties;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
