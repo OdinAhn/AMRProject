@@ -1,5 +1,6 @@
 package com.amrproject.domain.entity;
 
+import com.amrproject.exception.InvalidStateTransitionException;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -60,6 +61,32 @@ public class MapVersion {
         this.coordinateSystem = coordinateSystem;
         this.createdBy = createdBy;
         this.status = MapVersionStatus.DRAFT;
+    }
+
+    public void markValidated() {
+        requireStatus(MapVersionStatus.DRAFT, "VALIDATE");
+        this.status = MapVersionStatus.VALIDATED;
+        this.validatedAt = Instant.now();
+    }
+
+    public void activate() {
+        requireStatus(MapVersionStatus.VALIDATED, "ACTIVATE");
+        this.status = MapVersionStatus.ACTIVE;
+        this.activatedAt = Instant.now();
+    }
+
+    public void archive() {
+        requireStatus(MapVersionStatus.ACTIVE, "ARCHIVE");
+        this.status = MapVersionStatus.ARCHIVED;
+    }
+
+    private void requireStatus(MapVersionStatus required, String action) {
+        if (status != required) {
+            throw new InvalidStateTransitionException(
+                    "MAP_VERSION_" + action + "_NOT_ALLOWED",
+                    "지도 버전 상태가 " + required + "가 아니어서(현재: " + status + ") " + action + "을(를) 수행할 수 없습니다."
+            );
+        }
     }
 
     public Long getId() {

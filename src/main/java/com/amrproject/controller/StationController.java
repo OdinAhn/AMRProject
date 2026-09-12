@@ -1,8 +1,11 @@
 package com.amrproject.controller;
 
+import com.amrproject.dto.request.BindStationMapRequest;
 import com.amrproject.dto.request.CreateStationRequest;
 import com.amrproject.dto.request.UpdateStationRequest;
+import com.amrproject.dto.response.StationMapBindingResponse;
 import com.amrproject.dto.response.StationResponse;
+import com.amrproject.service.MapVersionService;
 import com.amrproject.service.StationService;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
@@ -11,6 +14,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -20,9 +24,11 @@ import java.util.List;
 public class StationController {
 
     private final StationService stationService;
+    private final MapVersionService mapVersionService;
 
-    public StationController(StationService stationService) {
+    public StationController(StationService stationService, MapVersionService mapVersionService) {
         this.stationService = stationService;
+        this.mapVersionService = mapVersionService;
     }
 
     @GetMapping("/api/admin/sites/{siteId}/stations")
@@ -44,5 +50,10 @@ public class StationController {
     @PatchMapping("/api/admin/stations/{stationId}")
     public StationResponse update(@PathVariable Long stationId, @RequestBody UpdateStationRequest request) {
         return StationResponse.from(stationService.update(stationId, request));
+    }
+
+    @PutMapping("/api/admin/stations/{stationId}/map-binding")
+    public StationMapBindingResponse bindMap(@PathVariable Long stationId, @Valid @RequestBody BindStationMapRequest request) {
+        return StationMapBindingResponse.from(mapVersionService.bindStation(stationId, request));
     }
 }

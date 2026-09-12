@@ -1,6 +1,7 @@
 package com.amrproject.robot;
 
 import com.amrproject.domain.entity.RobotCommand;
+import com.amrproject.domain.entity.RobotConfiguration;
 
 /**
  * 서버가 로봇과 통신하는 경계(포트). 로봇 통신 규격이 아직 미정이라
@@ -14,4 +15,10 @@ public interface RobotGateway {
      * 최종 상태(SUCCEEDED/FAILED/UNKNOWN)까지 전이시키고 CommandEvent를 기록한다.
      */
     void dispatch(RobotCommand command);
+
+    /**
+     * 로봇에 새 설정을 적용한다. 구현체는 성공 시 해당 로봇의 applied_config를
+     * 이 설정으로 갱신해야 한다 (desired와 별도로 추적, docs/ERD.md §4.4).
+     */
+    void applyConfiguration(RobotConfiguration configuration);
 }
