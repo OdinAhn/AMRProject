@@ -1,10 +1,15 @@
 package com.amrproject.service;
 
+import com.amrproject.domain.entity.ChargingSession;
 import com.amrproject.domain.entity.OutboxEvent;
+import com.amrproject.domain.entity.ResourceReservation;
+import com.amrproject.domain.entity.ResourceReservationStatus;
+import com.amrproject.domain.entity.ResourceType;
 import com.amrproject.domain.entity.Robot;
 import com.amrproject.domain.entity.RobotCommand;
 import com.amrproject.domain.entity.RobotCommandStatus;
 import com.amrproject.domain.entity.RobotCommandType;
+import com.amrproject.domain.entity.RobotCurrentState;
 import com.amrproject.domain.entity.Site;
 import com.amrproject.domain.entity.Station;
 import com.amrproject.domain.entity.Task;
@@ -21,8 +26,11 @@ import com.amrproject.dto.request.CreateTaskRequest;
 import com.amrproject.dto.request.RecoveryResolution;
 import com.amrproject.exception.EntityNotFoundException;
 import com.amrproject.exception.InvalidStateTransitionException;
+import com.amrproject.repository.ChargingSessionRepository;
 import com.amrproject.repository.OutboxEventRepository;
+import com.amrproject.repository.ResourceReservationRepository;
 import com.amrproject.repository.RobotCommandRepository;
+import com.amrproject.repository.RobotCurrentStateRepository;
 import com.amrproject.repository.TaskAssignmentRepository;
 import com.amrproject.repository.TaskEventRepository;
 import com.amrproject.repository.TaskRepository;
@@ -58,6 +66,9 @@ public class TaskService {
     private final TaskEventRepository taskEventRepository;
     private final OutboxEventRepository outboxEventRepository;
     private final RobotCommandRepository robotCommandRepository;
+    private final ResourceReservationRepository resourceReservationRepository;
+    private final ChargingSessionRepository chargingSessionRepository;
+    private final RobotCurrentStateRepository robotCurrentStateRepository;
     private final StationService stationService;
     private final RobotService robotService;
     private final RobotGateway robotGateway;
@@ -69,6 +80,9 @@ public class TaskService {
             TaskEventRepository taskEventRepository,
             OutboxEventRepository outboxEventRepository,
             RobotCommandRepository robotCommandRepository,
+            ResourceReservationRepository resourceReservationRepository,
+            ChargingSessionRepository chargingSessionRepository,
+            RobotCurrentStateRepository robotCurrentStateRepository,
             StationService stationService,
             RobotService robotService,
             RobotGateway robotGateway
@@ -79,6 +93,9 @@ public class TaskService {
         this.taskEventRepository = taskEventRepository;
         this.outboxEventRepository = outboxEventRepository;
         this.robotCommandRepository = robotCommandRepository;
+        this.resourceReservationRepository = resourceReservationRepository;
+        this.chargingSessionRepository = chargingSessionRepository;
+        this.robotCurrentStateRepository = robotCurrentStateRepository;
         this.stationService = stationService;
         this.robotService = robotService;
         this.robotGateway = robotGateway;
@@ -117,6 +134,33 @@ public class TaskService {
 
         recordEvent(task, "CREATED", null, task.getStatus(), requestedBy);
         return new TaskCreationResult(task, true);
+    }
+
+    /**
+     * 배터리가 낮은 로봇을 위한 자동 충전 작업 (7단계, DispatchService가 호출한다).
+     * origin/destination을 모두 충전소로 둔다 — 로봇의 현재 위치를 추적하지 않아
+     * "어디서 오는지"는 의미가 없고, 목적지(충전소)만 중요하다.
+     */
+    @Transactional
+    public Task createChargeTask(Robot robot, Station chargingStation) {
+        Task task = new Task(
+                UUID.randomUUID().toString(),
+                chargingStation.getSite(),
+                TaskType.CHARGE,
+                0,
+                chargingStation,
+                chargingStation,
+                null,
+                null,
+                null
+        );
+        taskRepository.save(task);
+
+        taskStepRepository.save(new TaskStep(task, 1, TaskStepType.MOVE_TO_CHARGING_STATION));
+        taskStepRepository.save(new TaskStep(task, 2, TaskStepType.DOCK_AND_CHARGE));
+
+        recordEvent(task, "CREATED", null, task.getStatus(), null);
+        return assignAndStart(task.getId(), robot.getId());
     }
 
     public Task getById(Long id) {
@@ -252,7 +296,7 @@ public class TaskService {
         TaskStatus previous = task.getStatus();
         task.resumeFromRecovery();
         recordEvent(task, "RECOVERY_RESUMED", previous, task.getStatus(), null);
-        dispatchMoveCommand(task, step);
+        dispatchStepCommand(task, step);
         return task;
     }
 
@@ -265,6 +309,7 @@ public class TaskService {
         task.failFromRecovery();
         recordEvent(task, "RECOVERY_FAILED", previous, task.getStatus(), null);
         releaseAssignment(task);
+        releaseReservations(task.getCurrentAssignment().getRobot());
         return task;
     }
 
@@ -302,8 +347,15 @@ public class TaskService {
                 .orElseThrow(() -> new InvalidStateTransitionException("NO_RUNNING_STEP", "진행 중인 단계가 없습니다."));
     }
 
+    private static final List<TaskStepType> STATION_RELEASE_STEP_TYPES = List.of(
+            TaskStepType.CONFIRM_LOAD, TaskStepType.CONFIRM_UNLOAD, TaskStepType.DOCK_AND_CHARGE
+    );
+
     private void completeStepInternal(Task task, TaskStep current) {
         current.succeed();
+        if (STATION_RELEASE_STEP_TYPES.contains(current.getStepType())) {
+            releaseReservations(task.getCurrentAssignment().getRobot());
+        }
         List<TaskStep> steps = taskStepRepository.findByTaskIdOrderByStepNoAsc(task.getId());
         Optional<TaskStep> next = steps.stream()
                 .filter(step -> step.getStepNo().equals(current.getStepNo() + 1))
@@ -324,19 +376,84 @@ public class TaskService {
 
     private void advanceToStep(Task task, TaskStep step) {
         step.start();
-        if (MOVE_STEP_TYPES.contains(step.getStepType())) {
-            dispatchMoveCommand(task, step);
+        if (MOVE_STEP_TYPES.contains(step.getStepType()) || step.getStepType() == TaskStepType.DOCK_AND_CHARGE) {
+            dispatchStepCommand(task, step);
         }
     }
 
-    private void dispatchMoveCommand(Task task, TaskStep step) {
+    /**
+     * MOVE 단계와 DOCK_AND_CHARGE 단계 모두 로봇 명령을 발행한다 (7단계: 충전도
+     * 기존 명령/게이트웨이 구조를 재사용). 명령 발행 전 목적지 station을 예약해
+     * 같은 station으로 동시에 여러 로봇이 몰리는 것을 막는다 — 예약은 이 단계
+     * 완료 시가 아니라, 그 station에서 로봇이 실제로 볼일을 마치는 다음 확인
+     * 단계(CONFIRM_LOAD/CONFIRM_UNLOAD/DOCK_AND_CHARGE)가 끝날 때 해제된다.
+     */
+    private void dispatchStepCommand(Task task, TaskStep step) {
         Robot robot = task.getCurrentAssignment().getRobot();
-        RobotCommand command = new RobotCommand(UUID.randomUUID().toString(), step, robot, RobotCommandType.MOVE_TO, null);
+        Station targetStation = resolveTargetStation(task, step);
+        if (targetStation != null) {
+            reserveStation(robot, targetStation, step);
+        }
+
+        boolean isCharging = step.getStepType() == TaskStepType.DOCK_AND_CHARGE;
+        RobotCommandType commandType = isCharging ? RobotCommandType.START_CHARGE : RobotCommandType.MOVE_TO;
+        RobotCommand command = new RobotCommand(UUID.randomUUID().toString(), step, robot, commandType, null);
         robotCommandRepository.save(command);
+
+        ChargingSession session = null;
+        if (isCharging) {
+            RobotCurrentState state = currentStateOf(robot);
+            session = chargingSessionRepository.save(new ChargingSession(robot, task.getDestinationStation(), task, state.getBatteryPct()));
+            session.startCharging();
+        }
 
         robotGateway.dispatch(command);
 
+        if (session != null) {
+            if (command.getStatus() == RobotCommandStatus.SUCCEEDED) {
+                session.complete(currentStateOf(robot).getBatteryPct());
+            } else {
+                session.abort();
+            }
+        }
+
         reactToCommandOutcome(task, step, command);
+    }
+
+    private Station resolveTargetStation(Task task, TaskStep step) {
+        return switch (step.getStepType()) {
+            case MOVE_TO_ORIGIN -> task.getOriginStation();
+            case MOVE_TO_DESTINATION, MOVE_TO_CHARGING_STATION -> task.getDestinationStation();
+            default -> null;
+        };
+    }
+
+    private void reserveStation(Robot robot, Station station, TaskStep step) {
+        Integer capacity = station.getMaxConcurrentRobots();
+        if (capacity != null) {
+            int held = resourceReservationRepository.countByResourceTypeAndResourceIdAndStatus(
+                    ResourceType.STATION, station.getId(), ResourceReservationStatus.HELD
+            );
+            if (held >= capacity) {
+                throw new InvalidStateTransitionException(
+                        "STATION_AT_CAPACITY",
+                        "station(" + station.getId() + ")이 이미 최대 동시 로봇 수(" + capacity + ")에 도달했습니다."
+                );
+            }
+        }
+        resourceReservationRepository.save(new ResourceReservation(ResourceType.STATION, station.getId(), robot, step));
+    }
+
+    private void releaseReservations(Robot robot) {
+        resourceReservationRepository.findByRobotIdAndStatus(robot.getId(), ResourceReservationStatus.HELD)
+                .forEach(ResourceReservation::release);
+    }
+
+    private RobotCurrentState currentStateOf(Robot robot) {
+        return robotCurrentStateRepository.findById(robot.getId())
+                .orElseThrow(() -> new EntityNotFoundException(
+                        "ROBOT_STATE_NOT_FOUND", "아직 보고된 상태가 없는 로봇입니다: " + robot.getId()
+                ));
     }
 
     private void reactToCommandOutcome(Task task, TaskStep step, RobotCommand command) {

@@ -4,6 +4,7 @@ import com.amrproject.domain.entity.StationStatus;
 
 public record UpdateStationRequest(
         String name,
-        StationStatus status
+        StationStatus status,
+        Integer maxConcurrentRobots
 ) {
 }

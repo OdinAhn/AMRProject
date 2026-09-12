@@ -55,6 +55,9 @@ public class StationService {
         if (request.status() != null) {
             station.changeStatus(request.status());
         }
+        if (request.maxConcurrentRobots() != null) {
+            station.changeMaxConcurrentRobots(request.maxConcurrentRobots());
+        }
         return station;
     }
 }

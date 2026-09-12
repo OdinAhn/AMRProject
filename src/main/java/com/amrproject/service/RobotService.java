@@ -1,7 +1,15 @@
 package com.amrproject.service;
 
+import com.amrproject.domain.entity.ConnectionState;
+import com.amrproject.domain.entity.LoadState;
+import com.amrproject.domain.entity.LocalizationState;
+import com.amrproject.domain.entity.MotionState;
+import com.amrproject.domain.entity.OperationMode;
 import com.amrproject.domain.entity.Robot;
 import com.amrproject.domain.entity.RobotConfiguration;
+import com.amrproject.domain.entity.RobotCurrentState;
+import com.amrproject.domain.entity.RobotLifecycleStatus;
+import com.amrproject.domain.entity.SafetyState;
 import com.amrproject.domain.entity.Site;
 import com.amrproject.dto.request.CreateRobotConfigurationRequest;
 import com.amrproject.dto.request.CreateRobotRequest;
@@ -10,11 +18,13 @@ import com.amrproject.exception.DuplicateResourceException;
 import com.amrproject.exception.EntityNotFoundException;
 import com.amrproject.exception.InvalidRequestException;
 import com.amrproject.repository.RobotConfigurationRepository;
+import com.amrproject.repository.RobotCurrentStateRepository;
 import com.amrproject.repository.RobotRepository;
 import com.amrproject.robot.RobotGateway;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Instant;
 import java.util.List;
 
 @Service
@@ -23,17 +33,20 @@ public class RobotService {
 
     private final RobotRepository robotRepository;
     private final RobotConfigurationRepository robotConfigurationRepository;
+    private final RobotCurrentStateRepository robotCurrentStateRepository;
     private final SiteService siteService;
     private final RobotGateway robotGateway;
 
     public RobotService(
             RobotRepository robotRepository,
             RobotConfigurationRepository robotConfigurationRepository,
+            RobotCurrentStateRepository robotCurrentStateRepository,
             SiteService siteService,
             RobotGateway robotGateway
     ) {
         this.robotRepository = robotRepository;
         this.robotConfigurationRepository = robotConfigurationRepository;
+        this.robotCurrentStateRepository = robotCurrentStateRepository;
         this.siteService = siteService;
         this.robotGateway = robotGateway;
     }
@@ -60,10 +73,25 @@ public class RobotService {
         return robotRepository.findAll();
     }
 
+    /**
+     * IN_SERVICE로 전환하는 로봇에 아직 보고된 상태가 없으면 온라인 기본값으로
+     * 초기화한다 — 그렇지 않으면 한 번도 명령을 받아본 적 없는 새 로봇은
+     * DispatchService의 배정 대상 조건(온라인/자동/위치추정됨)을 절대 만족할 수 없다
+     * (지금까지는 SimulatorRobotGateway가 첫 명령을 보낼 때만 상태를 만들었다).
+     */
     @Transactional
     public Robot updateLifecycleStatus(Long id, UpdateRobotLifecycleStatusRequest request) {
         Robot robot = getById(id);
         robot.changeLifecycleStatus(request.lifecycleStatus());
+        if (request.lifecycleStatus() == RobotLifecycleStatus.IN_SERVICE
+                && robotCurrentStateRepository.findById(robot.getId()).isEmpty()) {
+            RobotCurrentState state = new RobotCurrentState(robot);
+            state.report(
+                    ConnectionState.ONLINE, OperationMode.AUTO, MotionState.IDLE, SafetyState.NORMAL,
+                    LoadState.EMPTY, LocalizationState.LOCALIZED, 100, Instant.now()
+            );
+            robotCurrentStateRepository.save(state);
+        }
         return robot;
     }
 

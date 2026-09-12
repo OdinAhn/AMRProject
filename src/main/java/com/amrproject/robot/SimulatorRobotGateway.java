@@ -7,6 +7,7 @@ import com.amrproject.domain.entity.MotionState;
 import com.amrproject.domain.entity.OperationMode;
 import com.amrproject.domain.entity.Robot;
 import com.amrproject.domain.entity.RobotCommand;
+import com.amrproject.domain.entity.RobotCommandType;
 import com.amrproject.domain.entity.RobotConfiguration;
 import com.amrproject.domain.entity.RobotCurrentState;
 import com.amrproject.domain.entity.RobotStateSnapshot;
@@ -51,6 +52,8 @@ public class SimulatorRobotGateway implements RobotGateway {
         Robot robot = command.getRobot();
         RobotCurrentState state = currentStateOf(robot);
         SimulatedFault fault = pendingFaults.remove(robot.getId());
+        boolean isCharging = command.getCommandType() == RobotCommandType.START_CHARGE;
+        MotionState progressMotion = isCharging ? MotionState.CHARGING : MotionState.MOVING;
 
         command.send();
         recordCommandEvent(command, "SENT");
@@ -58,7 +61,7 @@ public class SimulatorRobotGateway implements RobotGateway {
         if (fault == SimulatedFault.COMMUNICATION_LOSS) {
             command.markUnknown();
             recordCommandEvent(command, "TIMEOUT");
-            report(robot, state, ConnectionState.OFFLINE, state.getOperationMode(), state.getMotionState(), state.getSafetyState());
+            report(robot, state, ConnectionState.OFFLINE, state.getOperationMode(), state.getMotionState(), state.getSafetyState(), state.getBatteryPct());
             return;
         }
 
@@ -66,19 +69,25 @@ public class SimulatorRobotGateway implements RobotGateway {
         recordCommandEvent(command, "ACCEPTED");
 
         command.startRunning();
-        report(robot, state, ConnectionState.ONLINE, OperationMode.AUTO, MotionState.MOVING, state.getSafetyState());
+        report(robot, state, ConnectionState.ONLINE, OperationMode.AUTO, progressMotion, state.getSafetyState(), state.getBatteryPct());
         recordCommandEvent(command, "PROGRESS");
 
         if (fault == SimulatedFault.COMMAND_FAILURE) {
             command.fail();
             recordCommandEvent(command, "FAILED");
-            report(robot, state, ConnectionState.ONLINE, OperationMode.AUTO, MotionState.IDLE, state.getSafetyState());
+            report(robot, state, ConnectionState.ONLINE, OperationMode.AUTO, MotionState.IDLE, state.getSafetyState(), state.getBatteryPct());
             return;
         }
 
         command.succeed();
         recordCommandEvent(command, "SUCCEEDED");
-        report(robot, state, ConnectionState.ONLINE, OperationMode.AUTO, MotionState.IDLE, state.getSafetyState());
+        int batteryPct = isCharging ? targetBatteryPct(robot) : state.getBatteryPct();
+        report(robot, state, ConnectionState.ONLINE, OperationMode.AUTO, MotionState.IDLE, state.getSafetyState(), batteryPct);
+    }
+
+    private int targetBatteryPct(Robot robot) {
+        RobotConfiguration configuration = robot.getAppliedConfiguration();
+        return configuration != null ? configuration.getChargingTargetPct() : 100;
     }
 
     /** 다음 dispatch 한 번에 적용될 장애를 예약한다. */
@@ -99,7 +108,7 @@ public class SimulatorRobotGateway implements RobotGateway {
                 .orElseGet(() -> robotCurrentStateRepository.save(new RobotCurrentState(robot)));
     }
 
-    private void report(Robot robot, RobotCurrentState state, ConnectionState connection, OperationMode mode, MotionState motion, SafetyState safety) {
+    private void report(Robot robot, RobotCurrentState state, ConnectionState connection, OperationMode mode, MotionState motion, SafetyState safety, int batteryPct) {
         state.report(
                 connection,
                 mode,
@@ -107,7 +116,7 @@ public class SimulatorRobotGateway implements RobotGateway {
                 safety,
                 state.getLoadState(),
                 LocalizationState.LOCALIZED,
-                state.getBatteryPct(),
+                batteryPct,
                 Instant.now()
         );
         robotStateSnapshotRepository.save(new RobotStateSnapshot(robot, state));

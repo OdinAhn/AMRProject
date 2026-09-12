@@ -39,6 +39,9 @@ public class Station extends BaseAuditableEntity {
     @Column(nullable = false, length = 20)
     private StationStatus status;
 
+    @Column(name = "max_concurrent_robots")
+    private Integer maxConcurrentRobots;
+
     protected Station() {
     }
 
@@ -56,6 +59,10 @@ public class Station extends BaseAuditableEntity {
 
     public void changeStatus(StationStatus status) {
         this.status = status;
+    }
+
+    public void changeMaxConcurrentRobots(Integer maxConcurrentRobots) {
+        this.maxConcurrentRobots = maxConcurrentRobots;
     }
 
     public Long getId() {
@@ -80,5 +87,9 @@ public class Station extends BaseAuditableEntity {
 
     public StationStatus getStatus() {
         return status;
+    }
+
+    public Integer getMaxConcurrentRobots() {
+        return maxConcurrentRobots;
     }
 }
