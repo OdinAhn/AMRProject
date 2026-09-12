@@ -365,6 +365,7 @@ Kafka를 도입하는 구성에서도 실제 명령 송신은 저장된 명령 �
 | 14. 알람(Alarm) | `alarms`/`alarm_events` 테이블·API, 로봇 통신 두절·위치추정 실패·적재 센서 이상·작업 최종 실패 자동 발생 | 관리자가 알람을 조회하고 확인·해제 처리 가능 |
 | 15. 실시간 이벤트(Redis) | `GET /api/events/stream`(SSE), `outbox_events`를 Redis Pub/Sub으로 발행하는 `OutboxPublisher`, `Last-Event-ID` 재접속 복구 | 작업·알람 이벤트가 실시간으로 도착하고 재접속 시 누락분을 복구 |
 | 16. 실시간 이벤트(Kafka 로그) | 같은 `OutboxPublisher`가 Kafka 토픽 `amr.events`에도 발행 — 내구성 있는 이벤트 로그(재구독용, 컨슈머는 이 앱 밖) | 발행된 이벤트가 Kafka 토픽에 실제로 도착 |
+| 17. 로봇 기본정보 수정 | `PATCH /api/admin/robots/{robotId}`(name/model/manufacturer) | 등록된 로봇의 기본정보를 API로 수정 가능 |
 
 Redis·Kafka를 채택한다면 프로젝트 기반 단계에서 개발 환경을 구성하고, 해당 데이터·이벤트 기능을 구현할 때 연결한다. Kubernetes도 채택 시 초기 배포 골격을 준비하고, 백엔드 완료 전에 다중 인스턴스와 재시작을 검증한다.
 

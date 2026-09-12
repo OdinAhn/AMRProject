@@ -64,6 +64,12 @@ public class Robot extends BaseAuditableEntity {
         this.lifecycleStatus = status;
     }
 
+    public void updateBasicInfo(String name, String model, String manufacturer) {
+        this.name = name;
+        this.model = model;
+        this.manufacturer = manufacturer;
+    }
+
     public void assignDesiredConfiguration(RobotConfiguration configuration) {
         this.desiredConfiguration = configuration;
     }

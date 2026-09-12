@@ -4,6 +4,7 @@ import com.amrproject.dto.request.CreateRobotConfigurationRequest;
 import com.amrproject.dto.request.CreateRobotRequest;
 import com.amrproject.dto.request.InjectFaultRequest;
 import com.amrproject.dto.request.UpdateRobotLifecycleStatusRequest;
+import com.amrproject.dto.request.UpdateRobotRequest;
 import com.amrproject.dto.response.RobotConfigurationResponse;
 import com.amrproject.dto.response.RobotResponse;
 import com.amrproject.dto.response.RobotStateResponse;
@@ -49,6 +50,11 @@ public class RobotController {
     @GetMapping("/{robotId}")
     public RobotResponse getById(@PathVariable Long robotId) {
         return RobotResponse.from(robotService.getById(robotId));
+    }
+
+    @PatchMapping("/{robotId}")
+    public RobotResponse update(@PathVariable Long robotId, @RequestBody UpdateRobotRequest request) {
+        return RobotResponse.from(robotService.update(robotId, request));
     }
 
     @PatchMapping("/{robotId}/lifecycle-status")

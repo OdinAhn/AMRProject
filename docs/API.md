@@ -98,7 +98,7 @@
 | GET | `/api/admin/robots` | 목록 (필터: site, lifecycle_status, connection_state) |
 | POST | `/api/admin/robots` | 등록 |
 | GET | `/api/admin/robots/{robotId}` | 상세 (기본정보 + 현재 상태 요약) |
-| PATCH | `/api/admin/robots/{robotId}` | 기본 정보 수정 — **미구현**. 등록 후 이름/코드 등을 바꿔야 할 실제 운영 요구가 아직 없어 `lifecycle-status` 전환만 구현했다 |
+| PATCH | `/api/admin/robots/{robotId}` | 기본 정보 수정 (17단계 구현) — `name`/`model`/`manufacturer`만 변경 가능. `code`/`site`는 등록 후 변경하지 않는다 |
 | PATCH | `/api/admin/robots/{robotId}/lifecycle-status` | `IN_SERVICE`/`MAINTENANCE`/`DECOMMISSIONED` 전환 |
 | POST | `/api/admin/robots/{robotId}/configurations` | 새 설정 버전 생성 → `desired_config` 갱신, 로봇에 적용 요청 |
 | GET | `/api/admin/robots/{robotId}/configurations` | 설정 이력 (요청 버전 vs 적용 버전) |
