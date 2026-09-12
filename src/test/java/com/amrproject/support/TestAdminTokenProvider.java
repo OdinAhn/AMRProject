@@ -1,9 +1,9 @@
 package com.amrproject.support;
 
-import com.amrproject.domain.entity.Role;
-import com.amrproject.domain.entity.User;
-import com.amrproject.repository.RoleRepository;
-import com.amrproject.repository.UserRepository;
+import com.amrproject.domain.entity.user.Role;
+import com.amrproject.domain.entity.user.User;
+import com.amrproject.repository.user.RoleRepository;
+import com.amrproject.repository.user.UserRepository;
 import com.amrproject.security.AccessTokenService;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;

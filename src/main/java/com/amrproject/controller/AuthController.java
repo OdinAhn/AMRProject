@@ -1,8 +1,8 @@
 package com.amrproject.controller;
 
-import com.amrproject.dto.request.LoginRequest;
-import com.amrproject.dto.response.LoginResponse;
-import com.amrproject.dto.response.UserResponse;
+import com.amrproject.dto.request.user.LoginRequest;
+import com.amrproject.dto.response.user.LoginResponse;
+import com.amrproject.dto.response.user.UserResponse;
 import com.amrproject.service.AuthService;
 import com.amrproject.service.UserService;
 import jakarta.validation.Valid;

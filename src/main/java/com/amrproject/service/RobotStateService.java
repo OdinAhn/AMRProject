@@ -1,10 +1,10 @@
 package com.amrproject.service;
 
-import com.amrproject.domain.entity.RobotCurrentState;
-import com.amrproject.domain.entity.RobotStateSnapshot;
+import com.amrproject.domain.entity.robot.RobotCurrentState;
+import com.amrproject.domain.entity.robot.RobotStateSnapshot;
 import com.amrproject.exception.EntityNotFoundException;
-import com.amrproject.repository.RobotCurrentStateRepository;
-import com.amrproject.repository.RobotStateSnapshotRepository;
+import com.amrproject.repository.robot.RobotCurrentStateRepository;
+import com.amrproject.repository.robot.RobotStateSnapshotRepository;
 import com.amrproject.robot.SimulatedFault;
 import com.amrproject.robot.SimulatorRobotGateway;
 import org.springframework.stereotype.Service;

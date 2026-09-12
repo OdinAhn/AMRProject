@@ -1,8 +1,8 @@
 package com.amrproject.controller;
 
-import com.amrproject.domain.entity.User;
-import com.amrproject.dto.response.StationResponse;
-import com.amrproject.dto.response.TaskResponse;
+import com.amrproject.domain.entity.user.User;
+import com.amrproject.dto.response.site.StationResponse;
+import com.amrproject.dto.response.task.TaskResponse;
 import com.amrproject.service.StationService;
 import com.amrproject.service.TaskService;
 import com.amrproject.service.UserService;

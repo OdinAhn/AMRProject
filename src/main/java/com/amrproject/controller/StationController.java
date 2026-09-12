@@ -1,10 +1,10 @@
 package com.amrproject.controller;
 
-import com.amrproject.dto.request.BindStationMapRequest;
-import com.amrproject.dto.request.CreateStationRequest;
-import com.amrproject.dto.request.UpdateStationRequest;
-import com.amrproject.dto.response.StationMapBindingResponse;
-import com.amrproject.dto.response.StationResponse;
+import com.amrproject.dto.request.site.BindStationMapRequest;
+import com.amrproject.dto.request.site.CreateStationRequest;
+import com.amrproject.dto.request.site.UpdateStationRequest;
+import com.amrproject.dto.response.site.StationMapBindingResponse;
+import com.amrproject.dto.response.site.StationResponse;
 import com.amrproject.service.MapVersionService;
 import com.amrproject.service.StationService;
 import jakarta.validation.Valid;

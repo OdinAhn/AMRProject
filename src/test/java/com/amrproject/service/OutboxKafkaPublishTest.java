@@ -1,8 +1,8 @@
 package com.amrproject.service;
 
 import com.amrproject.config.KafkaConfig;
-import com.amrproject.domain.entity.OutboxEvent;
-import com.amrproject.repository.OutboxEventRepository;
+import com.amrproject.domain.entity.event.OutboxEvent;
+import com.amrproject.repository.event.OutboxEventRepository;
 import com.amrproject.support.AbstractIntegrationTest;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecord;

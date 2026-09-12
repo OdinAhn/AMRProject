@@ -1,9 +1,9 @@
 package com.amrproject.controller;
 
-import com.amrproject.domain.entity.User;
-import com.amrproject.dto.request.CreateTaskRequest;
-import com.amrproject.dto.request.ReportUnavailableRequest;
-import com.amrproject.dto.response.TaskResponse;
+import com.amrproject.domain.entity.user.User;
+import com.amrproject.dto.request.task.CreateTaskRequest;
+import com.amrproject.dto.request.task.ReportUnavailableRequest;
+import com.amrproject.dto.response.task.TaskResponse;
 import com.amrproject.service.TaskCreationResult;
 import com.amrproject.service.TaskService;
 import com.amrproject.service.UserService;

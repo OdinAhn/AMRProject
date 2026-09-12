@@ -1,10 +1,10 @@
 package com.amrproject.service;
 
-import com.amrproject.domain.entity.MapEntity;
-import com.amrproject.domain.entity.Site;
-import com.amrproject.dto.request.CreateMapRequest;
+import com.amrproject.domain.entity.map.MapEntity;
+import com.amrproject.domain.entity.site.Site;
+import com.amrproject.dto.request.map.CreateMapRequest;
 import com.amrproject.exception.EntityNotFoundException;
-import com.amrproject.repository.MapRepository;
+import com.amrproject.repository.map.MapRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 

@@ -1,6 +1,6 @@
 package com.amrproject.service;
 
-import com.amrproject.domain.entity.Task;
+import com.amrproject.domain.entity.task.Task;
 
 public record TaskCreationResult(Task task, boolean created) {
 }

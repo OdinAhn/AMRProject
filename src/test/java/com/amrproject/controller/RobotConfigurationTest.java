@@ -1,8 +1,8 @@
 package com.amrproject.controller;
 
-import com.amrproject.dto.request.CreateRobotConfigurationRequest;
-import com.amrproject.dto.request.CreateRobotRequest;
-import com.amrproject.dto.request.CreateSiteRequest;
+import com.amrproject.dto.request.robot.CreateRobotConfigurationRequest;
+import com.amrproject.dto.request.robot.CreateRobotRequest;
+import com.amrproject.dto.request.site.CreateSiteRequest;
 import com.amrproject.support.AbstractIntegrationTest;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;

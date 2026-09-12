@@ -2,10 +2,10 @@ package com.amrproject.service;
 
 import com.amrproject.config.KafkaConfig;
 import com.amrproject.config.RedisConfig;
-import com.amrproject.domain.entity.OutboxEvent;
-import com.amrproject.domain.entity.OutboxEventStatus;
-import com.amrproject.dto.response.EventEnvelope;
-import com.amrproject.repository.OutboxEventRepository;
+import com.amrproject.domain.entity.event.OutboxEvent;
+import com.amrproject.domain.entity.event.OutboxEventStatus;
+import com.amrproject.dto.response.event.EventEnvelope;
+import com.amrproject.repository.event.OutboxEventRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.redis.core.StringRedisTemplate;

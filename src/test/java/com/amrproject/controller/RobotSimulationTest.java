@@ -1,13 +1,13 @@
 package com.amrproject.controller;
 
-import com.amrproject.domain.entity.Robot;
-import com.amrproject.domain.entity.StationType;
-import com.amrproject.dto.request.CreateRobotRequest;
-import com.amrproject.dto.request.CreateSiteRequest;
-import com.amrproject.dto.request.CreateStationRequest;
-import com.amrproject.dto.request.CreateTaskRequest;
-import com.amrproject.dto.request.InjectFaultRequest;
-import com.amrproject.repository.RobotRepository;
+import com.amrproject.domain.entity.robot.Robot;
+import com.amrproject.domain.entity.site.StationType;
+import com.amrproject.dto.request.robot.CreateRobotRequest;
+import com.amrproject.dto.request.site.CreateSiteRequest;
+import com.amrproject.dto.request.site.CreateStationRequest;
+import com.amrproject.dto.request.task.CreateTaskRequest;
+import com.amrproject.dto.request.robot.InjectFaultRequest;
+import com.amrproject.repository.robot.RobotRepository;
 import com.amrproject.robot.SimulatedFault;
 import com.amrproject.service.TaskService;
 import com.amrproject.support.AbstractIntegrationTest;

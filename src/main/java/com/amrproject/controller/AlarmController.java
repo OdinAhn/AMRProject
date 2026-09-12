@@ -1,10 +1,10 @@
 package com.amrproject.controller;
 
-import com.amrproject.domain.entity.AlarmSeverity;
-import com.amrproject.domain.entity.AlarmSourceType;
-import com.amrproject.domain.entity.AlarmStatus;
-import com.amrproject.domain.entity.User;
-import com.amrproject.dto.response.AlarmResponse;
+import com.amrproject.domain.entity.alarm.AlarmSeverity;
+import com.amrproject.domain.entity.alarm.AlarmSourceType;
+import com.amrproject.domain.entity.alarm.AlarmStatus;
+import com.amrproject.domain.entity.user.User;
+import com.amrproject.dto.response.alarm.AlarmResponse;
 import com.amrproject.service.AlarmService;
 import com.amrproject.service.UserService;
 import org.springframework.security.core.Authentication;

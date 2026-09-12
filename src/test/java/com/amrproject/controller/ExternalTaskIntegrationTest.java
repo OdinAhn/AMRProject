@@ -1,11 +1,11 @@
 package com.amrproject.controller;
 
-import com.amrproject.domain.entity.StationType;
-import com.amrproject.dto.request.AssignRobotRequest;
-import com.amrproject.dto.request.CreateExternalTaskRequest;
-import com.amrproject.dto.request.CreateRobotRequest;
-import com.amrproject.dto.request.CreateSiteRequest;
-import com.amrproject.dto.request.CreateStationRequest;
+import com.amrproject.domain.entity.site.StationType;
+import com.amrproject.dto.request.task.AssignRobotRequest;
+import com.amrproject.dto.request.task.CreateExternalTaskRequest;
+import com.amrproject.dto.request.robot.CreateRobotRequest;
+import com.amrproject.dto.request.site.CreateSiteRequest;
+import com.amrproject.dto.request.site.CreateStationRequest;
 import com.amrproject.support.AbstractIntegrationTest;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;

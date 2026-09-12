@@ -1,9 +1,9 @@
 package com.amrproject.service;
 
-import com.amrproject.domain.entity.User;
-import com.amrproject.domain.entity.UserStatus;
+import com.amrproject.domain.entity.user.User;
+import com.amrproject.domain.entity.user.UserStatus;
 import com.amrproject.exception.AuthenticationFailedException;
-import com.amrproject.repository.UserRepository;
+import com.amrproject.repository.user.UserRepository;
 import com.amrproject.security.AccessTokenService;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;

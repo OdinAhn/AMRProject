@@ -1,17 +1,17 @@
 package com.amrproject.service;
 
-import com.amrproject.domain.entity.Alarm;
-import com.amrproject.domain.entity.AlarmEvent;
-import com.amrproject.domain.entity.AlarmSeverity;
-import com.amrproject.domain.entity.AlarmSourceType;
-import com.amrproject.domain.entity.AlarmStatus;
-import com.amrproject.domain.entity.AlarmType;
-import com.amrproject.domain.entity.OutboxEvent;
-import com.amrproject.domain.entity.User;
+import com.amrproject.domain.entity.alarm.Alarm;
+import com.amrproject.domain.entity.alarm.AlarmEvent;
+import com.amrproject.domain.entity.alarm.AlarmSeverity;
+import com.amrproject.domain.entity.alarm.AlarmSourceType;
+import com.amrproject.domain.entity.alarm.AlarmStatus;
+import com.amrproject.domain.entity.alarm.AlarmType;
+import com.amrproject.domain.entity.event.OutboxEvent;
+import com.amrproject.domain.entity.user.User;
 import com.amrproject.exception.EntityNotFoundException;
-import com.amrproject.repository.AlarmEventRepository;
-import com.amrproject.repository.AlarmRepository;
-import com.amrproject.repository.OutboxEventRepository;
+import com.amrproject.repository.alarm.AlarmEventRepository;
+import com.amrproject.repository.alarm.AlarmRepository;
+import com.amrproject.repository.event.OutboxEventRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 

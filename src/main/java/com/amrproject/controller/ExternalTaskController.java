@@ -1,7 +1,7 @@
 package com.amrproject.controller;
 
-import com.amrproject.dto.request.CreateExternalTaskRequest;
-import com.amrproject.dto.response.TaskResponse;
+import com.amrproject.dto.request.task.CreateExternalTaskRequest;
+import com.amrproject.dto.response.task.TaskResponse;
 import com.amrproject.service.TaskCreationResult;
 import com.amrproject.service.TaskService;
 import jakarta.validation.Valid;

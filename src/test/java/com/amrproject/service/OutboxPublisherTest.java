@@ -1,9 +1,9 @@
 package com.amrproject.service;
 
 import com.amrproject.config.KafkaConfig;
-import com.amrproject.domain.entity.OutboxEvent;
-import com.amrproject.domain.entity.OutboxEventStatus;
-import com.amrproject.repository.OutboxEventRepository;
+import com.amrproject.domain.entity.event.OutboxEvent;
+import com.amrproject.domain.entity.event.OutboxEventStatus;
+import com.amrproject.repository.event.OutboxEventRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
