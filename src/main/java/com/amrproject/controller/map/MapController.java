@@ -4,12 +4,14 @@ import com.amrproject.dto.request.map.CreateEdgeRequest;
 import com.amrproject.dto.request.map.CreateMapRequest;
 import com.amrproject.dto.request.map.CreateMapVersionRequest;
 import com.amrproject.dto.request.map.CreateNodeRequest;
+import com.amrproject.dto.request.map.CreateObstacleRequest;
 import com.amrproject.dto.request.map.CreateZoneRequest;
 import com.amrproject.dto.response.map.EdgeResponse;
 import com.amrproject.dto.response.map.MapResponse;
 import com.amrproject.dto.response.map.MapVersionResponse;
 import com.amrproject.dto.response.map.MapVersionValidationResponse;
 import com.amrproject.dto.response.map.NodeResponse;
+import com.amrproject.dto.response.map.ObstacleResponse;
 import com.amrproject.dto.response.map.ZoneResponse;
 import com.amrproject.service.map.MapService;
 import com.amrproject.service.map.MapVersionService;
@@ -97,6 +99,17 @@ public class MapController {
     @GetMapping("/api/admin/map-versions/{versionId}/zones")
     public List<ZoneResponse> getZones(@PathVariable Long versionId) {
         return mapVersionService.getZones(versionId).stream().map(ZoneResponse::from).toList();
+    }
+
+    @PostMapping("/api/admin/map-versions/{versionId}/obstacles")
+    public ResponseEntity<ObstacleResponse> addObstacle(@PathVariable Long versionId, @Valid @RequestBody CreateObstacleRequest request) {
+        ObstacleResponse response = ObstacleResponse.from(mapVersionService.addObstacle(versionId, request));
+        return ResponseEntity.status(HttpStatus.CREATED).body(response);
+    }
+
+    @GetMapping("/api/admin/map-versions/{versionId}/obstacles")
+    public List<ObstacleResponse> getObstacles(@PathVariable Long versionId) {
+        return mapVersionService.getObstacles(versionId).stream().map(ObstacleResponse::from).toList();
     }
 
     @PostMapping("/api/admin/map-versions/{versionId}/validate")
