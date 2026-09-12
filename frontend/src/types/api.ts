@@ -1,0 +1,345 @@
+// 백엔드 DTO(com.amrproject.dto.*)와 1:1로 대응하는 타입.
+// 필드가 바뀌면 이 파일도 같이 갱신해야 한다 (OpenAPI 코드 생성기는 아직 도입하지 않음).
+
+export type SiteStatus = "ACTIVE" | "INACTIVE";
+export type StationStatus = "ACTIVE" | "INACTIVE";
+export type StationType = "PICKUP" | "DROPOFF" | "WAITING" | "CHARGING" | "GENERIC";
+export type RobotLifecycleStatus = "REGISTERED" | "IN_SERVICE" | "MAINTENANCE" | "DECOMMISSIONED";
+export type NodeType = "WAYPOINT" | "STATION" | "CHARGING";
+export type EdgeDirection = "ONE_WAY" | "TWO_WAY";
+export type ZoneType = "MUTEX_ZONE" | "SAFETY_ZONE";
+export type MapVersionStatus = "DRAFT" | "VALIDATED" | "ACTIVE" | "ARCHIVED";
+export type TaskType = "TRANSPORT" | "CHARGE";
+export type TaskStatus =
+  | "QUEUED"
+  | "ASSIGNED"
+  | "RUNNING"
+  | "PAUSED"
+  | "CANCEL_REQUESTED"
+  | "CANCELED"
+  | "RECOVERY_REQUIRED"
+  | "SUCCEEDED"
+  | "FAILED";
+export type TaskStepStatus = "PENDING" | "RUNNING" | "SUCCEEDED" | "FAILED" | "SKIPPED";
+export type TaskStepType =
+  | "MOVE_TO_ORIGIN"
+  | "CONFIRM_LOAD"
+  | "MOVE_TO_DESTINATION"
+  | "CONFIRM_UNLOAD"
+  | "MOVE_TO_CHARGING_STATION"
+  | "DOCK_AND_CHARGE";
+export type UserStatus = "ACTIVE" | "DISABLED";
+export type ConnectionState = "ONLINE" | "STALE" | "OFFLINE";
+export type OperationMode = "AUTO" | "MANUAL" | "MAINTENANCE";
+export type MotionState = "IDLE" | "MOVING" | "DOCKING" | "CHARGING";
+export type SafetyState = "NORMAL" | "PROTECTIVE_STOP" | "EMERGENCY_STOP";
+export type LoadState = "EMPTY" | "LOADED" | "UNKNOWN";
+export type LocalizationState = "LOCALIZED" | "LOST" | "UNKNOWN";
+export type RecoveryResolution = "RESUME" | "FAIL";
+
+export interface ErrorResponse {
+  code: string;
+  message: string;
+  details?: unknown;
+}
+
+export interface SiteResponse {
+  id: number;
+  code: string;
+  name: string;
+  status: SiteStatus;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface StationResponse {
+  id: number;
+  siteId: number;
+  code: string;
+  name: string;
+  stationType: StationType;
+  status: StationStatus;
+  maxConcurrentRobots: number | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface RobotResponse {
+  id: number;
+  code: string;
+  name: string;
+  model: string | null;
+  manufacturer: string | null;
+  siteId: number;
+  lifecycleStatus: RobotLifecycleStatus;
+  desiredConfigVersion: number | null;
+  appliedConfigVersion: number | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface RobotStateResponse {
+  robotId: number;
+  connectionState: ConnectionState;
+  operationMode: OperationMode;
+  motionState: MotionState;
+  safetyState: SafetyState;
+  loadState: LoadState;
+  localizationState: LocalizationState;
+  batteryPct: number;
+  stateVersion: number | null;
+  reportedAt: string;
+  receivedAt: string;
+}
+
+export interface RobotConfigurationResponse {
+  id: number;
+  robotId: number;
+  versionNo: number;
+  maxPayloadKg: number;
+  maxSpeedMps: number;
+  batteryCapacityWh: number;
+  chargingLowThresholdPct: number;
+  chargingTargetPct: number;
+}
+
+export interface MapResponse {
+  id: number;
+  siteId: number;
+  name: string;
+}
+
+export interface MapVersionResponse {
+  id: number;
+  mapId: number;
+  versionNo: number;
+  filePath: string | null;
+  coordinateSystem: string | null;
+  status: MapVersionStatus;
+  validatedAt: string | null;
+  activatedAt: string | null;
+  nodeCount: number;
+  edgeCount: number;
+  zoneCount: number;
+}
+
+export interface MapVersionValidationResponse {
+  valid: boolean;
+  errors: string[];
+  mapVersion: MapVersionResponse;
+}
+
+export interface NodeResponse {
+  id: number;
+  mapVersionId: number;
+  code: string;
+  x: number;
+  y: number;
+  nodeType: NodeType;
+}
+
+export interface EdgeResponse {
+  id: number;
+  mapVersionId: number;
+  fromNodeId: number;
+  toNodeId: number;
+  direction: EdgeDirection;
+  distance: number | null;
+  maxCapacity: number | null;
+}
+
+export interface ZoneResponse {
+  id: number;
+  mapVersionId: number;
+  code: string;
+  zoneType: ZoneType;
+  maxCapacity: number | null;
+  nodeIds: number[];
+}
+
+export interface StationMapBindingResponse {
+  id: number;
+  stationId: number;
+  mapVersionId: number;
+  nodeId: number;
+}
+
+export interface TaskStepResponse {
+  id: number;
+  stepNo: number;
+  stepType: TaskStepType;
+  status: TaskStepStatus;
+  startedAt: string | null;
+  completedAt: string | null;
+}
+
+export interface TaskResponse {
+  id: number;
+  taskNo: string;
+  siteId: number;
+  taskType: TaskType;
+  priority: number;
+  status: TaskStatus;
+  originStationId: number;
+  destinationStationId: number;
+  currentAssignmentId: number | null;
+  steps: TaskStepResponse[];
+  allowedActions: string[];
+  createdAt: string;
+  updatedAt: string;
+  completedAt: string | null;
+}
+
+export interface TaskEventResponse {
+  id: number;
+  eventType: string;
+  fromStatus: TaskStatus | null;
+  toStatus: TaskStatus | null;
+  payload: string | null;
+  createdAt: string;
+}
+
+export interface UserResponse {
+  id: number;
+  username: string;
+  displayName: string;
+  roleCode: string;
+  status: UserStatus;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface StationAssignmentResponse {
+  id: number;
+  stationId: number;
+  stationCode: string;
+  createdAt: string;
+}
+
+export interface DispatchResultResponse {
+  assignedTaskIds: number[];
+  chargeTaskIds: number[];
+}
+
+export interface LoginResponse {
+  token: string;
+  user: UserResponse;
+}
+
+// ---- 요청 타입 ----
+
+export interface LoginRequest {
+  username: string;
+  password: string;
+}
+
+export interface CreateSiteRequest {
+  code: string;
+  name: string;
+}
+
+export interface UpdateSiteRequest {
+  name?: string | null;
+  status?: SiteStatus | null;
+}
+
+export interface CreateStationRequest {
+  code: string;
+  name: string;
+  stationType: StationType;
+}
+
+export interface UpdateStationRequest {
+  name?: string | null;
+  status?: StationStatus | null;
+  maxConcurrentRobots?: number | null;
+}
+
+export interface CreateRobotRequest {
+  code: string;
+  name: string;
+  model?: string | null;
+  manufacturer?: string | null;
+  siteId: number;
+}
+
+export interface UpdateRobotLifecycleStatusRequest {
+  lifecycleStatus: RobotLifecycleStatus;
+}
+
+export interface CreateRobotConfigurationRequest {
+  maxPayloadKg: number;
+  maxSpeedMps: number;
+  batteryCapacityWh: number;
+  chargingLowThresholdPct: number;
+  chargingTargetPct: number;
+}
+
+export interface CreateMapRequest {
+  name: string;
+}
+
+export interface CreateMapVersionRequest {
+  filePath?: string | null;
+  coordinateSystem?: string | null;
+}
+
+export interface CreateNodeRequest {
+  code: string;
+  x: number;
+  y: number;
+  nodeType: NodeType;
+}
+
+export interface CreateEdgeRequest {
+  fromNodeId: number;
+  toNodeId: number;
+  direction: EdgeDirection;
+  distance?: number | null;
+  maxCapacity?: number | null;
+}
+
+export interface CreateZoneRequest {
+  code: string;
+  zoneType: ZoneType;
+  maxCapacity?: number | null;
+  nodeIds: number[];
+}
+
+export interface BindStationMapRequest {
+  mapVersionId: number;
+  nodeId: number;
+}
+
+export interface CreateTaskRequest {
+  originStationId: number;
+  destinationStationId: number;
+}
+
+export interface AssignRobotRequest {
+  robotId: number;
+}
+
+export interface RecoverTaskRequest {
+  resolution: RecoveryResolution;
+}
+
+export interface ReportUnavailableRequest {
+  reason: string;
+}
+
+export interface CreateUserRequest {
+  username: string;
+  password: string;
+  displayName: string;
+  roleCode: string;
+}
+
+export interface UpdateUserRequest {
+  displayName?: string | null;
+  status?: UserStatus | null;
+}
+
+export interface CreateStationAssignmentRequest {
+  stationId: number;
+}
