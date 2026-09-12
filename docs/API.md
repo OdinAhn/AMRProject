@@ -98,7 +98,7 @@
 | GET | `/api/admin/robots` | 목록 (필터: site, lifecycle_status, connection_state) |
 | POST | `/api/admin/robots` | 등록 |
 | GET | `/api/admin/robots/{robotId}` | 상세 (기본정보 + 현재 상태 요약) |
-| PATCH | `/api/admin/robots/{robotId}` | 기본 정보 수정 |
+| PATCH | `/api/admin/robots/{robotId}` | 기본 정보 수정 — **미구현**. 등록 후 이름/코드 등을 바꿔야 할 실제 운영 요구가 아직 없어 `lifecycle-status` 전환만 구현했다 |
 | PATCH | `/api/admin/robots/{robotId}/lifecycle-status` | `IN_SERVICE`/`MAINTENANCE`/`DECOMMISSIONED` 전환 |
 | POST | `/api/admin/robots/{robotId}/configurations` | 새 설정 버전 생성 → `desired_config` 갱신, 로봇에 적용 요청 |
 | GET | `/api/admin/robots/{robotId}/configurations` | 설정 이력 (요청 버전 vs 적용 버전) |
@@ -115,6 +115,7 @@
 | POST | `/api/admin/users` | 생성 |
 | GET | `/api/admin/users/{userId}` | 상세 |
 | PATCH | `/api/admin/users/{userId}` | 수정 (role, status 등) |
+| GET | `/api/admin/users/{userId}/station-assignments` | 작업장 접근 권한 목록 |
 | POST | `/api/admin/users/{userId}/station-assignments` | 작업장 접근 권한 부여 |
 | DELETE | `/api/admin/users/{userId}/station-assignments/{stationId}` | 권한 회수 |
 
@@ -131,10 +132,12 @@
 | POST | `/api/admin/tasks/{taskId}/cancel` | 취소 요청 → 적재 전/하역 후면 즉시 `CANCELED`, 적재 중이면 `RECOVERY_REQUIRED`(8단계, 아래 참고) |
 | POST | `/api/admin/tasks/{taskId}/recover` | `RECOVERY_REQUIRED` 상태 개입: 재개 또는 최종 실패 처리 |
 | POST | `/api/admin/sites/{siteId}/dispatch` | 디스패치 사이클 실행 (7단계): `QUEUED` 작업 자동 배정 + 저배터리 로봇 자동 충전 작업 생성, 결과로 배정/생성된 taskId 목록 반환. 스케줄러가 없어 관리자가 필요할 때 호출한다 |
-| GET | `/api/admin/alarms` | 알람 목록 (필터: status, severity, source_type) |
-| GET | `/api/admin/alarms/{alarmId}` | 상세 |
-| POST | `/api/admin/alarms/{alarmId}/acknowledge` | 확인 처리 |
-| POST | `/api/admin/alarms/{alarmId}/resolve` | 해제 처리 |
+| GET | `/api/admin/alarms` | **미구현** |
+| GET | `/api/admin/alarms/{alarmId}` | **미구현** |
+| POST | `/api/admin/alarms/{alarmId}/acknowledge` | **미구현** |
+| POST | `/api/admin/alarms/{alarmId}/resolve` | **미구현** |
+
+**알람(Alarm) 미구현**: `alarms`/`alarm_events` 테이블(ERD.md §4.10, STATE_MACHINES.md §7)은 초안 단계에 머물러 있고 실제 마이그레이션·엔티티·컨트롤러가 없다. 8단계(운영 장애 복구)에서 개입이 필요한 상황은 별도 알람 테이블 없이 `Task.status = RECOVERY_REQUIRED` + `task_events.payload`(사유) + `POST /api/admin/tasks/{taskId}/recover`로 대체 구현했다 — 위 표의 알람 엔드포인트는 이 대체 방식으로 대체되기 전 초안이므로 실제로 호출할 수 없다.
 
 `recover` 요청 본문 예시:
 
@@ -193,11 +196,13 @@ Idempotency-Key: 8e2f1c...
 
 ---
 
-## 5. 실시간 이벤트 (공통)
+## 5. 실시간 이벤트 (공통) — **미구현**
+
+이 섹션 전체가 아직 구현되지 않은 설계 초안이다. `GET /api/events/stream`은 존재하지 않으며, 11~12단계 프론트엔드(관리자/작업자 화면)는 TanStack Query의 `refetchInterval`(예: 5초) 폴링으로 대체했다. 이벤트 팬아웃 인프라(§8 열린 질문 참고)가 확정되면 이 섹션을 실제 구현으로 교체한다.
 
 | Method | Path | 설명 |
 |---|---|---|
-| GET | `/api/events/stream` | SSE 스트림 (query: `siteId`, `stationId`, `Last-Event-ID` 헤더로 재접속 복구) |
+| GET | `/api/events/stream` | (설계 초안) SSE 스트림 (query: `siteId`, `stationId`, `Last-Event-ID` 헤더로 재접속 복구) |
 
 ### 이벤트 봉투(envelope)
 
