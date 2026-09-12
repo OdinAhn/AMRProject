@@ -11,6 +11,8 @@ public interface TaskRepository extends JpaRepository<Task, Long> {
 
     Optional<Task> findByIdempotencyKey(String idempotencyKey);
 
+    Optional<Task> findByExternalRef(String externalRef);
+
     List<Task> findBySiteIdAndStatusOrderByPriorityDescCreatedAtAsc(Long siteId, TaskStatus status);
 
     List<Task> findBySiteId(Long siteId);
