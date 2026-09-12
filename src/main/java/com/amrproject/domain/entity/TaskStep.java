@@ -77,6 +77,12 @@ public class TaskStep {
         this.completedAt = Instant.now();
     }
 
+    public void retry() {
+        requireStatus(TaskStepStatus.FAILED, "RETRY");
+        this.status = TaskStepStatus.RUNNING;
+        this.completedAt = null;
+    }
+
     public void skip() {
         requireStatus(TaskStepStatus.PENDING, "SKIP");
         this.status = TaskStepStatus.SKIPPED;

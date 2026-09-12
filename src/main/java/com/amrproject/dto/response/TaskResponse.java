@@ -3,9 +3,12 @@ package com.amrproject.dto.response;
 import com.amrproject.domain.entity.Task;
 import com.amrproject.domain.entity.TaskStatus;
 import com.amrproject.domain.entity.TaskStep;
+import com.amrproject.domain.entity.TaskStepStatus;
+import com.amrproject.domain.entity.TaskStepType;
 import com.amrproject.domain.entity.TaskType;
 
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 
@@ -31,9 +34,20 @@ public record TaskResponse(
     );
 
     public static TaskResponse from(Task task, List<TaskStep> steps) {
-        List<String> allowedActions = CANCELABLE.contains(task.getStatus())
-                ? List.of("CANCEL")
-                : List.of();
+        List<String> allowedActions = new ArrayList<>();
+        if (CANCELABLE.contains(task.getStatus())) {
+            allowedActions.add("CANCEL");
+        }
+        steps.stream()
+                .filter(step -> step.getStatus() == TaskStepStatus.RUNNING)
+                .findFirst()
+                .ifPresent(step -> {
+                    if (step.getStepType() == TaskStepType.CONFIRM_LOAD) {
+                        allowedActions.add("DISPATCH");
+                    } else if (step.getStepType() == TaskStepType.CONFIRM_UNLOAD) {
+                        allowedActions.add("CONFIRM_UNLOAD");
+                    }
+                });
         return new TaskResponse(
                 task.getId(),
                 task.getTaskNo(),

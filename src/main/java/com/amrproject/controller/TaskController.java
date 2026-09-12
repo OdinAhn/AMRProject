@@ -43,4 +43,16 @@ public class TaskController {
     public TaskResponse getById(@PathVariable Long taskId) {
         return TaskResponse.from(taskService.getById(taskId), taskService.getSteps(taskId));
     }
+
+    @PostMapping("/{taskId}/dispatch")
+    public TaskResponse dispatch(@PathVariable Long taskId) {
+        taskService.dispatchAfterLoad(taskId);
+        return TaskResponse.from(taskService.getById(taskId), taskService.getSteps(taskId));
+    }
+
+    @PostMapping("/{taskId}/confirm-unload")
+    public TaskResponse confirmUnload(@PathVariable Long taskId) {
+        taskService.confirmUnload(taskId);
+        return TaskResponse.from(taskService.getById(taskId), taskService.getSteps(taskId));
+    }
 }

@@ -120,6 +120,7 @@
 | GET | `/api/admin/tasks` | 전체 작업 조회 (필터: status, site, station, robot, 기간) |
 | GET | `/api/admin/tasks/{taskId}` | 상세 (단계, 배정 이력, 로봇 명령 포함) |
 | GET | `/api/admin/tasks/{taskId}/events` | 상태 전이 이력 (`task_events`) |
+| POST | `/api/admin/tasks/{taskId}/assign` | 로봇 지정 배정 (`robotId`) → `ASSIGNED` 후 즉시 첫 단계 시작 (자동 배정은 7단계 범위) |
 | POST | `/api/admin/tasks/{taskId}/cancel` | 취소 요청 → `CANCEL_REQUESTED` |
 | POST | `/api/admin/tasks/{taskId}/recover` | `RECOVERY_REQUIRED` 상태 개입: 재개 또는 최종 실패 처리 |
 | GET | `/api/admin/alarms` | 알람 목록 (필터: status, severity, source_type) |

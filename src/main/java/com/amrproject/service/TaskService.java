@@ -18,6 +18,7 @@ import com.amrproject.domain.entity.TaskStepType;
 import com.amrproject.domain.entity.TaskType;
 import com.amrproject.domain.entity.User;
 import com.amrproject.dto.request.CreateTaskRequest;
+import com.amrproject.dto.request.RecoveryResolution;
 import com.amrproject.exception.EntityNotFoundException;
 import com.amrproject.exception.InvalidStateTransitionException;
 import com.amrproject.repository.OutboxEventRepository;
@@ -36,8 +37,8 @@ import java.util.UUID;
 
 /**
  * 작업 생성·조회·취소와 상태 전이 기록(TaskEvent)·Outbox 기록을 담당한다.
- * 로봇 배정(assignRobot)은 실제 자동 배정 알고리즘(7단계)이 없어 "지정 배정"만
- * 제공하며, 아직 REST API로 노출하지 않는다 — 통합 테스트에서만 사용한다.
+ * 로봇 배정(assignRobot/assignAndStart)은 실제 자동 배정 알고리즘(7단계)이 없어
+ * "지정 배정"만 제공한다 (관리자가 robotId를 지정).
  * MOVE 타입 단계가 시작되면 {@link RobotGateway}로 명령을 디스패치하고
  * 결과에 따라 단계/작업을 진행시킨다 (4단계: 실제 장비 없이 이동 실행).
  */
@@ -58,6 +59,7 @@ public class TaskService {
     private final OutboxEventRepository outboxEventRepository;
     private final RobotCommandRepository robotCommandRepository;
     private final StationService stationService;
+    private final RobotService robotService;
     private final RobotGateway robotGateway;
 
     public TaskService(
@@ -68,6 +70,7 @@ public class TaskService {
             OutboxEventRepository outboxEventRepository,
             RobotCommandRepository robotCommandRepository,
             StationService stationService,
+            RobotService robotService,
             RobotGateway robotGateway
     ) {
         this.taskRepository = taskRepository;
@@ -77,6 +80,7 @@ public class TaskService {
         this.outboxEventRepository = outboxEventRepository;
         this.robotCommandRepository = robotCommandRepository;
         this.stationService = stationService;
+        this.robotService = robotService;
         this.robotGateway = robotGateway;
     }
 
@@ -128,6 +132,17 @@ public class TaskService {
         return taskEventRepository.findByTaskIdOrderByCreatedAtAsc(taskId);
     }
 
+    /**
+     * 관리자가 로봇을 지정 배정하면 그 즉시 첫 단계를 시작한다 (5단계: STATE_MACHINES.md §1의
+     * ASSIGNED→RUNNING은 "첫 명령 ACCEPTED"가 트리거이며 별도의 수동 시작 액션이 아니다).
+     */
+    @Transactional
+    public Task assignAndStart(Long taskId, Long robotId) {
+        Robot robot = robotService.getById(robotId);
+        assignRobot(taskId, robot);
+        return start(taskId);
+    }
+
     @Transactional
     public TaskAssignment assignRobot(Long taskId, Robot robot) {
         Task task = getById(taskId);
@@ -172,6 +187,103 @@ public class TaskService {
         return task;
     }
 
+    /**
+     * 작업자 '로봇 보내기' 버튼 (API.md §4). CONFIRM_LOAD 단계 완료 처리.
+     * 이미 지나간 단계에 대한 재요청은 409 대신 현재 상태를 그대로 반환한다 (멱등).
+     */
+    @Transactional
+    public Task dispatchAfterLoad(Long taskId) {
+        return completeNamedStep(taskId, TaskStepType.CONFIRM_LOAD, "TASK_DISPATCH");
+    }
+
+    /**
+     * 작업자 '하역 완료' 버튼 (API.md §4). CONFIRM_UNLOAD 단계 완료 처리.
+     */
+    @Transactional
+    public Task confirmUnload(Long taskId) {
+        return completeNamedStep(taskId, TaskStepType.CONFIRM_UNLOAD, "TASK_CONFIRM_UNLOAD");
+    }
+
+    private Task completeNamedStep(Long taskId, TaskStepType expectedType, String actionCode) {
+        Task task = getById(taskId);
+        TaskStep step = taskStepRepository.findByTaskIdOrderByStepNoAsc(taskId).stream()
+                .filter(s -> s.getStepType() == expectedType)
+                .findFirst()
+                .orElseThrow(() -> new InvalidStateTransitionException(
+                        actionCode + "_NOT_ALLOWED", expectedType + " 단계가 없는 작업입니다."
+                ));
+        if (step.getStatus() == TaskStepStatus.SUCCEEDED) {
+            return task;
+        }
+        if (step.getStatus() != TaskStepStatus.RUNNING) {
+            throw new InvalidStateTransitionException(
+                    actionCode + "_NOT_ALLOWED",
+                    expectedType + " 단계가 진행 중이 아니어서(현재: " + step.getStatus() + ") 처리할 수 없습니다."
+            );
+        }
+        completeStepInternal(task, step);
+        return task;
+    }
+
+    /**
+     * 관리자 복구 개입 (API.md §3). RESUME은 실패/불확실 단계를 재시도하고, FAIL은
+     * 작업을 최종 실패 처리하며 배정을 해제한다. 이미 처리된 요청은 그대로 현재 상태를 반환한다 (멱등).
+     */
+    @Transactional
+    public Task recover(Long taskId, RecoveryResolution resolution) {
+        Task task = getById(taskId);
+        if (resolution == RecoveryResolution.FAIL) {
+            if (task.getStatus() == TaskStatus.FAILED) {
+                return task;
+            }
+            return failRecovery(task);
+        }
+        if (task.getStatus() == TaskStatus.RUNNING) {
+            return task;
+        }
+        return resumeRecovery(task);
+    }
+
+    private Task resumeRecovery(Task task) {
+        TaskStep step = findRecoveryStep(task.getId());
+        if (step.getStatus() == TaskStepStatus.FAILED) {
+            step.retry();
+        }
+        TaskStatus previous = task.getStatus();
+        task.resumeFromRecovery();
+        recordEvent(task, "RECOVERY_RESUMED", previous, task.getStatus(), null);
+        dispatchMoveCommand(task, step);
+        return task;
+    }
+
+    private Task failRecovery(Task task) {
+        TaskStep step = findRecoveryStep(task.getId());
+        if (step.getStatus() == TaskStepStatus.RUNNING) {
+            step.fail();
+        }
+        TaskStatus previous = task.getStatus();
+        task.failFromRecovery();
+        recordEvent(task, "RECOVERY_FAILED", previous, task.getStatus(), null);
+        releaseAssignment(task);
+        return task;
+    }
+
+    private TaskStep findRecoveryStep(Long taskId) {
+        return taskStepRepository.findByTaskIdOrderByStepNoAsc(taskId).stream()
+                .filter(step -> step.getStatus() == TaskStepStatus.RUNNING || step.getStatus() == TaskStepStatus.FAILED)
+                .findFirst()
+                .orElseThrow(() -> new InvalidStateTransitionException(
+                        "NO_RECOVERY_STEP", "복구 대상 단계가 없습니다."
+                ));
+    }
+
+    private void releaseAssignment(Task task) {
+        TaskAssignment assignment = task.getCurrentAssignment();
+        if (assignment != null && assignment.getStatus() == TaskAssignmentStatus.ACTIVE) {
+            assignment.release();
+        }
+    }
+
     @Transactional
     public Task requestCancel(Long taskId, User actor) {
         Task task = getById(taskId);
@@ -203,6 +315,10 @@ public class TaskService {
             TaskStatus previous = task.getStatus();
             task.succeed();
             recordEvent(task, "SUCCEEDED", previous, task.getStatus(), null);
+            TaskAssignment assignment = task.getCurrentAssignment();
+            if (assignment != null && assignment.getStatus() == TaskAssignmentStatus.ACTIVE) {
+                assignment.complete();
+            }
         }
     }
 

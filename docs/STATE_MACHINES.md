@@ -65,11 +65,15 @@ stateDiagram-v2
     PENDING --> RUNNING : 단계 시작 (명령 발행 또는 사용자 확인 대기 진입)
     RUNNING --> SUCCEEDED : 완료 확인 (명령 SUCCEEDED 또는 버튼 확인)
     RUNNING --> FAILED : 명령 FAILED, 복구 불가
+    FAILED --> RUNNING : 관리자 RESUME 재시도 (5단계, DESIGN.md §9)
     PENDING --> SKIPPED : 정책상 불필요 단계로 판단
     SUCCEEDED --> [*]
-    FAILED --> [*]
     SKIPPED --> [*]
 ```
+
+| From | To | Trigger | Guard / 비고 |
+|---|---|---|---|
+| FAILED | RUNNING | 관리자가 `POST /api/admin/tasks/{taskId}/recover`에 `RESUME` 요청 | 상위 Task가 `RECOVERY_REQUIRED`일 때만 가능. 같은 단계에 새 `robot_commands`를 발행해 재시도한다 (§3의 "활성 명령 최대 1개" 규칙은 이전 명령이 `FAILED`로 종료돼 있어 위반하지 않음) |
 
 - 단계는 `task_steps.step_no` 순서대로 진행하되, 서버가 동시에 여러 단계를 `RUNNING`으로 열지 않는다 (한 번에 하나의 활성 단계).
 - 단계 상태 변화는 상위 Task 상태에 다음과 같이 반영된다.
