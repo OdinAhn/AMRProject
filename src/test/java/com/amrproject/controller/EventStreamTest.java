@@ -1,8 +1,8 @@
 package com.amrproject.controller;
 
-import com.amrproject.domain.entity.OutboxEvent;
-import com.amrproject.domain.entity.OutboxEventStatus;
-import com.amrproject.repository.OutboxEventRepository;
+import com.amrproject.domain.entity.event.OutboxEvent;
+import com.amrproject.domain.entity.event.OutboxEventStatus;
+import com.amrproject.repository.event.OutboxEventRepository;
 import com.amrproject.service.OutboxPublisher;
 import com.amrproject.support.AbstractIntegrationTest;
 import org.junit.jupiter.api.Test;

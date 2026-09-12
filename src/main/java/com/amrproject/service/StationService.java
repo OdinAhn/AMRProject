@@ -1,12 +1,12 @@
 package com.amrproject.service;
 
-import com.amrproject.domain.entity.Site;
-import com.amrproject.domain.entity.Station;
-import com.amrproject.dto.request.CreateStationRequest;
-import com.amrproject.dto.request.UpdateStationRequest;
+import com.amrproject.domain.entity.site.Site;
+import com.amrproject.domain.entity.site.Station;
+import com.amrproject.dto.request.site.CreateStationRequest;
+import com.amrproject.dto.request.site.UpdateStationRequest;
 import com.amrproject.exception.DuplicateResourceException;
 import com.amrproject.exception.EntityNotFoundException;
-import com.amrproject.repository.StationRepository;
+import com.amrproject.repository.site.StationRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 

@@ -1,10 +1,10 @@
 package com.amrproject.controller;
 
-import com.amrproject.dto.request.CreateStationAssignmentRequest;
-import com.amrproject.dto.request.CreateUserRequest;
-import com.amrproject.dto.request.UpdateUserRequest;
-import com.amrproject.dto.response.StationAssignmentResponse;
-import com.amrproject.dto.response.UserResponse;
+import com.amrproject.dto.request.user.CreateStationAssignmentRequest;
+import com.amrproject.dto.request.user.CreateUserRequest;
+import com.amrproject.dto.request.user.UpdateUserRequest;
+import com.amrproject.dto.response.user.StationAssignmentResponse;
+import com.amrproject.dto.response.user.UserResponse;
 import com.amrproject.service.UserService;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;

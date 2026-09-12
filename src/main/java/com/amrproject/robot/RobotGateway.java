@@ -1,7 +1,7 @@
 package com.amrproject.robot;
 
-import com.amrproject.domain.entity.RobotCommand;
-import com.amrproject.domain.entity.RobotConfiguration;
+import com.amrproject.domain.entity.robot.RobotCommand;
+import com.amrproject.domain.entity.robot.RobotConfiguration;
 
 /**
  * 서버가 로봇과 통신하는 경계(포트). 로봇 통신 규격이 아직 미정이라

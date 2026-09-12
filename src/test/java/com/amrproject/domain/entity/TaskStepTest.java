@@ -1,5 +1,13 @@
 package com.amrproject.domain.entity;
 
+import com.amrproject.domain.entity.site.Site;
+import com.amrproject.domain.entity.site.Station;
+import com.amrproject.domain.entity.site.StationType;
+import com.amrproject.domain.entity.task.Task;
+import com.amrproject.domain.entity.task.TaskStep;
+import com.amrproject.domain.entity.task.TaskStepStatus;
+import com.amrproject.domain.entity.task.TaskStepType;
+import com.amrproject.domain.entity.task.TaskType;
 import com.amrproject.exception.InvalidStateTransitionException;
 import org.junit.jupiter.api.Test;
 

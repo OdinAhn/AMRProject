@@ -1,6 +1,6 @@
 package com.amrproject.security;
 
-import com.amrproject.domain.entity.User;
+import com.amrproject.domain.entity.user.User;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import tools.jackson.databind.json.JsonMapper;

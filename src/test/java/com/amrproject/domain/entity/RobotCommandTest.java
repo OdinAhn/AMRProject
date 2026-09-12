@@ -1,5 +1,10 @@
 package com.amrproject.domain.entity;
 
+import com.amrproject.domain.entity.robot.Robot;
+import com.amrproject.domain.entity.robot.RobotCommand;
+import com.amrproject.domain.entity.robot.RobotCommandStatus;
+import com.amrproject.domain.entity.robot.RobotCommandType;
+import com.amrproject.domain.entity.site.Site;
 import com.amrproject.exception.InvalidStateTransitionException;
 import org.junit.jupiter.api.Test;
 

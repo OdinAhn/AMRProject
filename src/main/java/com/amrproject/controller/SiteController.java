@@ -1,8 +1,8 @@
 package com.amrproject.controller;
 
-import com.amrproject.dto.request.CreateSiteRequest;
-import com.amrproject.dto.request.UpdateSiteRequest;
-import com.amrproject.dto.response.SiteResponse;
+import com.amrproject.dto.request.site.CreateSiteRequest;
+import com.amrproject.dto.request.site.UpdateSiteRequest;
+import com.amrproject.dto.response.site.SiteResponse;
 import com.amrproject.service.SiteService;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;

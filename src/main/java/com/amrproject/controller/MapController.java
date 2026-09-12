@@ -1,16 +1,16 @@
 package com.amrproject.controller;
 
-import com.amrproject.dto.request.CreateEdgeRequest;
-import com.amrproject.dto.request.CreateMapRequest;
-import com.amrproject.dto.request.CreateMapVersionRequest;
-import com.amrproject.dto.request.CreateNodeRequest;
-import com.amrproject.dto.request.CreateZoneRequest;
-import com.amrproject.dto.response.EdgeResponse;
-import com.amrproject.dto.response.MapResponse;
-import com.amrproject.dto.response.MapVersionResponse;
-import com.amrproject.dto.response.MapVersionValidationResponse;
-import com.amrproject.dto.response.NodeResponse;
-import com.amrproject.dto.response.ZoneResponse;
+import com.amrproject.dto.request.map.CreateEdgeRequest;
+import com.amrproject.dto.request.map.CreateMapRequest;
+import com.amrproject.dto.request.map.CreateMapVersionRequest;
+import com.amrproject.dto.request.map.CreateNodeRequest;
+import com.amrproject.dto.request.map.CreateZoneRequest;
+import com.amrproject.dto.response.map.EdgeResponse;
+import com.amrproject.dto.response.map.MapResponse;
+import com.amrproject.dto.response.map.MapVersionResponse;
+import com.amrproject.dto.response.map.MapVersionValidationResponse;
+import com.amrproject.dto.response.map.NodeResponse;
+import com.amrproject.dto.response.map.ZoneResponse;
 import com.amrproject.service.MapService;
 import com.amrproject.service.MapVersionService;
 import jakarta.validation.Valid;

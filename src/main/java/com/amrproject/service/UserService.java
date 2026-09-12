@@ -1,16 +1,16 @@
 package com.amrproject.service;
 
-import com.amrproject.domain.entity.Role;
-import com.amrproject.domain.entity.Station;
-import com.amrproject.domain.entity.User;
-import com.amrproject.domain.entity.UserStationAssignment;
-import com.amrproject.dto.request.CreateUserRequest;
-import com.amrproject.dto.request.UpdateUserRequest;
+import com.amrproject.domain.entity.user.Role;
+import com.amrproject.domain.entity.site.Station;
+import com.amrproject.domain.entity.user.User;
+import com.amrproject.domain.entity.user.UserStationAssignment;
+import com.amrproject.dto.request.user.CreateUserRequest;
+import com.amrproject.dto.request.user.UpdateUserRequest;
 import com.amrproject.exception.DuplicateResourceException;
 import com.amrproject.exception.EntityNotFoundException;
-import com.amrproject.repository.RoleRepository;
-import com.amrproject.repository.UserRepository;
-import com.amrproject.repository.UserStationAssignmentRepository;
+import com.amrproject.repository.user.RoleRepository;
+import com.amrproject.repository.user.UserRepository;
+import com.amrproject.repository.user.UserStationAssignmentRepository;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;

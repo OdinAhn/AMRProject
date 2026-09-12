@@ -1,13 +1,13 @@
 package com.amrproject.controller;
 
-import com.amrproject.dto.request.CreateRobotConfigurationRequest;
-import com.amrproject.dto.request.CreateRobotRequest;
-import com.amrproject.dto.request.InjectFaultRequest;
-import com.amrproject.dto.request.UpdateRobotLifecycleStatusRequest;
-import com.amrproject.dto.request.UpdateRobotRequest;
-import com.amrproject.dto.response.RobotConfigurationResponse;
-import com.amrproject.dto.response.RobotResponse;
-import com.amrproject.dto.response.RobotStateResponse;
+import com.amrproject.dto.request.robot.CreateRobotConfigurationRequest;
+import com.amrproject.dto.request.robot.CreateRobotRequest;
+import com.amrproject.dto.request.robot.InjectFaultRequest;
+import com.amrproject.dto.request.robot.UpdateRobotLifecycleStatusRequest;
+import com.amrproject.dto.request.robot.UpdateRobotRequest;
+import com.amrproject.dto.response.robot.RobotConfigurationResponse;
+import com.amrproject.dto.response.robot.RobotResponse;
+import com.amrproject.dto.response.robot.RobotStateResponse;
 import com.amrproject.service.RobotService;
 import com.amrproject.service.RobotStateService;
 import jakarta.validation.Valid;

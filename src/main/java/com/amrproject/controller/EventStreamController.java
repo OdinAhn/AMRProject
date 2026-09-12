@@ -1,10 +1,10 @@
 package com.amrproject.controller;
 
 import com.amrproject.config.RedisConfig;
-import com.amrproject.domain.entity.OutboxEvent;
-import com.amrproject.domain.entity.OutboxEventStatus;
-import com.amrproject.dto.response.EventEnvelope;
-import com.amrproject.repository.OutboxEventRepository;
+import com.amrproject.domain.entity.event.OutboxEvent;
+import com.amrproject.domain.entity.event.OutboxEventStatus;
+import com.amrproject.dto.response.event.EventEnvelope;
+import com.amrproject.repository.event.OutboxEventRepository;
 import org.springframework.data.redis.connection.Message;
 import org.springframework.data.redis.connection.MessageListener;
 import org.springframework.data.redis.listener.RedisMessageListenerContainer;

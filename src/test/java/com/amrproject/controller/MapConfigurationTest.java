@@ -1,15 +1,15 @@
 package com.amrproject.controller;
 
-import com.amrproject.domain.entity.EdgeDirection;
-import com.amrproject.domain.entity.NodeType;
-import com.amrproject.domain.entity.StationType;
-import com.amrproject.dto.request.BindStationMapRequest;
-import com.amrproject.dto.request.CreateEdgeRequest;
-import com.amrproject.dto.request.CreateMapRequest;
-import com.amrproject.dto.request.CreateMapVersionRequest;
-import com.amrproject.dto.request.CreateNodeRequest;
-import com.amrproject.dto.request.CreateSiteRequest;
-import com.amrproject.dto.request.CreateStationRequest;
+import com.amrproject.domain.entity.map.EdgeDirection;
+import com.amrproject.domain.entity.map.NodeType;
+import com.amrproject.domain.entity.site.StationType;
+import com.amrproject.dto.request.site.BindStationMapRequest;
+import com.amrproject.dto.request.map.CreateEdgeRequest;
+import com.amrproject.dto.request.map.CreateMapRequest;
+import com.amrproject.dto.request.map.CreateMapVersionRequest;
+import com.amrproject.dto.request.map.CreateNodeRequest;
+import com.amrproject.dto.request.site.CreateSiteRequest;
+import com.amrproject.dto.request.site.CreateStationRequest;
 import com.amrproject.support.AbstractIntegrationTest;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;

@@ -1,16 +1,16 @@
 package com.amrproject.controller;
 
-import com.amrproject.domain.entity.Role;
-import com.amrproject.domain.entity.StationType;
-import com.amrproject.domain.entity.User;
-import com.amrproject.dto.request.CreateSiteRequest;
-import com.amrproject.dto.request.CreateStationAssignmentRequest;
-import com.amrproject.dto.request.CreateStationRequest;
-import com.amrproject.dto.request.CreateTaskRequest;
-import com.amrproject.dto.request.CreateUserRequest;
-import com.amrproject.dto.request.LoginRequest;
-import com.amrproject.repository.RoleRepository;
-import com.amrproject.repository.UserRepository;
+import com.amrproject.domain.entity.user.Role;
+import com.amrproject.domain.entity.site.StationType;
+import com.amrproject.domain.entity.user.User;
+import com.amrproject.dto.request.site.CreateSiteRequest;
+import com.amrproject.dto.request.user.CreateStationAssignmentRequest;
+import com.amrproject.dto.request.site.CreateStationRequest;
+import com.amrproject.dto.request.task.CreateTaskRequest;
+import com.amrproject.dto.request.user.CreateUserRequest;
+import com.amrproject.dto.request.user.LoginRequest;
+import com.amrproject.repository.user.RoleRepository;
+import com.amrproject.repository.user.UserRepository;
 import com.amrproject.support.AbstractIntegrationTest;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;

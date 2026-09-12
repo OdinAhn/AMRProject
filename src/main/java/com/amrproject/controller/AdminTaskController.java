@@ -1,11 +1,11 @@
 package com.amrproject.controller;
 
-import com.amrproject.domain.entity.TaskStatus;
-import com.amrproject.domain.entity.User;
-import com.amrproject.dto.request.AssignRobotRequest;
-import com.amrproject.dto.request.RecoverTaskRequest;
-import com.amrproject.dto.response.TaskEventResponse;
-import com.amrproject.dto.response.TaskResponse;
+import com.amrproject.domain.entity.task.TaskStatus;
+import com.amrproject.domain.entity.user.User;
+import com.amrproject.dto.request.task.AssignRobotRequest;
+import com.amrproject.dto.request.task.RecoverTaskRequest;
+import com.amrproject.dto.response.task.TaskEventResponse;
+import com.amrproject.dto.response.task.TaskResponse;
 import com.amrproject.service.TaskService;
 import com.amrproject.service.UserService;
 import jakarta.validation.Valid;

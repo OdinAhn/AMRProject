@@ -55,16 +55,34 @@ src/main/java/com/amrproject/
 ├── controller/
 ├── service/
 ├── repository/
+│   └── <domain>/   (alarm, user, site, map, robot, task, event — see below)
 ├── domain/
 │   └── entity/
+│       └── <domain>/
 ├── dto/
 │   ├── request/
+│   │   └── <domain>/
 │   └── response/
+│       └── <domain>/
 ├── exception/
 ├── security/   (access token issuance/validation)
 ├── robot/      (RobotGateway port + SimulatorRobotGateway; robot/mqtt/ has the opt-in MQTT/VDA5050 adapter, stage 18)
 └── config/
 ```
+
+`controller`/`service` stay flat (one class per resource, not nested). `repository`, `domain/entity`, and `dto/request`/`dto/response` are each split into the same 7 domain sub-packages (22단계) so a class's location signals what it belongs to at a glance:
+
+| 하위 패키지 | 대표 내용 |
+|---|---|
+| `alarm` | 알람 (`Alarm`, `AlarmEvent`, 상태/유형 enum) |
+| `user` | 사용자, 역할, 작업장 배정 |
+| `site` | 물류센터, 작업장, 작업장-지도 바인딩 |
+| `map` | 지도, 버전, 노드, 통로, 구역 |
+| `robot` | 로봇, 설정, 상태 보고, 명령(`RobotCommand`/`CommandEvent`), 충전 |
+| `task` | 작업, 단계, 배정, 이력, 자원 예약(`ResourceReservation`) |
+| `event` | 아웃박스 이벤트(Outbox → Redis/Kafka 릴레이) |
+
+공통 기반 클래스는 하위 패키지로 옮기지 않고 루트에 둔다: `domain.entity.BaseAuditableEntity`, `dto.response.ErrorResponse`. 새 엔티티/DTO/리포지토리를 추가할 때는 해당 도메인 하위 패키지에 넣는다 — 애매하면 그 클래스를 실제로 쓰는 서비스가 어느 도메인인지로 판단한다(예: `ResourceReservation`은 지도가 아니라 `TaskService`가 쓰므로 `task`).
 
 The frontend lives entirely under `frontend/` (see `frontend/README.md` for its internal layout — `src/pages`, `src/layouts`, `src/lib`, `src/components`, `src/types`) and is a separate npm project; it is not part of the Gradle build.
 

@@ -1,6 +1,6 @@
 package com.amrproject.controller;
 
-import com.amrproject.dto.response.DispatchResultResponse;
+import com.amrproject.dto.response.task.DispatchResultResponse;
 import com.amrproject.service.DispatchService;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
