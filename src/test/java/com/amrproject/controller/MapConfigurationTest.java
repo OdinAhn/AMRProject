@@ -8,6 +8,7 @@ import com.amrproject.dto.request.map.CreateEdgeRequest;
 import com.amrproject.dto.request.map.CreateMapRequest;
 import com.amrproject.dto.request.map.CreateMapVersionRequest;
 import com.amrproject.dto.request.map.CreateNodeRequest;
+import com.amrproject.dto.request.map.CreateObstacleRequest;
 import com.amrproject.dto.request.site.CreateSiteRequest;
 import com.amrproject.dto.request.site.CreateStationRequest;
 import com.amrproject.support.AbstractIntegrationTest;
@@ -126,6 +127,65 @@ class MapConfigurationTest extends AbstractIntegrationTest {
                         .content(objectMapper.writeValueAsString(new BindStationMapRequest(versionId, nodeBId))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.nodeId").value(nodeBId));
+    }
+
+    @Test
+    void 통로가_장애물과_겹치면_검증이_실패한다() throws Exception {
+        Long siteId = createSite("SITE-MAP5", "지도물류센터5");
+        Long mapId = createMap(siteId, "5층 지도");
+        Long versionId = createVersion(mapId);
+
+        Long nodeAId = createNodeAt(versionId, "N-A", BigDecimal.ZERO, BigDecimal.ZERO);
+        Long nodeBId = createNodeAt(versionId, "N-B", BigDecimal.TEN, BigDecimal.ZERO);
+        mockMvc.perform(post("/api/admin/map-versions/{versionId}/edges", versionId)
+                        .contentType(APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new CreateEdgeRequest(nodeAId, nodeBId, EdgeDirection.TWO_WAY, null, null))))
+                .andExpect(status().isCreated());
+
+        mockMvc.perform(post("/api/admin/map-versions/{versionId}/obstacles", versionId)
+                        .contentType(APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new CreateObstacleRequest(
+                                BigDecimal.valueOf(4), BigDecimal.valueOf(-1), BigDecimal.valueOf(2), BigDecimal.valueOf(2)))))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.width").value(2));
+
+        mockMvc.perform(post("/api/admin/map-versions/{versionId}/validate", versionId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.valid").value(false))
+                .andExpect(jsonPath("$.errors.length()").value(1));
+    }
+
+    @Test
+    void 통로가_장애물을_피해가면_검증이_통과한다() throws Exception {
+        Long siteId = createSite("SITE-MAP6", "지도물류센터6");
+        Long mapId = createMap(siteId, "6층 지도");
+        Long versionId = createVersion(mapId);
+
+        Long nodeAId = createNodeAt(versionId, "N-A", BigDecimal.ZERO, BigDecimal.ZERO);
+        Long nodeBId = createNodeAt(versionId, "N-B", BigDecimal.TEN, BigDecimal.ZERO);
+        mockMvc.perform(post("/api/admin/map-versions/{versionId}/edges", versionId)
+                        .contentType(APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new CreateEdgeRequest(nodeAId, nodeBId, EdgeDirection.TWO_WAY, null, null))))
+                .andExpect(status().isCreated());
+
+        mockMvc.perform(post("/api/admin/map-versions/{versionId}/obstacles", versionId)
+                        .contentType(APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new CreateObstacleRequest(
+                                BigDecimal.valueOf(4), BigDecimal.valueOf(5), BigDecimal.valueOf(2), BigDecimal.valueOf(2)))))
+                .andExpect(status().isCreated());
+
+        mockMvc.perform(post("/api/admin/map-versions/{versionId}/validate", versionId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.valid").value(true));
+    }
+
+    private Long createNodeAt(Long versionId, String code, BigDecimal x, BigDecimal y) throws Exception {
+        String response = mockMvc.perform(post("/api/admin/map-versions/{versionId}/nodes", versionId)
+                        .contentType(APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new CreateNodeRequest(code, x, y, NodeType.WAYPOINT))))
+                .andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString();
+        return objectMapper.readTree(response).get("id").asLong();
     }
 
     private Long createNode(Long versionId, String code, NodeType nodeType) throws Exception {

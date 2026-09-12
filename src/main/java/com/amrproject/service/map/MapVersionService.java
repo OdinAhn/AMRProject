@@ -5,12 +5,14 @@ import com.amrproject.domain.entity.map.MapEntity;
 import com.amrproject.domain.entity.map.MapVersion;
 import com.amrproject.domain.entity.map.MapVersionStatus;
 import com.amrproject.domain.entity.map.Node;
+import com.amrproject.domain.entity.map.Obstacle;
 import com.amrproject.domain.entity.map.Zone;
 import com.amrproject.domain.entity.site.Station;
 import com.amrproject.domain.entity.site.StationMapBinding;
 import com.amrproject.dto.request.map.CreateEdgeRequest;
 import com.amrproject.dto.request.map.CreateMapVersionRequest;
 import com.amrproject.dto.request.map.CreateNodeRequest;
+import com.amrproject.dto.request.map.CreateObstacleRequest;
 import com.amrproject.dto.request.map.CreateZoneRequest;
 import com.amrproject.dto.request.site.BindStationMapRequest;
 import com.amrproject.dto.response.map.MapVersionResponse;
@@ -21,9 +23,11 @@ import com.amrproject.exception.InvalidStateTransitionException;
 import com.amrproject.repository.map.EdgeRepository;
 import com.amrproject.repository.map.MapVersionRepository;
 import com.amrproject.repository.map.NodeRepository;
+import com.amrproject.repository.map.ObstacleRepository;
 import com.amrproject.repository.map.ZoneRepository;
 import com.amrproject.repository.site.StationMapBindingRepository;
 import com.amrproject.service.site.StationService;
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -45,6 +49,7 @@ public class MapVersionService {
     private final NodeRepository nodeRepository;
     private final EdgeRepository edgeRepository;
     private final ZoneRepository zoneRepository;
+    private final ObstacleRepository obstacleRepository;
     private final StationMapBindingRepository stationMapBindingRepository;
     private final MapService mapService;
     private final StationService stationService;
@@ -54,6 +59,7 @@ public class MapVersionService {
             NodeRepository nodeRepository,
             EdgeRepository edgeRepository,
             ZoneRepository zoneRepository,
+            ObstacleRepository obstacleRepository,
             StationMapBindingRepository stationMapBindingRepository,
             MapService mapService,
             StationService stationService
@@ -62,6 +68,7 @@ public class MapVersionService {
         this.nodeRepository = nodeRepository;
         this.edgeRepository = edgeRepository;
         this.zoneRepository = zoneRepository;
+        this.obstacleRepository = obstacleRepository;
         this.stationMapBindingRepository = stationMapBindingRepository;
         this.mapService = mapService;
         this.stationService = stationService;
@@ -151,6 +158,18 @@ public class MapVersionService {
     }
 
     @Transactional
+    public Obstacle addObstacle(Long versionId, CreateObstacleRequest request) {
+        MapVersion version = getById(versionId);
+        requireDraft(version);
+        return obstacleRepository.save(new Obstacle(version, request.x(), request.y(), request.width(), request.height()));
+    }
+
+    public List<Obstacle> getObstacles(Long versionId) {
+        getById(versionId);
+        return obstacleRepository.findByMapVersionId(versionId);
+    }
+
+    @Transactional
     public MapVersionValidationResponse validate(Long versionId) {
         MapVersion version = getById(versionId);
         if (version.getStatus() != MapVersionStatus.DRAFT) {
@@ -169,13 +188,73 @@ public class MapVersionService {
     /**
      * 최소 검증만 수행한다 — 연결성/고립 노드 등 상세 규칙은 지도 데이터 형식이
      * 정해진 뒤 확정한다 (docs/ERD.md §6).
+     *
+     * <p>24단계: 통로가 장애물(건물 기둥 등)과 겹치면 안 된다 — 이 제약을 여기서
+     * 강제하면, 활성화된 지도의 모든 통로는 장애물을 절대 지나지 않는다는 게
+     * 보장되어 나중에(26단계) 그 통로 그래프 위에서 찾은 어떤 경로도 자동으로
+     * 장애물을 피하게 된다. 별도의 경로 회피 알고리즘이 필요 없어진다.
      */
     private List<String> collectValidationErrors(Long versionId) {
         List<String> errors = new ArrayList<>();
         if (nodeRepository.countByMapVersionId(versionId) == 0) {
             errors.add("노드가 1개 이상 있어야 합니다.");
         }
+
+        List<Edge> edges = edgeRepository.findByMapVersionId(versionId);
+        List<Obstacle> obstacles = obstacleRepository.findByMapVersionId(versionId);
+        for (Edge edge : edges) {
+            for (Obstacle obstacle : obstacles) {
+                if (segmentIntersectsRectangle(
+                        edge.getFromNode().getX(), edge.getFromNode().getY(),
+                        edge.getToNode().getX(), edge.getToNode().getY(),
+                        obstacle.getX(), obstacle.getY(), obstacle.getWidth(), obstacle.getHeight()
+                )) {
+                    errors.add("통로(id=" + edge.getId() + ")가 장애물(id=" + obstacle.getId() + ")과 겹칩니다.");
+                }
+            }
+        }
         return errors;
+    }
+
+    /** 선분(x1,y1)-(x2,y2)이 사각형[rx, rx+rw] x [ry, ry+rh]과 겹치는지 판정한다(Liang-Barsky 클리핑). */
+    private static boolean segmentIntersectsRectangle(
+            BigDecimal x1, BigDecimal y1, BigDecimal x2, BigDecimal y2,
+            BigDecimal rx, BigDecimal ry, BigDecimal rw, BigDecimal rh
+    ) {
+        double px1 = x1.doubleValue();
+        double py1 = y1.doubleValue();
+        double dx = x2.doubleValue() - px1;
+        double dy = y2.doubleValue() - py1;
+        double rxMin = rx.doubleValue();
+        double ryMin = ry.doubleValue();
+        double rxMax = rxMin + rw.doubleValue();
+        double ryMax = ryMin + rh.doubleValue();
+
+        double tMin = 0.0;
+        double tMax = 1.0;
+        double[] p = {-dx, dx, -dy, dy};
+        double[] q = {px1 - rxMin, rxMax - px1, py1 - ryMin, ryMax - py1};
+        for (int i = 0; i < 4; i++) {
+            if (p[i] == 0) {
+                if (q[i] < 0) {
+                    return false;
+                }
+            } else {
+                double t = q[i] / p[i];
+                if (p[i] < 0) {
+                    if (t > tMax) {
+                        return false;
+                    }
+                    tMin = Math.max(tMin, t);
+                } else {
+                    if (t < tMin) {
+                        return false;
+                    }
+                    tMax = Math.min(tMax, t);
+                }
+            }
+        }
+        return tMin <= tMax;
     }
 
     @Transactional
