@@ -296,7 +296,11 @@ public class TaskService {
         TaskStatus previous = task.getStatus();
         task.resumeFromRecovery();
         recordEvent(task, "RECOVERY_RESUMED", previous, task.getStatus(), null);
-        dispatchStepCommand(task, step);
+        // CONFIRM_LOAD/CONFIRM_UNLOAD처럼 명령이 없는 단계(8단계: 적재 중 취소 복구)는
+        // 재발행할 명령이 없다 — 작업자가 원래 버튼(dispatch/confirm-unload)으로 이어간다.
+        if (MOVE_STEP_TYPES.contains(step.getStepType()) || step.getStepType() == TaskStepType.DOCK_AND_CHARGE) {
+            dispatchStepCommand(task, step);
+        }
         return task;
     }
 
@@ -329,15 +333,94 @@ public class TaskService {
         }
     }
 
+    /**
+     * 취소 요청을 끝까지 처리한다 (8단계). 이 시스템은 전부 동기 시뮬레이터라 서버가
+     * 명령을 보내는 순간 로봇은 이미 그 명령을 끝낸 상태다 — "취소 명령을 보내고
+     * 응답을 기다리는" 절차가 의미가 없다. 대신 적재 여부로 나눈다: 적재 전이거나
+     * 이미 하역까지 끝났으면 즉시 CANCELED로 확정, 적재 중(물건이 로봇에 있음)이면
+     * 임의로 취소를 확정하지 않고 RECOVERY_REQUIRED로 보내 운영자가 recover로 결정한다.
+     */
     @Transactional
     public Task requestCancel(Long taskId, User actor) {
         Task task = getById(taskId);
         TaskStatus previous = task.getStatus();
         task.requestCancel();
-        if (task.getStatus() != previous) {
-            recordEvent(task, "CANCEL_REQUESTED", previous, task.getStatus(), actor);
+        if (task.getStatus() == previous) {
+            return task;
+        }
+        recordEvent(task, "CANCEL_REQUESTED", previous, task.getStatus(), actor);
+        if (task.getStatus() == TaskStatus.CANCEL_REQUESTED) {
+            resolveCancelRequest(task);
         }
         return task;
+    }
+
+    private void resolveCancelRequest(Task task) {
+        if (isCarryingLoad(task)) {
+            TaskStatus previous = task.getStatus();
+            task.markRecoveryRequired();
+            recordEvent(task, "RECOVERY_REQUIRED", previous, task.getStatus(), null);
+            return;
+        }
+        TaskStatus previous = task.getStatus();
+        task.confirmCanceled();
+        recordEvent(task, "CANCELED", previous, task.getStatus(), null);
+        releaseAssignment(task);
+        releaseReservations(task.getCurrentAssignment().getRobot());
+    }
+
+    private boolean isCarryingLoad(Task task) {
+        boolean loaded = false;
+        for (TaskStep step : taskStepRepository.findByTaskIdOrderByStepNoAsc(task.getId())) {
+            if (step.getStepType() == TaskStepType.CONFIRM_LOAD && step.getStatus() == TaskStepStatus.SUCCEEDED) {
+                loaded = true;
+            }
+            if (step.getStepType() == TaskStepType.CONFIRM_UNLOAD && step.getStatus() == TaskStepStatus.SUCCEEDED) {
+                loaded = false;
+            }
+        }
+        return loaded;
+    }
+
+    /**
+     * 작업자 '작업 불가' 버튼 (API.md §4). 아직 배정 전이면 그냥 취소하고, 배정된
+     * 상태면 취소와 동일하게 개입이 필요한 상태로 보낸다 — 사유는 이벤트에 남긴다.
+     */
+    @Transactional
+    public Task reportUnavailable(Long taskId, String reason) {
+        Task task = getById(taskId);
+        TaskStatus status = task.getStatus();
+        if (status == TaskStatus.QUEUED) {
+            task.requestCancel();
+            recordEvent(task, "REPORT_UNAVAILABLE", status, task.getStatus(), null, reason);
+            return task;
+        }
+        if (status == TaskStatus.ASSIGNED || status == TaskStatus.RUNNING || status == TaskStatus.PAUSED) {
+            task.markRecoveryRequired();
+            recordEvent(task, "REPORT_UNAVAILABLE", status, task.getStatus(), null, reason);
+            return task;
+        }
+        throw new InvalidStateTransitionException(
+                "TASK_REPORT_UNAVAILABLE_NOT_ALLOWED",
+                "현재 상태(" + status + ")에서는 작업 불가를 보고할 수 없습니다."
+        );
+    }
+
+    /**
+     * 관리자 작업 목록 조회 (API.md §3, 8단계: 재접속 대조 — "지금 개입이 필요한
+     * 작업이 뭔지" status로 걸러 조회). station/robot/기간 필터는 아직 미구현.
+     */
+    public List<Task> getAll(Long siteId, TaskStatus status) {
+        if (siteId != null && status != null) {
+            return taskRepository.findBySiteIdAndStatus(siteId, status);
+        }
+        if (siteId != null) {
+            return taskRepository.findBySiteId(siteId);
+        }
+        if (status != null) {
+            return taskRepository.findByStatus(status);
+        }
+        return taskRepository.findAll();
     }
 
     private TaskStep findRunningStep(Long taskId) {
@@ -472,7 +555,11 @@ public class TaskService {
     }
 
     private void recordEvent(Task task, String eventType, TaskStatus from, TaskStatus to, User actor) {
-        taskEventRepository.save(new TaskEvent(task, eventType, from, to, actor));
-        outboxEventRepository.save(new OutboxEvent("TASK", task.getId(), "task." + eventType.toLowerCase(), null));
+        recordEvent(task, eventType, from, to, actor, null);
+    }
+
+    private void recordEvent(Task task, String eventType, TaskStatus from, TaskStatus to, User actor, String payload) {
+        taskEventRepository.save(new TaskEvent(task, eventType, from, to, actor, payload));
+        outboxEventRepository.save(new OutboxEvent("TASK", task.getId(), "task." + eventType.toLowerCase(), payload));
     }
 }

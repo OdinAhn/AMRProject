@@ -10,6 +10,7 @@ public record TaskEventResponse(
         String eventType,
         TaskStatus fromStatus,
         TaskStatus toStatus,
+        String payload,
         Instant createdAt
 ) {
 
@@ -19,6 +20,7 @@ public record TaskEventResponse(
                 event.getEventType(),
                 event.getFromStatus(),
                 event.getToStatus(),
+                event.getPayload(),
                 event.getCreatedAt()
         );
     }

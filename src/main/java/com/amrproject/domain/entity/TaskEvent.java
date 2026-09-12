@@ -45,6 +45,9 @@ public class TaskEvent {
     @JoinColumn(name = "created_by")
     private User createdBy;
 
+    @Column(columnDefinition = "TEXT")
+    private String payload;
+
     @CreatedDate
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
@@ -53,11 +56,16 @@ public class TaskEvent {
     }
 
     public TaskEvent(Task task, String eventType, TaskStatus fromStatus, TaskStatus toStatus, User createdBy) {
+        this(task, eventType, fromStatus, toStatus, createdBy, null);
+    }
+
+    public TaskEvent(Task task, String eventType, TaskStatus fromStatus, TaskStatus toStatus, User createdBy, String payload) {
         this.task = task;
         this.eventType = eventType;
         this.fromStatus = fromStatus;
         this.toStatus = toStatus;
         this.createdBy = createdBy;
+        this.payload = payload;
     }
 
     public Long getId() {
@@ -82,6 +90,10 @@ public class TaskEvent {
 
     public User getCreatedBy() {
         return createdBy;
+    }
+
+    public String getPayload() {
+        return payload;
     }
 
     public Instant getCreatedAt() {

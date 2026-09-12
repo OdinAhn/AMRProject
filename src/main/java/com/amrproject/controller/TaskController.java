@@ -1,6 +1,7 @@
 package com.amrproject.controller;
 
 import com.amrproject.dto.request.CreateTaskRequest;
+import com.amrproject.dto.request.ReportUnavailableRequest;
 import com.amrproject.dto.response.TaskResponse;
 import com.amrproject.service.TaskCreationResult;
 import com.amrproject.service.TaskService;
@@ -53,6 +54,12 @@ public class TaskController {
     @PostMapping("/{taskId}/confirm-unload")
     public TaskResponse confirmUnload(@PathVariable Long taskId) {
         taskService.confirmUnload(taskId);
+        return TaskResponse.from(taskService.getById(taskId), taskService.getSteps(taskId));
+    }
+
+    @PostMapping("/{taskId}/report-unavailable")
+    public TaskResponse reportUnavailable(@PathVariable Long taskId, @Valid @RequestBody ReportUnavailableRequest request) {
+        taskService.reportUnavailable(taskId, request.reason());
         return TaskResponse.from(taskService.getById(taskId), taskService.getSteps(taskId));
     }
 }

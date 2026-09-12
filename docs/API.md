@@ -122,11 +122,11 @@
 
 | Method | Path | 설명 |
 |---|---|---|
-| GET | `/api/admin/tasks` | 전체 작업 조회 (필터: status, site, station, robot, 기간) |
+| GET | `/api/admin/tasks` | 전체 작업 조회 (8단계 구현: `status`/`siteId` 필터만 지원 — station/robot/기간 필터는 아직 미구현) |
 | GET | `/api/admin/tasks/{taskId}` | 상세 (단계, 배정 이력, 로봇 명령 포함) |
 | GET | `/api/admin/tasks/{taskId}/events` | 상태 전이 이력 (`task_events`) |
 | POST | `/api/admin/tasks/{taskId}/assign` | 로봇 지정 배정 (`robotId`) → `ASSIGNED` 후 즉시 첫 단계 시작 |
-| POST | `/api/admin/tasks/{taskId}/cancel` | 취소 요청 → `CANCEL_REQUESTED` |
+| POST | `/api/admin/tasks/{taskId}/cancel` | 취소 요청 → 적재 전/하역 후면 즉시 `CANCELED`, 적재 중이면 `RECOVERY_REQUIRED`(8단계, 아래 참고) |
 | POST | `/api/admin/tasks/{taskId}/recover` | `RECOVERY_REQUIRED` 상태 개입: 재개 또는 최종 실패 처리 |
 | POST | `/api/admin/sites/{siteId}/dispatch` | 디스패치 사이클 실행 (7단계): `QUEUED` 작업 자동 배정 + 저배터리 로봇 자동 충전 작업 생성, 결과로 배정/생성된 taskId 목록 반환. 스케줄러가 없어 관리자가 필요할 때 호출한다 |
 | GET | `/api/admin/alarms` | 알람 목록 (필터: status, severity, source_type) |
@@ -180,9 +180,9 @@ Idempotency-Key: 8e2f1c...
 | `POST /tasks` | - | `QUEUED` 생성 |
 | `dispatch` | 현재 단계 `RUNNING`(적재 대기) | 해당 단계 `SUCCEEDED` → 다음 단계 명령 발행 |
 | `confirm-unload` | 현재 단계 `RUNNING`(하역 대기) | 해당 단계 `SUCCEEDED` → 마지막 단계면 Task `SUCCEEDED` |
-| `report-out-of-stock` | 적재 대기 단계 | `load_transfer_events(OUT_OF_STOCK)` 기록, Task는 보류(진행 안 함) — 이후 처리는 관리자 개입 필요 |
-| `report-unavailable` | 임의 | 사유 기록, 알람 생성, 운영자 처리 대기 |
-| `cancel` | `QUEUED`/`ASSIGNED`/`RUNNING`/`PAUSED` | `CANCEL_REQUESTED` (또는 `QUEUED`면 즉시 `CANCELED`) |
+| `report-out-of-stock` | 적재 대기 단계 | **미구현** — `loads`/`load_transfer_events`/WMS 연동 없이는 이후 정책(자동 취소/관리자 대기/재고 갱신)을 임의로 정할 수 없어 8단계에서도 보류 (DESIGN.md §5) |
+| `report-unavailable` | `QUEUED`/`ASSIGNED`/`RUNNING`/`PAUSED` | (8단계) `QUEUED`면 즉시 `CANCELED`, 배정된 상태면 `RECOVERY_REQUIRED` + 사유를 `task_events.payload`에 기록 — 별도 알람 테이블 없이 기존 `recover` API로 운영자가 처리 |
+| `cancel` | `QUEUED`/`ASSIGNED`/`RUNNING`/`PAUSED` | (8단계) `QUEUED`면 즉시 `CANCELED`. 배정된 상태는 적재 여부로 갈린다: 적재 전이거나 하역까지 끝났으면 즉시 `CANCELED`, 적재 중(로봇에 물건이 있음)이면 `RECOVERY_REQUIRED`로 보내 운영자가 `recover`로 결정 |
 
 `report-out-of-stock` 이후 흐름(자동 취소/관리자 대기/WMS 재고 갱신 여부)은 **미정** — DESIGN.md §5에서 이미 열린 질문으로 표시된 항목.
 
