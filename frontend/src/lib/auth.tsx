@@ -6,11 +6,16 @@ import type { LoginResponse, UserResponse } from "../types/api";
 interface AuthContextValue {
   user: UserResponse | null;
   loading: boolean;
-  login: (username: string, password: string) => Promise<void>;
+  login: (username: string, password: string) => Promise<UserResponse>;
   logout: () => void;
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
+
+/** 역할별 로그인 후 랜딩 경로 (12단계: WORKER는 관리자 화면에 접근할 수 없다). */
+export function homePathFor(user: UserResponse): string {
+  return user.roleCode === "WORKER" ? "/worker/stations" : "/sites";
+}
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<UserResponse | null>(null);
@@ -41,6 +46,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const result = await api.post<LoginResponse>("/api/auth/login", { username, password });
     setToken(result.token);
     setUser(result.user);
+    return result.user;
   };
 
   return <AuthContext.Provider value={{ user, loading, login, logout }}>{children}</AuthContext.Provider>;

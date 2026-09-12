@@ -69,4 +69,11 @@ public class TaskController {
         taskService.reportUnavailable(taskId, request.reason());
         return TaskResponse.from(taskService.getById(taskId), taskService.getSteps(taskId));
     }
+
+    @PostMapping("/{taskId}/cancel")
+    public TaskResponse cancel(@PathVariable Long taskId, Authentication authentication) {
+        User actor = userService.getByUsername(authentication.getName());
+        taskService.requestCancel(taskId, actor);
+        return TaskResponse.from(taskService.getById(taskId), taskService.getSteps(taskId));
+    }
 }

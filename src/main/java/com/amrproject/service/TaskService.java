@@ -43,6 +43,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -462,6 +463,21 @@ public class TaskService {
             return taskRepository.findByStatus(status);
         }
         return taskRepository.findAll();
+    }
+
+    private static final Set<TaskStatus> TERMINAL_STATUSES = Set.of(
+            TaskStatus.SUCCEEDED, TaskStatus.CANCELED, TaskStatus.FAILED
+    );
+
+    /**
+     * 작업자 화면(12단계): 해당 station이 출발/도착 어느 쪽이든 관련 있고 아직
+     * 종료되지 않은 작업만 반환한다 (API.md §4 "진행 중/대기 작업").
+     */
+    public List<Task> getActiveByStation(Long stationId) {
+        stationService.getById(stationId);
+        return taskRepository.findByOriginStationIdOrDestinationStationId(stationId, stationId).stream()
+                .filter(task -> !TERMINAL_STATUSES.contains(task.getStatus()))
+                .toList();
     }
 
     private TaskStep findRunningStep(Long taskId) {
