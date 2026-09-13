@@ -35,6 +35,8 @@ import com.amrproject.repository.event.OutboxEventRepository;
 import com.amrproject.repository.robot.ChargingSessionRepository;
 import com.amrproject.repository.robot.RobotCommandRepository;
 import com.amrproject.repository.robot.RobotCurrentStateRepository;
+import com.amrproject.repository.robot.RobotRepository;
+import com.amrproject.repository.site.StationRepository;
 import com.amrproject.repository.task.ResourceReservationRepository;
 import com.amrproject.repository.task.TaskAssignmentRepository;
 import com.amrproject.repository.task.TaskEventRepository;
@@ -44,10 +46,16 @@ import com.amrproject.robot.RobotGateway;
 import com.amrproject.service.alarm.AlarmService;
 import com.amrproject.service.robot.RobotService;
 import com.amrproject.service.site.StationService;
+import java.util.Collection;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -84,6 +92,8 @@ public class TaskService {
     private final RobotService robotService;
     private final RobotGateway robotGateway;
     private final AlarmService alarmService;
+    private final RobotRepository robotRepository;
+    private final StationRepository stationRepository;
 
     public TaskService(
             TaskRepository taskRepository,
@@ -98,7 +108,9 @@ public class TaskService {
             StationService stationService,
             RobotService robotService,
             RobotGateway robotGateway,
-            AlarmService alarmService
+            AlarmService alarmService,
+            RobotRepository robotRepository,
+            StationRepository stationRepository
     ) {
         this.taskRepository = taskRepository;
         this.taskStepRepository = taskStepRepository;
@@ -113,6 +125,8 @@ public class TaskService {
         this.robotService = robotService;
         this.robotGateway = robotGateway;
         this.alarmService = alarmService;
+        this.robotRepository = robotRepository;
+        this.stationRepository = stationRepository;
     }
 
     @Transactional
@@ -240,10 +254,18 @@ public class TaskService {
         return start(taskId);
     }
 
+    /**
+     * 31단계: 동시 배정 방지. 작업 행 → 로봇 행 순서로 잠근 뒤(모든 배정 경로가 같은 순서라 교착이 생기지 않는다),
+     * 로봇의 진행 중 배정 여부를 잠금 조회로 다시 확인한다. 예전엔 두 요청이 동시에 "배정 없음"을 읽고 같은 로봇을
+     * 두 작업에 배정하거나, 같은 작업을 두 로봇에 배정할 수 있었다.
+     */
     @Transactional
     public TaskAssignment assignRobot(Long taskId, Robot robot) {
-        Task task = getById(taskId);
-        if (taskAssignmentRepository.findByRobotIdAndStatus(robot.getId(), TaskAssignmentStatus.ACTIVE).isPresent()) {
+        Task task = taskRepository.findByIdForUpdate(taskId)
+                .orElseThrow(() -> new EntityNotFoundException("TASK_NOT_FOUND", "작업을 찾을 수 없습니다: " + taskId));
+        robotRepository.findByIdForUpdate(robot.getId())
+                .orElseThrow(() -> new EntityNotFoundException("ROBOT_NOT_FOUND", "로봇을 찾을 수 없습니다: " + robot.getId()));
+        if (taskAssignmentRepository.findByRobotIdAndStatusForUpdate(robot.getId(), TaskAssignmentStatus.ACTIVE).isPresent()) {
             throw new InvalidStateTransitionException(
                     "ROBOT_ALREADY_ASSIGNED",
                     "이미 다른 작업에 배정된 로봇입니다: " + robot.getId()
@@ -464,18 +486,19 @@ public class TaskService {
     /**
      * 관리자 작업 목록 조회 (API.md §3, 8단계: 재접속 대조 — "지금 개입이 필요한
      * 작업이 뭔지" status로 걸러 조회). station/robot/기간 필터는 아직 미구현.
+     * 31단계: 페이지로 조회한다(예전엔 전체 목록).
      */
-    public List<Task> getAll(Long siteId, TaskStatus status) {
-        if (siteId != null && status != null) {
-            return taskRepository.findBySiteIdAndStatus(siteId, status);
+    public Page<Task> getPage(Long siteId, TaskStatus status, Pageable pageable) {
+        return taskRepository.search(siteId, status, pageable);
+    }
+
+    /** 31단계: 여러 작업의 단계를 한 번에 읽어 작업 id별로 묶는다(목록 응답의 N+1 제거). */
+    public Map<Long, List<TaskStep>> getStepsByTaskIds(Collection<Long> taskIds) {
+        if (taskIds.isEmpty()) {
+            return Map.of();
         }
-        if (siteId != null) {
-            return taskRepository.findBySiteId(siteId);
-        }
-        if (status != null) {
-            return taskRepository.findByStatus(status);
-        }
-        return taskRepository.findAll();
+        return taskStepRepository.findByTaskIdInOrderByTaskIdAscStepNoAsc(taskIds).stream()
+                .collect(Collectors.groupingBy(step -> step.getTask().getId(), LinkedHashMap::new, Collectors.toList()));
     }
 
     private static final Set<TaskStatus> TERMINAL_STATUSES = Set.of(
@@ -488,9 +511,7 @@ public class TaskService {
      */
     public List<Task> getActiveByStation(Long stationId) {
         stationService.getById(stationId);
-        return taskRepository.findByOriginStationIdOrDestinationStationId(stationId, stationId).stream()
-                .filter(task -> !TERMINAL_STATUSES.contains(task.getStatus()))
-                .toList();
+        return taskRepository.findActiveByStation(stationId, TERMINAL_STATUSES);
     }
 
     private TaskStep findRunningStep(Long taskId) {
@@ -586,11 +607,11 @@ public class TaskService {
     }
 
     private void reserveStation(Robot robot, Station station, TaskStep step) {
-        Integer capacity = station.getMaxConcurrentRobots();
+        // 31단계: 작업장 행을 잠그고 최신 설정·예약 수로 검사한다 — 동시에 두 로봇이 마지막 한 자리를 차지하는 것을 막는다.
+        Station locked = stationRepository.findByIdForUpdate(station.getId()).orElse(station);
+        Integer capacity = locked.getMaxConcurrentRobots();
         if (capacity != null) {
-            int held = resourceReservationRepository.countByResourceTypeAndResourceIdAndStatus(
-                    ResourceType.STATION, station.getId(), ResourceReservationStatus.HELD
-            );
+            int held = resourceReservationRepository.countHeldForShare(ResourceType.STATION.name(), station.getId());
             if (held >= capacity) {
                 throw new InvalidStateTransitionException(
                         "STATION_AT_CAPACITY",

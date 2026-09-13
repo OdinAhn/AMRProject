@@ -12,6 +12,8 @@ import com.amrproject.exception.EntityNotFoundException;
 import com.amrproject.repository.alarm.AlarmEventRepository;
 import com.amrproject.repository.alarm.AlarmRepository;
 import com.amrproject.repository.event.OutboxEventRepository;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -90,11 +92,8 @@ public class AlarmService {
                 .orElseThrow(() -> new EntityNotFoundException("ALARM_NOT_FOUND", "알람을 찾을 수 없습니다: " + alarmId));
     }
 
-    public List<Alarm> getAll(AlarmStatus status, AlarmSeverity severity, AlarmSourceType sourceType) {
-        return alarmRepository.findAllByOrderByCreatedAtDesc().stream()
-                .filter(alarm -> status == null || alarm.getStatus() == status)
-                .filter(alarm -> severity == null || alarm.getSeverity() == severity)
-                .filter(alarm -> sourceType == null || alarm.getSourceType() == sourceType)
-                .toList();
+    /** 31단계: 필터를 DB 쿼리로 내리고 페이지로 조회한다(예전엔 전체를 읽어 메모리에서 필터링). */
+    public Page<Alarm> getPage(AlarmStatus status, AlarmSeverity severity, AlarmSourceType sourceType, Pageable pageable) {
+        return alarmRepository.search(status, severity, sourceType, pageable);
     }
 }

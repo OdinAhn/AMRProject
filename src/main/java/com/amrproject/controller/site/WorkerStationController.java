@@ -1,5 +1,7 @@
 package com.amrproject.controller.site;
 
+import com.amrproject.domain.entity.task.Task;
+import com.amrproject.domain.entity.task.TaskStep;
 import com.amrproject.domain.entity.user.User;
 import com.amrproject.dto.response.site.StationResponse;
 import com.amrproject.dto.response.task.TaskResponse;
@@ -13,6 +15,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * 작업자용 작업장 조회 API (docs/API.md §4). 26단계부터 작업장 단위 접근 제어
@@ -49,8 +52,10 @@ public class WorkerStationController {
     @GetMapping("/api/worker/stations/{stationId}/tasks")
     public List<TaskResponse> getStationTasks(@PathVariable Long stationId, Authentication authentication) {
         workerAccessService.checkStationAccess(authentication.getName(), stationId);
-        return taskService.getActiveByStation(stationId).stream()
-                .map(task -> TaskResponse.from(task, taskService.getSteps(task.getId())))
+        List<Task> tasks = taskService.getActiveByStation(stationId);
+        Map<Long, List<TaskStep>> steps = taskService.getStepsByTaskIds(tasks.stream().map(Task::getId).toList());
+        return tasks.stream()
+                .map(task -> TaskResponse.from(task, steps.getOrDefault(task.getId(), List.of())))
                 .toList();
     }
 

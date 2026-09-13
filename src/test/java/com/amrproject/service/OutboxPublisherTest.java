@@ -12,10 +12,12 @@ import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.transaction.PlatformTransactionManager;
 import tools.jackson.databind.json.JsonMapper;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
@@ -30,18 +32,20 @@ class OutboxPublisherTest {
     private final StringRedisTemplate redisTemplate = Mockito.mock(StringRedisTemplate.class);
     private final KafkaTemplate<String, String> kafkaTemplate = Mockito.mock(KafkaTemplate.class);
     private final JsonMapper jsonMapper = JsonMapper.builder().build();
+    /** 31단계: 배치마다 TransactionTemplate을 쓰므로 트랜잭션 매니저를 흉내 낸다(커밋·롤백은 아무 일도 안 함). */
+    private final PlatformTransactionManager transactionManager = Mockito.mock(PlatformTransactionManager.class);
 
     private OutboxPublisher publisher;
 
     @BeforeEach
     void setUp() {
-        publisher = new OutboxPublisher(outboxEventRepository, redisTemplate, kafkaTemplate, jsonMapper);
+        publisher = new OutboxPublisher(outboxEventRepository, redisTemplate, kafkaTemplate, jsonMapper, transactionManager);
     }
 
     @Test
     void PENDING_이벤트를_Redis와_Kafka에_발행하고_PUBLISHED로_마킹한다() {
         OutboxEvent event = new OutboxEvent("TASK", 42L, "task.succeeded", null);
-        when(outboxEventRepository.findByStatusOrderByIdAsc(OutboxEventStatus.PENDING)).thenReturn(List.of(event));
+        when(outboxEventRepository.lockPendingBatch(anyInt())).thenReturn(List.of(event));
         when(kafkaTemplate.send(any(), any(), any())).thenReturn(CompletableFuture.completedFuture(null));
 
         publisher.publishPending();
@@ -55,7 +59,7 @@ class OutboxPublisherTest {
 
     @Test
     void PENDING_이벤트가_없으면_발행하지_않는다() {
-        when(outboxEventRepository.findByStatusOrderByIdAsc(OutboxEventStatus.PENDING)).thenReturn(List.of());
+        when(outboxEventRepository.lockPendingBatch(anyInt())).thenReturn(List.of());
 
         publisher.publishPending();
 
@@ -72,7 +76,7 @@ class OutboxPublisherTest {
     void 한_이벤트_발행이_실패해도_나머지_이벤트는_계속_처리한다() {
         OutboxEvent failing = new OutboxEvent("TASK", 1L, "task.a", null);
         OutboxEvent succeeding = new OutboxEvent("TASK", 2L, "task.b", null);
-        when(outboxEventRepository.findByStatusOrderByIdAsc(OutboxEventStatus.PENDING))
+        when(outboxEventRepository.lockPendingBatch(anyInt()))
                 .thenReturn(List.of(failing, succeeding));
         when(kafkaTemplate.send(any(), any(), any()))
                 .thenThrow(new RuntimeException("kafka unreachable"))
@@ -93,7 +97,7 @@ class OutboxPublisherTest {
     @Test
     void Kafka_전송_future가_실패하면_PENDING으로_남기고_Redis로도_보내지_않는다() {
         OutboxEvent event = new OutboxEvent("TASK", 3L, "task.c", null);
-        when(outboxEventRepository.findByStatusOrderByIdAsc(OutboxEventStatus.PENDING)).thenReturn(List.of(event));
+        when(outboxEventRepository.lockPendingBatch(anyInt())).thenReturn(List.of(event));
         when(kafkaTemplate.send(any(), any(), any()))
                 .thenReturn(CompletableFuture.failedFuture(new RuntimeException("broker rejected")));
 
@@ -101,5 +105,35 @@ class OutboxPublisherTest {
 
         assertThat(event.getStatus()).isEqualTo(OutboxEventStatus.PENDING);
         verify(redisTemplate, Mockito.never()).convertAndSend(any(), any());
+    }
+
+    /** 31단계: 배치(100건)가 가득 차면 대기 이벤트가 더 있을 수 있어 같은 주기 안에서 다음 배치를 이어서 처리한다. */
+    @Test
+    void 배치가_가득_차면_다음_배치를_이어서_처리한다() {
+        List<OutboxEvent> fullBatch = java.util.stream.IntStream.range(0, 100)
+                .mapToObj(i -> new OutboxEvent("TASK", (long) i, "task.bulk", null))
+                .toList();
+        when(outboxEventRepository.lockPendingBatch(anyInt())).thenReturn(fullBatch).thenReturn(List.of());
+        when(kafkaTemplate.send(any(), any(), any())).thenReturn(CompletableFuture.completedFuture(null));
+
+        publisher.publishPending();
+
+        verify(outboxEventRepository, Mockito.times(2)).lockPendingBatch(anyInt());
+        assertThat(fullBatch).allMatch(event -> event.getStatus() == OutboxEventStatus.PUBLISHED);
+    }
+
+    /** 31단계: 실패가 있으면 같은 주기 안에서 곧바로 다시 집어 들어 헛돌지 않고 다음 주기로 넘긴다. */
+    @Test
+    void 배치에_실패가_있으면_이번_주기를_끝낸다() {
+        List<OutboxEvent> fullBatch = java.util.stream.IntStream.range(0, 100)
+                .mapToObj(i -> new OutboxEvent("TASK", (long) i, "task.bulk", null))
+                .toList();
+        when(outboxEventRepository.lockPendingBatch(anyInt())).thenReturn(fullBatch);
+        when(kafkaTemplate.send(any(), any(), any()))
+                .thenReturn(CompletableFuture.failedFuture(new RuntimeException("broker down")));
+
+        publisher.publishPending();
+
+        verify(outboxEventRepository, Mockito.times(1)).lockPendingBatch(anyInt());
     }
 }

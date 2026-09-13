@@ -37,6 +37,15 @@ export type LoadState = "EMPTY" | "LOADED" | "UNKNOWN";
 export type LocalizationState = "LOCALIZED" | "LOST" | "UNKNOWN";
 export type RecoveryResolution = "RESUME" | "FAIL";
 
+/** 31단계: 목록 API 공통 페이지 응답(page는 0부터) */
+export interface PageResponse<T> {
+  content: T[];
+  page: number;
+  size: number;
+  totalElements: number;
+  totalPages: number;
+}
+
 export interface ErrorResponse {
   code: string;
   message: string;

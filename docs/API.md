@@ -113,7 +113,7 @@
 | POST | `/api/admin/robots/{robotId}/configurations` | 새 설정 버전 생성 → `desired_config` 갱신, 로봇에 적용 요청 |
 | GET | `/api/admin/robots/{robotId}/configurations` | 설정 이력 (요청 버전 vs 적용 버전) |
 | GET | `/api/admin/robots/{robotId}/state` | 현재 상태 (다축 상태 전체, `robot_current_states`) |
-| GET | `/api/admin/robots/{robotId}/state-history` | 상태 이력 (기간 필터) |
+| GET | `/api/admin/robots/{robotId}/state-history` | 상태 이력 (기간 필터 — **미구현**). (31단계) 최신순 최근 `limit`건(기본 100, 1~1000으로 맞춤) |
 
 **30단계**: `state`/`state-history` 응답에 `currentNodeId`(로봇이 마지막으로 도착한 지도 노드, 모르면 null)를 추가했다.
 
@@ -137,7 +137,7 @@
 
 | Method | Path | 설명 |
 |---|---|---|
-| GET | `/api/admin/tasks` | 전체 작업 조회 (8단계 구현: `status`/`siteId` 필터만 지원 — station/robot/기간 필터는 아직 미구현) |
+| GET | `/api/admin/tasks` | 전체 작업 조회 (8단계 구현: `status`/`siteId` 필터만 지원 — station/robot/기간 필터는 아직 미구현). **31단계: 페이지 응답**(아래 참고) |
 | GET | `/api/admin/tasks/{taskId}` | 상세 (단계, 배정 이력, 로봇 명령 포함) |
 | GET | `/api/admin/tasks/{taskId}/events` | 상태 전이 이력 (`task_events`) |
 | POST | `/api/admin/tasks/{taskId}/assign` | 로봇 지정 배정 (`robotId`) → `ASSIGNED` 후 즉시 첫 단계 시작 |
@@ -145,7 +145,7 @@
 | POST | `/api/admin/tasks/{taskId}/recover` | `RECOVERY_REQUIRED` 상태 개입: 재개 또는 최종 실패 처리 |
 | POST | `/api/admin/sites/{siteId}/dispatch` | 디스패치 사이클 실행 (7단계): `QUEUED` 작업 자동 배정 + 저배터리 로봇 자동 충전 작업 생성, 결과로 배정/생성된 taskId 목록 반환. (29단계) 같은 사이클이 `AutoDispatchScheduler`로 운영 중(`ACTIVE`)인 모든 물류센터에서 주기적으로(기본 5초) 자동 실행된다. 이 API는 즉시 한 번 더 돌리고 결과를 보고 싶을 때 쓴다 |
 | GET | `/api/admin/sites/{siteId}/overview` | (30단계) 관제 대시보드 현황 — 아래 참고 |
-| GET | `/api/admin/alarms` | 알람 목록 (필터: status, severity, sourceType) |
+| GET | `/api/admin/alarms` | 알람 목록 (필터: status, severity, sourceType). **31단계: 페이지 응답**(아래 참고) |
 | GET | `/api/admin/alarms/{alarmId}` | 상세 |
 | POST | `/api/admin/alarms/{alarmId}/acknowledge` | 확인 처리 (`OPEN`→`ACKNOWLEDGED`. 이미 `ACKNOWLEDGED`면 200으로 현재 상태 반환, `RESOLVED`면 409) |
 | POST | `/api/admin/alarms/{alarmId}/resolve` | 해제 처리 (`OPEN`/`ACKNOWLEDGED`→`RESOLVED`. 이미 `RESOLVED`면 200으로 현재 상태 반환) |
@@ -155,6 +155,21 @@
 **27단계**: 알람 종류에 `TASK_RECOVERY_REQUIRED`를 추가했다. 작업이 `RECOVERY_REQUIRED`가 되는 모든 경로(명령 실패·불명, 적재 중 취소, 작업 불가 보고)에서 발생하고, `recover` 시 자동 해소된다. 발생·해소 규칙 전체 표는 `STATE_MACHINES.md` §7에 있다.
 
 **19단계**: 응답에 `allowedActions`를 추가했다(Task/Robot 응답과 같은 패턴) — `OPEN`→`["ACKNOWLEDGE","RESOLVE"]`, `ACKNOWLEDGED`→`["RESOLVE"]`, `RESOLVED`→`[]`. 관리자 화면(`/alarms`)이 이 배열만 보고 버튼을 그린다.
+
+**31단계 — 목록 페이지네이션 (응답 모양이 바뀐 호환성 깨짐 변경)**: `GET /api/admin/tasks`와 `GET /api/admin/alarms`는 배열 대신 페이지 객체를 반환한다. 예전엔 조건에 맞는 행을 전부 읽어 반환했다(알람은 전체를 읽어 메모리에서 필터링). 같은 PR에서 관리자 화면(작업·알람 목록, 사이드바 알람 수)을 함께 바꿨다.
+
+| 요청 파라미터 | 기본값 | 설명 |
+|---|---|---|
+| `page` | `0` | 0부터 시작. 음수는 0으로 본다 |
+| `size` | `20` | 1~100으로 맞춘다(범위 밖이면 400 대신 가장 가까운 값) |
+
+정렬은 최신순(`createdAt` 내림차순, 같으면 `id` 내림차순) 고정이다.
+
+```json
+{ "content": [ /* TaskResponse 또는 AlarmResponse */ ], "page": 0, "size": 20, "totalElements": 57, "totalPages": 3 }
+```
+
+작업 목록은 한 페이지의 작업·물류센터·작업장·배정 로봇을 한 쿼리로, 단계는 페이지의 작업 id로 한 번에 읽는다(작업마다 추가 조회가 나가던 N+1 제거). 작업자 작업장별 작업 조회(`GET /api/worker/stations/{stationId}/tasks`)도 종료 상태 제외를 DB 쿼리로 내리고 단계를 한 번에 읽는다. 응답 모양은 그대로 배열이다.
 
 **30단계 — 대시보드 개요** `GET /api/admin/sites/{siteId}/overview`: 화면이 로봇·작업·알람 API를 따로 여러 번 부르지 않도록 한 번에 모은다.
 
@@ -273,6 +288,10 @@ Idempotency-Key: 8e2f1c...
 **16단계 구현**: 같은 `OutboxPublisher`가 같은 이벤트를 Kafka 토픽 `amr.events`(파티션 1, 복제 1)에도 함께 발행한다 — Redis는 실시간 팬아웃(SSE), Kafka는 나중에 다른 시스템이 재구독/재생할 수 있는 내구성 있는 이벤트 로그 역할이다. 이 앱 내부에는 Kafka 컨슈머가 없다(프로듀서만).
 
 **19단계에서 발견한 버그**: `OutboxPublisher`가 PENDING 이벤트를 순서대로 발행하는 반복문 전체를 하나의 `try` 없이 돌려서, 이벤트 하나(예: Kafka 브로커 unreachable)가 예외를 던지면 그 뒤에 있는 모든 PENDING 이벤트가 매 주기(1초)마다 영원히 처리되지 못하는 head-of-line 블로킹이 있었다. 지금은 이벤트별로 발행을 시도하고 실패한 것만 PENDING으로 남겨(다음 주기 재시도) 나머지는 계속 처리한다.
+
+**31단계 — 다중 인스턴스와 보관 정책**:
+- `OutboxPublisher`는 PENDING 행을 `SELECT ... FOR UPDATE SKIP LOCKED`로 100건씩 잠그며 가져온다. 서버를 여러 대 띄워도 다른 인스턴스가 잡은 행은 건너뛰어 같은 이벤트를 중복 발행하지 않는다. 배치마다 트랜잭션을 나눠, Kafka 응답을 기다리는 동안 DB 커넥션과 행 잠금을 쥐는 시간을 배치 하나로 제한한다. 배치가 가득 차고 실패가 없으면 같은 주기 안에서 다음 배치를 이어서 처리한다(한 주기 최대 20배치).
+- 발행 완료(PUBLISHED)된 지 `app.retention.days`(기본 30일)가 지난 `outbox_events`는 매일 지운다(`DataRetentionService`). 그보다 오래 끊겼던 클라이언트의 `Last-Event-ID` 백로그는 재생할 수 없으니, 재접속 후 목록을 다시 조회한다. Kafka 토픽에는 남는다.
 
 **27단계에서 수정한 신뢰성 문제 2가지**:
 

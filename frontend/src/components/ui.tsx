@@ -184,3 +184,31 @@ export function ConfirmButton({
     </>
   );
 }
+
+/** 31단계: 목록 아래 페이지 이동. 한 페이지뿐이면 전체 건수만 보여준다. */
+export function Pagination({
+  page,
+  onPageChange,
+}: {
+  page: { page: number; totalPages: number; totalElements: number };
+  onPageChange: (page: number) => void;
+}) {
+  return (
+    <div className="mt-3 flex items-center justify-between text-sm text-gray-600">
+      <span>전체 {page.totalElements.toLocaleString()}건</span>
+      {page.totalPages > 1 && (
+        <div className="flex items-center gap-2">
+          <Button variant="secondary" disabled={page.page <= 0} onClick={() => onPageChange(page.page - 1)}>
+            이전
+          </Button>
+          <span className="tabular-nums">
+            {page.page + 1} / {page.totalPages}
+          </span>
+          <Button variant="secondary" disabled={page.page >= page.totalPages - 1} onClick={() => onPageChange(page.page + 1)}>
+            다음
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
