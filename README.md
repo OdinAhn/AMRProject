@@ -48,6 +48,7 @@ SPRING_PROFILES_ACTIVE=local TOKEN_SIGNING_SECRET=<임의의-서명-키> ./gradl
 | `AUTO_DISPATCH_ENABLED` / `AUTO_DISPATCH_INTERVAL_MS` | local: `true` / `5000` (기본 프로필은 꺼짐) | 운영 중 물류센터의 디스패치 사이클 자동 실행 여부와 주기 |
 | `ROBOT_CONNECTION_MONITOR_ENABLED` | local: `true` (기본 프로필은 꺼짐) | 하트비트 기반 로봇 연결 감시(끊기면 OFFLINE·알람). 시뮬레이터 모드면 서버가 하트비트도 대신 친다 |
 | `ROBOT_HEARTBEAT_TIMEOUT_SECONDS` | `30` | 마지막 수신 후 이 시간이 지나면 OFFLINE으로 판정 |
+| `app.retention.enabled` / `app.retention.days` / `app.retention.cron` | `true` / `30` / `0 30 3 * * *` | 발행 완료 outbox 이벤트·로봇 상태 이력 보관 기간과 삭제 시각(설정 파일 속성) |
 
 처음 실행하는 빈 데이터베이스라면 최초 관리자 계정을 함께 만든다(관리자가 생긴 뒤에는 이 변수가 있어도 아무 일도 하지 않는다):
 
@@ -116,6 +117,7 @@ Flyway 마이그레이션은 `src/main/resources/db/migration`에 있으며, 애
   | 28. 프론트 UX 개선 | 역할별 라우트 가드·404, 전역 실시간 갱신(SSE), 한글 라벨, 확인창·토스트, 작업자 화면 개선, 프론트 CI |
   | 29. 자동 디스패치·연결 감시 | 디스패치 사이클 자동 실행, 하트비트 기반 로봇 연결 감시(끊기면 OFFLINE·알람, MQTT 텔레메트리로 복구) |
   | 30. 대시보드·실시간 지도 | 관리자 첫 화면 대시보드(KPI, 로봇 상태표), 로봇 현재 노드 저장, 활성 지도 위에서 로봇이 통로 최단 경로를 따라 움직이는 모습(시뮬레이터 표시 전용 좌표), 로봇 상태 실시간 이벤트 |
+  | 31. 대용량·동시성 | 작업·알람 목록 페이지네이션과 N+1 제거, 동시 배정·작업장 예약 비관적 잠금, 다중 인스턴스 안전 아웃박스(`SKIP LOCKED`), 오래된 이벤트·상태 이력 자동 삭제, 인덱스 |
 
   각 단계의 완료 기준과 세부 구현 내용은 `docs/DESIGN.md` §11을 참고.
 
@@ -125,7 +127,6 @@ Flyway 마이그레이션은 `src/main/resources/db/migration`에 있으며, 애
 
 | 단계 | 내용 |
 |---|---|
-| 31. 대용량·동시성 | 목록 페이지네이션, N+1 제거, 오래된 데이터 정리, 배정·예약 비관적 락, 다중 인스턴스 아웃박스 |
 
 ### 알려진 제약 · 남은 과제
 

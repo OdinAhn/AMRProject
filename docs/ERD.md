@@ -583,6 +583,8 @@ erDiagram
 | status | VARCHAR | `PENDING`, `PUBLISHED`, `FAILED` |
 | created_at / published_at | DATETIME | |
 
+**31단계 구현**: 인덱스 `(status, id)`(릴레이의 `FOR UPDATE SKIP LOCKED` 폴링), `(status, created_at)`(보관 정책 삭제). 발행 완료 후 `app.retention.days`(기본 30일)가 지난 행은 매일 삭제한다. PENDING은 지우지 않는다.
+
 **inbox_messages**
 | 컬럼 | 타입 | 설명 |
 |---|---|---|
@@ -658,5 +660,7 @@ DESIGN.md §6에 명시되지 않았지만, ERD를 구체화하며 추가한 테
 - 리프트/컨베이어 등 운반 장치 연동이 확정되면 `load_transfer_events.event_type`에 설비 인터록 관련 이벤트(예: `CONVEYOR_HANDOFF_CONFIRMED`)를 추가해야 할 수 있다.
 - WMS/WCS 연동 여부가 확정되면 `loads`/`tasks.external_ref`의 참조 방식(주문 ID, SKU 등)을 구체화해야 한다.
 - 보존 정책(이력 테이블 파티셔닝/아카이빙)은 이 초안에 포함하지 않았다 — 운영 단계(§9 관측/로그)에서 별도로 설계한다.
+  - **31단계**: 최소 보관 정책을 구현했다. `outbox_events`(PUBLISHED만)와 `robot_state_snapshots`를 `app.retention.days`(기본 30일) 기준으로 매일 1000건씩 나눠 삭제한다(`DataRetentionService`). `task_events`/`command_events`/`alarm_events`는 감사 추적 성격이라 지우지 않는다. 파티셔닝·아카이빙은 여전히 미정이다.
+  - **31단계 인덱스(V12)**: `outbox_events (status, id)`, `outbox_events (status, created_at)`, `robot_state_snapshots (robot_id, reported_at)`, `robot_state_snapshots (received_at)`, `tasks (site_id, status, created_at)`, `tasks (status, created_at)`, `alarms (status, created_at)`, `resource_reservations (resource_type, resource_id, status)`.
 - `robots.lifecycle_status`가 `MAINTENANCE`인데 로봇이 여전히 `AUTO`를 보고하는 등 두 축이 어긋난 상태가 일정 시간 이상 지속되면 알람을 띄울지 여부는 미정.
 - 충전 작업이 정말 `tasks`/`task_steps`를 재사용하는 구조가 맞는지, 아니면 `charging_sessions`만으로 충분한지는 7단계(다중 로봇 운영/충전) 구현 시 재확인한다.

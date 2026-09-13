@@ -7,6 +7,7 @@ import com.amrproject.repository.robot.RobotCurrentStateRepository;
 import com.amrproject.repository.robot.RobotStateSnapshotRepository;
 import com.amrproject.robot.SimulatedFault;
 import com.amrproject.robot.SimulatorRobotGateway;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -47,9 +48,10 @@ public class RobotStateService {
         return robotCurrentStateRepository.findById(robotId);
     }
 
-    public List<RobotStateSnapshot> getStateHistory(Long robotId) {
+    /** 31단계: 최근 limit건만 준다(1~1000으로 맞춘다). */
+    public List<RobotStateSnapshot> getStateHistory(Long robotId, int limit) {
         robotService.getById(robotId);
-        return robotStateSnapshotRepository.findByRobotIdOrderByReportedAtDesc(robotId);
+        return robotStateSnapshotRepository.findByRobotIdOrderByReportedAtDesc(robotId, PageRequest.of(0, Math.clamp(limit, 1, 1000)));
     }
 
     public void injectFault(Long robotId, SimulatedFault fault) {

@@ -5,7 +5,7 @@ import { ConnectionStatusBadge } from "../components/events/ConnectionStatusBadg
 import { api } from "../lib/apiClient";
 import { useAuth } from "../lib/auth";
 import { EventStreamProvider, useEventStream } from "../lib/eventStream";
-import type { AlarmResponse } from "../types/api";
+import type { AlarmResponse, PageResponse } from "../types/api";
 
 const NAV_ITEMS = [
   { to: "/dashboard", label: "대시보드" },
@@ -34,11 +34,12 @@ function AdminShell() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   // 28단계: 사이드바에 미확인(OPEN) 알람 수를 표시한다. 알람 이벤트가 오면 ["alarms"] 쿼리가 무효화돼 즉시 갱신된다.
+  // 31단계: 목록 전체를 받아 세던 것을 페이지 응답의 totalElements만 쓰도록 바꿨다(size=1).
   const openAlarmsQuery = useQuery({
-    queryKey: ["alarms", "OPEN", "", ""],
-    queryFn: () => api.get<AlarmResponse[]>("/api/admin/alarms?status=OPEN"),
+    queryKey: ["alarms", "open-count"],
+    queryFn: () => api.get<PageResponse<AlarmResponse>>("/api/admin/alarms?status=OPEN&size=1"),
   });
-  const openAlarmCount = openAlarmsQuery.data?.length ?? 0;
+  const openAlarmCount = openAlarmsQuery.data?.totalElements ?? 0;
 
   return (
     <div className="flex h-screen bg-gray-50">

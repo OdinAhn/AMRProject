@@ -1,6 +1,10 @@
 package com.amrproject.controller.task;
 
+import com.amrproject.controller.PageRequests;
+import com.amrproject.domain.entity.task.Task;
 import com.amrproject.domain.entity.task.TaskStatus;
+import com.amrproject.domain.entity.task.TaskStep;
+import com.amrproject.dto.response.PageResponse;
 import com.amrproject.domain.entity.user.User;
 import com.amrproject.dto.request.task.AssignRobotRequest;
 import com.amrproject.dto.request.task.RecoverTaskRequest;
@@ -19,6 +23,8 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
+import java.util.Map;
+import org.springframework.data.domain.Page;
 
 @RestController
 @RequestMapping("/api/admin/tasks")
@@ -34,15 +40,18 @@ public class AdminTaskController {
 
     /**
      * 재접속 대조(8단계): station/robot/기간 필터는 아직 미구현 (docs/API.md §3).
+     * 31단계: 페이지 응답(최신순)으로 바뀌었고, 단계는 페이지의 작업들을 한 번에 읽는다.
      */
     @GetMapping
-    public List<TaskResponse> getAll(
+    public PageResponse<TaskResponse> getAll(
             @RequestParam(required = false) Long siteId,
-            @RequestParam(required = false) TaskStatus status
+            @RequestParam(required = false) TaskStatus status,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "" + PageRequests.DEFAULT_SIZE) int size
     ) {
-        return taskService.getAll(siteId, status).stream()
-                .map(task -> TaskResponse.from(task, taskService.getSteps(task.getId())))
-                .toList();
+        Page<Task> tasks = taskService.getPage(siteId, status, PageRequests.newestFirst(page, size));
+        Map<Long, List<TaskStep>> steps = taskService.getStepsByTaskIds(tasks.map(Task::getId).getContent());
+        return PageResponse.of(tasks, task -> TaskResponse.from(task, steps.getOrDefault(task.getId(), List.of())));
     }
 
     @GetMapping("/{taskId}")

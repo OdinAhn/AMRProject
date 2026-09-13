@@ -142,15 +142,17 @@ class OperationalRecoveryTest extends AbstractIntegrationTest {
                         .param("siteId", String.valueOf(siteId))
                         .param("status", "RECOVERY_REQUIRED"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.length()").value(1))
-                .andExpect(jsonPath("$[0].id").value(needsAttentionTaskId));
+                // 31단계: 목록 응답이 배열에서 페이지(PageResponse)로 바뀌었다.
+                .andExpect(jsonPath("$.content.length()").value(1))
+                .andExpect(jsonPath("$.totalElements").value(1))
+                .andExpect(jsonPath("$.content[0].id").value(needsAttentionTaskId));
 
         mockMvc.perform(get("/api/admin/tasks")
                         .param("siteId", String.valueOf(siteId))
                         .param("status", "QUEUED"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.length()").value(1))
-                .andExpect(jsonPath("$[0].id").value(queuedTaskId));
+                .andExpect(jsonPath("$.content.length()").value(1))
+                .andExpect(jsonPath("$.content[0].id").value(queuedTaskId));
     }
 
     private void assignRobot(Long taskId, Long robotId) throws Exception {

@@ -73,8 +73,11 @@ public class RobotController {
     }
 
     @GetMapping("/{robotId}/state-history")
-    public List<RobotStateResponse> getStateHistory(@PathVariable Long robotId) {
-        return robotStateService.getStateHistory(robotId).stream().map(RobotStateResponse::from).toList();
+    public List<RobotStateResponse> getStateHistory(
+            @PathVariable Long robotId,
+            @RequestParam(defaultValue = "100") int limit
+    ) {
+        return robotStateService.getStateHistory(robotId, limit).stream().map(RobotStateResponse::from).toList();
     }
 
     @PostMapping("/{robotId}/configurations")
