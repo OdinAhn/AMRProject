@@ -6,6 +6,7 @@ import com.amrproject.dto.response.task.TaskResponse;
 import com.amrproject.service.site.StationService;
 import com.amrproject.service.task.TaskService;
 import com.amrproject.service.user.UserService;
+import com.amrproject.service.user.WorkerAccessService;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -14,8 +15,8 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.List;
 
 /**
- * 작업자용 작업장 조회 API (docs/API.md §4). station 단위 접근 제어(내가 배정
- * 안 된 station의 작업 조회를 막는 것)는 아직 없다 — role 기반 검사만 있다(10단계).
+ * 작업자용 작업장 조회 API (docs/API.md §4). 26단계부터 작업장 단위 접근 제어
+ * ({@link WorkerAccessService})를 적용한다 — 배정받지 않은 작업장/site는 403.
  */
 @RestController
 public class WorkerStationController {
@@ -23,11 +24,18 @@ public class WorkerStationController {
     private final UserService userService;
     private final StationService stationService;
     private final TaskService taskService;
+    private final WorkerAccessService workerAccessService;
 
-    public WorkerStationController(UserService userService, StationService stationService, TaskService taskService) {
+    public WorkerStationController(
+            UserService userService,
+            StationService stationService,
+            TaskService taskService,
+            WorkerAccessService workerAccessService
+    ) {
         this.userService = userService;
         this.stationService = stationService;
         this.taskService = taskService;
+        this.workerAccessService = workerAccessService;
     }
 
     @GetMapping("/api/worker/stations")
@@ -39,7 +47,8 @@ public class WorkerStationController {
     }
 
     @GetMapping("/api/worker/stations/{stationId}/tasks")
-    public List<TaskResponse> getStationTasks(@PathVariable Long stationId) {
+    public List<TaskResponse> getStationTasks(@PathVariable Long stationId, Authentication authentication) {
+        workerAccessService.checkStationAccess(authentication.getName(), stationId);
         return taskService.getActiveByStation(stationId).stream()
                 .map(task -> TaskResponse.from(task, taskService.getSteps(task.getId())))
                 .toList();
@@ -48,9 +57,11 @@ public class WorkerStationController {
     /**
      * 로봇 호출 시 목적지 station을 고르기 위한 조회 — 작업자는 자기 배정
      * station만 볼 수 있어 같은 site의 다른 station을 볼 방법이 필요하다.
+     * 그 site 안에 배정된 작업장이 하나라도 있어야 조회할 수 있다(26단계).
      */
     @GetMapping("/api/worker/sites/{siteId}/stations")
-    public List<StationResponse> getSiteStations(@PathVariable Long siteId) {
+    public List<StationResponse> getSiteStations(@PathVariable Long siteId, Authentication authentication) {
+        workerAccessService.checkSiteAccess(authentication.getName(), siteId);
         return stationService.getBySite(siteId).stream().map(StationResponse::from).toList();
     }
 }

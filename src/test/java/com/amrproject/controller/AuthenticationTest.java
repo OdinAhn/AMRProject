@@ -2,6 +2,7 @@ package com.amrproject.controller;
 
 import com.amrproject.domain.entity.user.Role;
 import com.amrproject.domain.entity.user.User;
+import com.amrproject.domain.entity.user.UserStatus;
 import com.amrproject.dto.request.user.LoginRequest;
 import com.amrproject.repository.user.RoleRepository;
 import com.amrproject.repository.user.UserRepository;
@@ -9,6 +10,7 @@ import com.amrproject.support.AbstractIntegrationTest;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers;
 import org.springframework.test.web.servlet.MockMvc;
@@ -44,6 +46,9 @@ class AuthenticationTest extends AbstractIntegrationTest {
 
     @Autowired
     private PasswordEncoder passwordEncoder;
+
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
 
     private MockMvc mockMvc;
 
@@ -109,6 +114,38 @@ class AuthenticationTest extends AbstractIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.username").value("auth-admin-3"))
                 .andExpect(jsonPath("$.roleCode").value("ADMIN"));
+    }
+
+    @Test
+    void 비활성화된_사용자의_기존_토큰은_만료_전이어도_401을_반환한다() throws Exception {
+        createUser("auth-admin-4", "admin-password", "ADMIN");
+        String token = login("auth-admin-4", "admin-password");
+        mockMvc.perform(get("/api/auth/me").header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk());
+
+        User user = userRepository.findByUsername("auth-admin-4").orElseThrow();
+        user.changeStatus(UserStatus.DISABLED);
+        userRepository.save(user);
+
+        mockMvc.perform(get("/api/auth/me").header("Authorization", "Bearer " + token))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void 역할이_바뀌면_기존_토큰의_권한도_DB의_현재_역할을_따른다() throws Exception {
+        createUser("auth-admin-5", "admin-password", "ADMIN");
+        String token = login("auth-admin-5", "admin-password");
+        mockMvc.perform(get("/api/admin/robots").header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk());
+
+        // 역할 변경 API는 아직 없어(UpdateUserRequest는 displayName/status만) DB를 직접 바꿔 검증한다.
+        jdbcTemplate.update(
+                "update users set role_id = ? where username = ?",
+                roleRepository.findByCode("WORKER").orElseThrow().getId(), "auth-admin-5"
+        );
+
+        mockMvc.perform(get("/api/admin/robots").header("Authorization", "Bearer " + token))
+                .andExpect(status().isForbidden());
     }
 
     private String login(String username, String password) throws Exception {

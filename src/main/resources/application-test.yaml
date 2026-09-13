@@ -10,3 +10,5 @@ spring:
 app:
   token:
     secret: test-only-signing-secret-not-a-real-credential
+  external:
+    api-key: test-only-external-api-key

@@ -121,6 +121,65 @@ class WorkerStationTest extends AbstractIntegrationTest {
                 .andExpect(jsonPath("$.length()").value(2));
     }
 
+    @Test
+    void 작업자는_배정받지_않은_작업장의_작업목록을_조회하면_403을_받는다() throws Exception {
+        Long siteId = createSite("SITE-WS4", "작업자물류센터4");
+        Long myStationId = createStation(siteId, "ST-WS7", "내작업장");
+        Long otherStationId = createStation(siteId, "ST-WS8", "남의작업장");
+        String workerToken = createWorker("worker-ws-4", siteId, myStationId);
+
+        mockMvc.perform(get("/api/worker/stations/{stationId}/tasks", otherStationId)
+                        .header("Authorization", "Bearer " + workerToken))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("STATION_ACCESS_DENIED"));
+        mockMvc.perform(get("/api/worker/stations/{stationId}/tasks", myStationId)
+                        .header("Authorization", "Bearer " + workerToken))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void 작업자는_배정받지_않은_site의_작업장_목록을_조회하면_403을_받는다() throws Exception {
+        Long mySiteId = createSite("SITE-WS5", "작업자물류센터5");
+        Long myStationId = createStation(mySiteId, "ST-WS9", "내작업장");
+        Long otherSiteId = createSite("SITE-WS6", "작업자물류센터6");
+        createStation(otherSiteId, "ST-WS10", "다른센터작업장");
+        String workerToken = createWorker("worker-ws-5", mySiteId, myStationId);
+
+        mockMvc.perform(get("/api/worker/sites/{siteId}/stations", otherSiteId).header("Authorization", "Bearer " + workerToken))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void 작업자는_출발지나_도착지_권한이_없는_작업을_조회_조작하거나_남의_작업장에서_호출하면_403을_받는다() throws Exception {
+        Long siteId = createSite("SITE-WS7", "작업자물류센터7");
+        Long originId = createStation(siteId, "ST-WS11", "입고");
+        Long destinationId = createStation(siteId, "ST-WS12", "출고");
+        Long unrelatedId = createStation(siteId, "ST-WS13", "무관한작업장");
+        String ownerToken = createWorker("worker-ws-6", siteId, originId);
+        String destinationToken = createWorker("worker-ws-7", siteId, destinationId);
+        String outsiderToken = createWorker("worker-ws-8", siteId, unrelatedId);
+
+        Long taskId = createTask(originId, destinationId, "idem-ws-access-1", ownerToken);
+
+        mockMvc.perform(get("/api/worker/tasks/{taskId}", taskId).header("Authorization", "Bearer " + outsiderToken))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(post("/api/worker/tasks/{taskId}/cancel", taskId).header("Authorization", "Bearer " + outsiderToken))
+                .andExpect(status().isForbidden());
+        // 도착지 작업자는 하역 완료 등을 눌러야 하므로 접근할 수 있다.
+        mockMvc.perform(get("/api/worker/tasks/{taskId}", taskId).header("Authorization", "Bearer " + destinationToken))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(post("/api/worker/tasks")
+                        .header("Authorization", "Bearer " + outsiderToken)
+                        .header("Idempotency-Key", "idem-ws-access-2")
+                        .contentType(APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new CreateTaskRequest(originId, destinationId))))
+                .andExpect(status().isForbidden());
+
+        mockMvc.perform(get("/api/worker/tasks/{taskId}", taskId).header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isOk());
+    }
+
     private String createWorker(String username, Long siteId, Long stationId) throws Exception {
         mockMvc.perform(post("/api/admin/users")
                         .header("Authorization", "Bearer " + adminToken)

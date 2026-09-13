@@ -11,5 +11,7 @@ public interface UserStationAssignmentRepository extends JpaRepository<UserStati
 
     boolean existsByUserIdAndStationId(Long userId, Long stationId);
 
+    boolean existsByUserIdAndStationSiteId(Long userId, Long siteId);
+
     void deleteByUserIdAndStationId(Long userId, Long stationId);
 }
