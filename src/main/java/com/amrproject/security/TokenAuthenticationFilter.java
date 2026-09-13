@@ -1,5 +1,8 @@
 package com.amrproject.security;
 
+import com.amrproject.domain.entity.user.User;
+import com.amrproject.domain.entity.user.UserStatus;
+import com.amrproject.repository.user.UserRepository;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -22,16 +25,29 @@ import java.util.Optional;
  * {@link #SSE_STREAM_PATH} 요청에 한해서만 {@code access_token} 쿼리 파라미터를 대체
  * 토큰 소스로 허용한다 — 다른 모든 엔드포인트는 계속 헤더만 받는다. 토큰이 URL에
  * 노출되는 트레이드오프는 docs/API.md §5에 명시했다.
+ *
+ * <p>26단계: 서명·만료만 보지 않고 매 요청마다 토큰의 사용자를 DB에서 다시 조회한다 —
+ * 비활성화된 사용자는 토큰이 아직 만료 전이어도 인증되지 않고(401), 권한은 토큰에
+ * 적힌 role이 아니라 DB의 현재 role로 부여한다(역할 변경이 즉시 반영됨).
  */
 public class TokenAuthenticationFilter extends OncePerRequestFilter {
 
     private static final String BEARER_PREFIX = "Bearer ";
     private static final String SSE_STREAM_PATH = "/api/events/stream";
+    private static final String EXTERNAL_PATH_PREFIX = "/api/external/";
 
     private final AccessTokenService accessTokenService;
+    private final UserRepository userRepository;
 
-    public TokenAuthenticationFilter(AccessTokenService accessTokenService) {
+    public TokenAuthenticationFilter(AccessTokenService accessTokenService, UserRepository userRepository) {
         this.accessTokenService = accessTokenService;
+        this.userRepository = userRepository;
+    }
+
+    /** 외부 시스템 API는 사용자 토큰이 아니라 API 키로만 인증한다 (26단계, ExternalApiKeyFilter). */
+    @Override
+    protected boolean shouldNotFilter(HttpServletRequest request) {
+        return request.getRequestURI().startsWith(EXTERNAL_PATH_PREFIX);
     }
 
     @Override
@@ -42,14 +58,20 @@ public class TokenAuthenticationFilter extends OncePerRequestFilter {
     ) throws ServletException, IOException {
         String token = resolveToken(request);
         if (token != null) {
-            Optional<AccessTokenService.TokenPayload> payload = accessTokenService.parseToken(token);
-            payload.ifPresent(p -> {
-                var authorities = List.of(new SimpleGrantedAuthority("ROLE_" + p.role()));
-                var authentication = new UsernamePasswordAuthenticationToken(p.username(), null, authorities);
-                SecurityContextHolder.getContext().setAuthentication(authentication);
-            });
+            accessTokenService.parseToken(token)
+                    .flatMap(payload -> findActiveUser(payload.userId()))
+                    .ifPresent(user -> {
+                        var authorities = List.of(new SimpleGrantedAuthority("ROLE_" + user.getRole().getCode()));
+                        var authentication = new UsernamePasswordAuthenticationToken(user.getUsername(), null, authorities);
+                        SecurityContextHolder.getContext().setAuthentication(authentication);
+                    });
         }
         filterChain.doFilter(request, response);
+    }
+
+    private Optional<User> findActiveUser(Long userId) {
+        return userRepository.findWithRoleById(userId)
+                .filter(user -> user.getStatus() == UserStatus.ACTIVE);
     }
 
     private String resolveToken(HttpServletRequest request) {

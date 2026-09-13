@@ -4,7 +4,11 @@
 
 ## 공통 규칙
 
-- **10단계 구현**: `Authorization: Bearer <token>` 방식으로 확정했다. 토큰은 표준 JWT가 아니라 서버가 직접 서명·검증하는 자체 토큰이다(`AccessTokenService`, HMAC-SHA256) — 이 서버 혼자 발급·검증을 다 하고 외부와 상호운용할 필요가 없어 라이브러리 없이 최소 구현했다. `/api/admin/**`은 `ADMIN` role, `/api/worker/**`는 `ADMIN`/`WORKER` role이 필요하다. `/api/external/**`은 외부 시스템 인증 방식이 아직 미정이라(로봇 통신 규격 미정과 연동) 계속 인증 없이 열려 있다.
+- **10단계 구현**: `Authorization: Bearer <token>` 방식으로 확정했다. 토큰은 표준 JWT가 아니라 서버가 직접 서명·검증하는 자체 토큰이다(`AccessTokenService`, HMAC-SHA256) — 이 서버 혼자 발급·검증을 다 하고 외부와 상호운용할 필요가 없어 라이브러리 없이 최소 구현했다. `/api/admin/**`은 `ADMIN` role, `/api/worker/**`는 `ADMIN`/`WORKER` role이 필요하다.
+- **26단계 보안 강화**:
+  - 서버는 토큰의 서명·만료만 믿지 않고 **매 요청마다 토큰의 사용자를 DB에서 다시 조회**한다(`TokenAuthenticationFilter`). `DISABLED`로 바뀐 사용자의 토큰은 만료 전이어도 401이 되고, 권한은 토큰에 적힌 role이 아니라 DB의 현재 role로 부여된다.
+  - `/api/worker/**`은 role 검사에 더해 **작업장 단위 접근 제어**를 한다(§4, `WorkerAccessService`). 배정받지 않은 작업장·site·작업에 접근하면 403 `STATION_ACCESS_DENIED`를 받는다.
+  - `/api/external/**`은 더 이상 인증 없이 열려 있지 않다. 공유 API 키 헤더 `X-API-Key`가 필요하다(§6).
 - 모든 응답은 JPA 엔티티가 아닌 DTO로 반환한다 (AGENTS.md 규칙).
 - 오류 응답은 공통 포맷을 사용한다.
 
@@ -20,7 +24,7 @@
 |---|---|
 | 요청 검증 실패 | 400 |
 | 인증 필요/실패 | 401 |
-| 권한 없음 (다른 작업장 접근 등) | 403 |
+| 권한 없음 (role 부족 / 26단계: 배정받지 않은 작업장 접근 — `STATION_ACCESS_DENIED`) | 403 |
 | 리소스 없음 | 404 |
 | 상태 충돌 (허용되지 않는 전이, 중복 배정 등) | 409 |
 | 서버 오류 | 500 |
@@ -44,7 +48,9 @@
 | POST | `/api/auth/logout` | 로그아웃 |
 | GET | `/api/auth/me` | 현재 사용자 정보(username, displayName, role). 접근 가능 station 목록은 아직 응답에 포함하지 않는다 — 필요하면 `GET /api/admin/users/{userId}/station-assignments`로 별도 조회 |
 
-토큰이 상태 없는(stateless) 자체 서명 값이라 서버가 들고 있는 세션이 없다 — `logout`은 클라이언트가 토큰을 버리는 것으로 처리되고 서버 측 토큰 무효화(블랙리스트)는 구현하지 않는다.
+토큰이 상태 없는(stateless) 자체 서명 값이라 서버가 들고 있는 세션이 없다 — `logout`은 클라이언트가 토큰을 버리는 것으로 처리되고 서버 측 토큰 무효화(블랙리스트)는 구현하지 않는다. 대신 26단계부터 매 요청마다 사용자 상태를 확인하므로, 계정을 `DISABLED`로 바꾸면 그 사용자의 모든 토큰이 즉시 무효가 된다.
+
+**최초 관리자 계정(26단계)**: 사용자 생성 API는 `ADMIN`이 필요해 빈 DB에서는 API만으로 첫 관리자를 만들 수 없다. 환경 변수 `BOOTSTRAP_ADMIN_USERNAME`/`BOOTSTRAP_ADMIN_PASSWORD`가 둘 다 설정돼 있고 `ADMIN` 사용자가 한 명도 없으면, 기동 시 `AdminBootstrapRunner`가 관리자 계정을 한 번 만든다. 관리자가 이미 있으면 아무것도 하지 않는다.
 
 ---
 
@@ -86,6 +92,10 @@
 | GET | `/api/admin/map-versions/{versionId}/edges` | 통로 목록 |
 | POST | `/api/admin/map-versions/{versionId}/zones` | 구역 생성 (`DRAFT`에서만 허용, `nodeIds` 포함) |
 | GET | `/api/admin/map-versions/{versionId}/zones` | 구역 목록 |
+| POST | `/api/admin/map-versions/{versionId}/obstacles` | (24단계) 장애물(통행 불가 사각 영역: `x`/`y`/`width`/`height`) 생성 (`DRAFT`에서만 허용) |
+| GET | `/api/admin/map-versions/{versionId}/obstacles` | (24단계) 장애물 목록 |
+
+**24단계**: `validate`가 통로(두 노드를 잇는 선분)와 장애물 사각형의 교차를 검사한다(Liang-Barsky). 겹치는 통로가 있으면 검증에 실패한다. 따라서 `ACTIVE` 지도의 모든 통로는 장애물을 지나지 않는다. **25단계**: 관리자 화면의 지도 버전 상세가 폼 입력 대신 SVG 캔버스 편집기(`MapCanvasEditor`)로 바뀌었다. API는 그대로다.
 
 `VALIDATED`가 아닌 버전은 `activate` 호출 시 409. `DRAFT`/`ARCHIVED` 상태에서 노드·통로·구역을 조회할 수는 있지만, 운영 로직(배정/교통)은 오직 `ACTIVE` 버전만 사용한다.
 
@@ -166,7 +176,17 @@
 | POST | `/api/worker/tasks/{taskId}/report-unavailable` | **작업 불가** — 사유 기록, `RECOVERY_REQUIRED`로 전이(8단계) |
 | POST | `/api/worker/tasks/{taskId}/cancel` | **호출 취소** — `AdminTaskController`와 동일한 `TaskService.requestCancel` 재사용(12단계) |
 
-**12단계 구현**: 위 세 엔드포인트(`GET /stations`, `GET /stations/{id}/tasks`, `POST .../cancel`)가 이번에 실제로 채워졌다. `GET /api/worker/stations/{stationId}/tasks`와 `GET /api/worker/sites/{siteId}/stations`는 station 단위 접근 제어(요청한 사용자가 그 station/site에 실제 권한이 있는지)를 아직 검사하지 않는다 — role 기반 검사(`WORKER`/`ADMIN`)만 적용된다. 세밀한 소유권 검사는 알려진 제한사항으로 남긴다.
+**12단계 구현**: 위 세 엔드포인트(`GET /stations`, `GET /stations/{id}/tasks`, `POST .../cancel`)가 이번에 실제로 채워졌다. `GET /api/worker/stations/{stationId}/tasks`와 `GET /api/worker/sites/{siteId}/stations`는 station 단위 접근 제어(요청한 사용자가 그 station/site에 실제 권한이 있는지)를 아직 검사하지 않는다 — role 기반 검사(`WORKER`/`ADMIN`)만 적용된다. ~~세밀한 소유권 검사는 알려진 제한사항으로 남긴다.~~ → 26단계에서 해소(아래).
+
+**26단계 — 작업장 단위 접근 제어**: 권한 기준은 `user_station_assignments`이고 `ADMIN`은 검사하지 않는다. 위반 시 403 `STATION_ACCESS_DENIED`.
+
+| 엔드포인트 | 필요한 권한 |
+|---|---|
+| `GET /stations` | (제한 없음 — 원래 내 배정 작업장만 반환) |
+| `GET /stations/{stationId}/tasks` | 그 작업장에 배정돼 있어야 함 |
+| `GET /sites/{siteId}/stations` | 그 site 안에 배정된 작업장이 하나 이상 있어야 함 |
+| `POST /tasks` (로봇 호출) | **출발지** 작업장에 배정돼 있어야 함 (목적지는 같은 site 어디든 선택 가능) |
+| `GET /tasks/{taskId}`, `dispatch`, `confirm-unload`, `report-unavailable`, `cancel` | 작업의 **출발지 또는 도착지** 작업장 중 하나에 배정돼 있어야 함 — 적재(출발지)와 하역(도착지) 작업자가 서로 다른 버튼을 누르기 때문 |
 
 ### 로봇 호출 요청 예시
 
@@ -249,6 +269,18 @@ Idempotency-Key: 8e2f1c...
 
 **9단계 구현**: 이 두 엔드포인트는 실제 WMS/WCS가 정해지기 전에도 성립하는 최소 접수/조회 계약이라 구현했다 — `POST`는 `Idempotency-Key` 헤더와 바디의 `externalRef` 중 하나만 있으면 되고(작업자 API와 달리 헤더 필수 아님), 재요청 시 둘 중 어느 키로든 같은 작업이면 200 + 기존 리소스를 반환한다(멱등). `GET`은 `externalRef`로 조회해 상태 폴링에 쓴다.
 
+**26단계 — 인증**: 9단계부터 이 경로는 인증 방식이 미정이라 permitAll이었고, 누구나 로봇 작업을 만들 수 있었다. 실제 연동 대상과 무관하게 성립하는 최소 방식으로 **공유 API 키**를 도입했다.
+
+```
+POST /api/external/tasks
+X-API-Key: <EXTERNAL_API_KEY 값>
+```
+
+- 서버 설정 `app.external.api-key`(환경 변수 `EXTERNAL_API_KEY`)와 상수 시간 비교로 검증하고, 일치하면 `ROLE_EXTERNAL`을 부여한다(`ExternalApiKeyFilter`). 키가 없거나 틀리면 401.
+- **fail-closed**: 서버에 키가 설정돼 있지 않으면 어떤 요청도 인증되지 않는다. 운영에서 설정을 빠뜨려도 API가 열리지 않는다. 개발용 기본 키는 `application-local.yaml`에만 있다.
+- 이 경로는 사용자 토큰(`Authorization: Bearer`)을 받지 않는다. 관리자 토큰으로도 호출할 수 없다.
+- 한계: 연동 시스템이 여러 개여도 키가 하나다(시스템별 키·회전·폐기 없음). 실제 WMS/WCS가 정해지면 시스템별 자격증명(또는 mTLS/OAuth2 client credentials)으로 교체한다.
+
 결과 회신 방식 중 **웹훅은 미구현** — DESIGN.md의 "기존 WMS/WCS 유무" 미확정 항목과 연동돼 있어(콜백 URL/인증 방식이 실제 대상에 따라 달라짐), 실제 연동 대상이 정해진 뒤 확정한다. 폴링(`GET`)만으로 "외부 요청부터 결과 회신까지 추적"은 가능하다.
 
 리프트/컨베이어 등 설비 인터록·WMS 재고 연동은 여전히 미구현이다 — 어떤 벤더/시스템을 쓸지가 안 정해진 조달 결정이라 임의로 스펙을 만들지 않는다. 로봇 통신은 18단계에서 MQTT/VDA5050 어댑터가 옵트인으로 추가됐다(§7 참고) — 다만 이는 실제 로봇 벤더 선정과는 별개다: 여전히 실제 로봇은 없고, VDA5050을 지원하지 않는 벤더가 선정되면 `RobotGateway` 포트의 또 다른 구현체로 교체하면 된다.
@@ -278,9 +310,9 @@ DESIGN.md §1/§4는 "로봇 없는 개발: 실제 통신 계약을 모사하는
 
 ## 8. 열린 질문 (구현 전 확정 필요)
 
-- ~~인증 방식~~ — 10단계에서 자체 서명 토큰으로 확정(§1 참고). 로봇 자체 인증 방식(게이트웨이 mTLS 등)과 외부 시스템(WMS/WCS) 인증은 여전히 미정 — 로봇 통신 규격/WMS 연동 대상 미정과 연동돼 있다.
+- ~~인증 방식~~ — 10단계에서 자체 서명 토큰으로 확정(§1 참고). 로봇 자체 인증 방식(게이트웨이 mTLS 등)은 여전히 미정 — 로봇 통신 규격 미정과 연동돼 있다. 외부 시스템(WMS/WCS) 인증은 26단계에서 임시로 공유 API 키를 도입했다(§6). 시스템별 자격증명 방식은 연동 대상이 정해진 뒤 확정한다.
 - `report-out-of-stock` 이후 작업 진행 정책과 WMS 재고 반영 여부.
 - ~~실시간 이벤트 팬아웃 인프라~~ — 15단계에서 Redis Pub/Sub으로 확정(§5 참고). Kafka는 팬아웃이 아니라 이벤트 로그 용도로 16단계에서 추가 예정.
-- 외부 연동 결과 회신 방식(webhook/polling)과 인증.
+- 외부 연동 결과 회신 방식(webhook/polling). 인증은 26단계에서 공유 API 키로 임시 확정했다.
 - 관리자 "지도 검증(`validate`)"의 구체적 검증 규칙(연결성, 고립 노드, 폭 등) — 지도 데이터 형식이 정해진 뒤 상세화.
 - 상태 전이 API의 "이미 완료된 요청은 200으로 현재 상태 반환" 규칙이 모든 전이 액션에 예외 없이 적용 가능한지 — 예: `report-out-of-stock`처럼 부작용이 큰 액션도 재요청 시 아무 일 없다는 듯 200을 줘도 되는지는 액션별로 재검토 필요.

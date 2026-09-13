@@ -374,6 +374,11 @@ Kafka를 도입하는 구성에서도 실제 명령 송신은 저장된 명령 �
 | 21. 로봇 기본정보 수정 화면 | 로봇 상세 화면에 `RobotBasicInfoForm` 추가 — 17단계 API `PATCH /api/admin/robots/{robotId}` 사용, 백엔드 변경 없음 | 실제 백엔드로 이름/모델/제조사 저장 후 새로고침해도 값이 유지됨 |
 | 22. 백엔드 패키지 분리 | `domain/entity`, `dto/request`, `dto/response`, `repository` 4개 패키지를 `alarm`/`user`/`site`/`map`/`robot`/`task`/`event` 도메인 하위 패키지로 재배치(기능 변경 없음, `controller`/`service`는 범위 밖) | `./gradlew compileJava compileTestJava test build` 전부 통과, 128개 파일 이동이 전부 `git rename`으로 인식됨 |
 | 23. 백엔드 패키지 분리(컨트롤러·서비스) | 22단계와 같은 방식으로 `controller`, `service`도 동일한 7개 도메인 하위 패키지로 재배치(기능 변경 없음) | `./gradlew compileJava compileTestJava test build` 전부 통과, 26개 파일 이동이 전부 `git rename`으로 인식됨 |
+| 24. 지도 장애물·작업장 바인딩 화면 | `obstacles` 테이블·API(V10), 지도 검증에 통로-장애물 교차 검사 추가. 기존 `PUT /api/admin/stations/{id}/map-binding`에 화면(`StationMapBindingForm`) 추가 | 장애물과 겹치는 통로가 있으면 검증 실패, 화면에서 작업장을 노드에 연결 가능 |
+| 25. 지도 시각 편집기 | 지도 버전 상세의 노드/통로 입력 폼을 SVG 캔버스 편집기(`MapCanvasEditor`)로 교체 — 클릭으로 노드 배치, 드래그로 장애물, 노드 두 개 클릭으로 통로. 구역은 기존 폼 유지 | 브라우저에서 클릭만으로 노드·장애물·통로를 가진 지도 작성 |
+| 26. 보안 강화 | 외부 API 공유 키 인증(`X-API-Key`, fail-closed), 작업자 API 작업장 단위 접근 제어(403 `STATION_ACCESS_DENIED`), 토큰 사용 시 사용자 상태·역할을 DB에서 재확인, 최초 관리자 부트스트랩(`BOOTSTRAP_ADMIN_*`) | 키 없는 외부 요청·남의 작업장 접근·비활성 사용자 토큰이 모두 거부되고, 빈 DB에서 환경 변수만으로 첫 관리자 생성 |
+
+24~25단계는 원래 "지도 시각 편집기 + 로봇 자동주행 시뮬레이션" 4단계 계획(24~27)의 앞 두 단계였다. 25단계 이후 코드 리뷰 결과를 반영한 26~31단계 로드맵(보안 → 이벤트 신뢰성 → 프론트 UX → 자동 디스패치·연결 감시 → 대시보드·실시간 지도 → 대용량·동시성)으로 번호를 다시 잡았다. 원래 계획의 남은 두 단계(시뮬레이터 경로 이동·위치 브로드캐스트, 실시간 시뮬레이션 화면)는 범위가 겹치는 30단계(대시보드·실시간 지도)에 합쳐 진행한다.
 
 Redis·Kafka를 채택한다면 프로젝트 기반 단계에서 개발 환경을 구성하고, 해당 데이터·이벤트 기능을 구현할 때 연결한다. Kubernetes도 채택 시 초기 배포 골격을 준비하고, 백엔드 완료 전에 다중 인스턴스와 재시작을 검증한다.
 

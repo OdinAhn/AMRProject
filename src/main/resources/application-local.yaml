@@ -23,6 +23,8 @@ spring:
 app:
   token:
     secret: ${TOKEN_SIGNING_SECRET:local-dev-only-secret-change-me}
+  external:
+    api-key: ${EXTERNAL_API_KEY:local-dev-only-external-api-key}
   robot-gateway:
     mqtt:
       enabled: ${ROBOT_GATEWAY_MQTT_ENABLED:false}

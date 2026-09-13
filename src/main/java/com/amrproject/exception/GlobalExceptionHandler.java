@@ -36,6 +36,12 @@ public class GlobalExceptionHandler {
                 .body(ErrorResponse.of(ex.getCode(), ex.getMessage()));
     }
 
+    @ExceptionHandler(StationAccessDeniedException.class)
+    public ResponseEntity<ErrorResponse> handleStationAccessDenied(StationAccessDeniedException ex) {
+        return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                .body(ErrorResponse.of(ex.getCode(), ex.getMessage()));
+    }
+
     @ExceptionHandler(InvalidRequestException.class)
     public ResponseEntity<ErrorResponse> handleInvalidRequest(InvalidRequestException ex) {
         return ResponseEntity.badRequest()
