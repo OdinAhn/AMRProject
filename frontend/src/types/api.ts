@@ -190,8 +190,12 @@ export interface TaskResponse {
   priority: number;
   status: TaskStatus;
   originStationId: number;
+  originStationName: string;
   destinationStationId: number;
+  destinationStationName: string;
   currentAssignmentId: number | null;
+  assignedRobotId: number | null;
+  assignedRobotCode: string | null;
   steps: TaskStepResponse[];
   allowedActions: string[];
   createdAt: string;

@@ -22,3 +22,28 @@ jobs:
 
       - name: Build and test
         run: ./gradlew build
+
+  # 28단계: 프론트엔드도 PR마다 타입 검사(tsc -b)·빌드·lint를 돌린다. 자동화된 화면 테스트는 없다(AGENTS.md 참고).
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Type-check and build
+        run: npm run build

@@ -1,3 +1,4 @@
+import { labels } from "../../lib/labels";
 import { Badge, Card, Table, Td, Th } from "../ui";
 import type { StationResponse } from "../../types/api";
 import { StationMapBindingForm, type BindableNode } from "./StationMapBindingForm";
@@ -30,7 +31,7 @@ export function StationTable({ stations, onUpdateCapacity, bindableNodes, onBind
               <Td>{station.code}</Td>
               <Td>{station.name}</Td>
               <Td>
-                <Badge tone="blue">{station.stationType}</Badge>
+                <Badge tone="blue">{labels.stationType(station.stationType)}</Badge>
               </Td>
               <Td>{station.status}</Td>
               <Td>

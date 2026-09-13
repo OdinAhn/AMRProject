@@ -1,3 +1,4 @@
+import { useState } from "react";
 import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode, SelectHTMLAttributes } from "react";
 
 export function PageHeader({ title, actions }: { title: string; actions?: ReactNode }) {
@@ -92,4 +93,94 @@ export function Th({ children }: { children?: ReactNode }) {
 
 export function Td({ children, className = "" }: { children: ReactNode; className?: string }) {
   return <td className={`border-b border-gray-100 py-2 pr-4 ${className}`}>{children}</td>;
+}
+
+/**
+ * 28단계: 되돌릴 수 없는 동작(작업 취소·최종 실패 처리·로봇 운영 상태 변경 등)을 한 번 더 확인받는 대화상자.
+ * open이 false면 아무것도 그리지 않는다 — 부모가 open 상태를 들고 있다.
+ */
+export function ConfirmDialog({
+  open,
+  title,
+  message,
+  confirmLabel = "확인",
+  variant = "danger",
+  onConfirm,
+  onCancel,
+}: {
+  open: boolean;
+  title: string;
+  message?: ReactNode;
+  confirmLabel?: string;
+  variant?: "primary" | "danger";
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  if (!open) return null;
+  return (
+    <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 p-4" onClick={onCancel}>
+      <div
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="confirm-dialog-title"
+        className="w-full max-w-sm rounded-lg bg-white p-5 shadow-xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h2 id="confirm-dialog-title" className="text-base font-semibold text-gray-900">
+          {title}
+        </h2>
+        {message && <div className="mt-2 text-sm text-gray-600">{message}</div>}
+        <div className="mt-5 flex justify-end gap-2">
+          <Button variant="secondary" onClick={onCancel} autoFocus>
+            아니요
+          </Button>
+          <Button variant={variant} onClick={onConfirm}>
+            {confirmLabel}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** 누르면 ConfirmDialog를 먼저 띄우고, 확인했을 때만 onConfirm을 부르는 버튼. */
+export function ConfirmButton({
+  title,
+  message,
+  confirmLabel,
+  onConfirm,
+  variant = "danger",
+  className = "",
+  disabled,
+  children,
+}: {
+  title: string;
+  message?: ReactNode;
+  confirmLabel?: string;
+  onConfirm: () => void;
+  variant?: "primary" | "secondary" | "danger";
+  className?: string;
+  disabled?: boolean;
+  children: ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <Button variant={variant} className={className} disabled={disabled} onClick={() => setOpen(true)}>
+        {children}
+      </Button>
+      <ConfirmDialog
+        open={open}
+        title={title}
+        message={message}
+        confirmLabel={confirmLabel}
+        variant={variant === "danger" ? "danger" : "primary"}
+        onCancel={() => setOpen(false)}
+        onConfirm={() => {
+          setOpen(false);
+          onConfirm();
+        }}
+      />
+    </>
+  );
 }

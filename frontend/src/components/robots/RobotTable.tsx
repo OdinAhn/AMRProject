@@ -1,3 +1,4 @@
+import { labels } from "../../lib/labels";
 import { Link } from "react-router";
 import { Badge, Card, Table, Td, Th } from "../ui";
 import type { RobotResponse, SiteResponse } from "../../types/api";
@@ -30,7 +31,7 @@ export function RobotTable({ robots, sites }: RobotTableProps) {
               <Td>{robot.name}</Td>
               <Td>{siteCodeOf(robot.siteId)}</Td>
               <Td>
-                <Badge tone={robot.lifecycleStatus === "IN_SERVICE" ? "green" : "gray"}>{robot.lifecycleStatus}</Badge>
+                <Badge tone={robot.lifecycleStatus === "IN_SERVICE" ? "green" : "gray"}>{labels.robotLifecycle(robot.lifecycleStatus)}</Badge>
               </Td>
               <Td>
                 v{robot.desiredConfigVersion ?? "-"} / v{robot.appliedConfigVersion ?? "-"}

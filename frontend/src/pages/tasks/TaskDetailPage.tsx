@@ -5,12 +5,15 @@ import { TaskActionsPanel } from "../../components/tasks/TaskActionsPanel";
 import { TaskEventsTable } from "../../components/tasks/TaskEventsTable";
 import { TaskStepsTable } from "../../components/tasks/TaskStepsTable";
 import { PageHeader } from "../../components/ui";
-import { ApiError, api } from "../../lib/apiClient";
+import { api, errorMessage } from "../../lib/apiClient";
+import { shortTaskNo } from "../../lib/labels";
+import { useToast } from "../../lib/toast";
 import type { RobotResponse, TaskEventResponse, TaskResponse } from "../../types/api";
 
 export function TaskDetailPage() {
   const { taskId } = useParams<{ taskId: string }>();
   const queryClient = useQueryClient();
+  const { showToast } = useToast();
   const [error, setError] = useState<string | null>(null);
 
   const invalidate = () => {
@@ -33,33 +36,28 @@ export function TaskDetailPage() {
     queryFn: () => api.get<RobotResponse[]>("/api/admin/robots"),
   });
 
-  const onError = (err: unknown) => setError(err instanceof ApiError ? err.message : "요청이 실패했습니다.");
-
-  const assign = useMutation({
-    mutationFn: (robotId: number) => api.post<TaskResponse>(`/api/admin/tasks/${taskId}/assign`, { robotId }),
+  const mutationHandlers = (successMessage: string) => ({
     onSuccess: () => {
       invalidate();
       setError(null);
+      showToast(successMessage);
     },
-    onError,
+    onError: (err: unknown) => setError(errorMessage(err)),
+  });
+
+  const assign = useMutation({
+    mutationFn: (robotId: number) => api.post<TaskResponse>(`/api/admin/tasks/${taskId}/assign`, { robotId }),
+    ...mutationHandlers("로봇을 배정했습니다."),
   });
 
   const cancel = useMutation({
     mutationFn: () => api.post<TaskResponse>(`/api/admin/tasks/${taskId}/cancel`),
-    onSuccess: () => {
-      invalidate();
-      setError(null);
-    },
-    onError,
+    ...mutationHandlers("취소를 요청했습니다."),
   });
 
   const recover = useMutation({
     mutationFn: (resolution: "RESUME" | "FAIL") => api.post<TaskResponse>(`/api/admin/tasks/${taskId}/recover`, { resolution }),
-    onSuccess: () => {
-      invalidate();
-      setError(null);
-    },
-    onError,
+    ...mutationHandlers("복구 처리를 반영했습니다."),
   });
 
   const task = taskQuery.data;
@@ -67,7 +65,7 @@ export function TaskDetailPage() {
   return (
     <div>
       <PageHeader
-        title={task ? `작업 ${task.taskNo.slice(0, 8)}` : "작업 상세"}
+        title={task ? `작업 ${shortTaskNo(task.taskNo)}` : "작업 상세"}
         actions={
           <Link to="/tasks" className="text-sm text-indigo-600 hover:underline">
             ← 작업 목록
@@ -89,7 +87,7 @@ export function TaskDetailPage() {
         />
       )}
 
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <TaskStepsTable steps={task?.steps ?? []} />
         <TaskEventsTable events={eventsQuery.data ?? []} />
       </div>

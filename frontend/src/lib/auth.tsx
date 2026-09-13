@@ -60,7 +60,12 @@ export function useAuth(): AuthContextValue {
   return context;
 }
 
-export function ProtectedRoute({ children }: { children: ReactNode }) {
+/**
+ * 로그인 여부를 확인하고, roles가 주어지면 역할도 확인한다(28단계).
+ * 역할이 맞지 않으면 403 화면 대신 그 사용자의 기본 화면으로 보낸다 — 예: WORKER가 주소창에
+ * /robots를 입력하면 /worker/stations로 이동한다(이전엔 관리자 레이아웃이 뜨고 API만 403이었다).
+ */
+export function ProtectedRoute({ children, roles }: { children: ReactNode; roles?: string[] }) {
   const { user, loading } = useAuth();
   const location = useLocation();
 
@@ -69,6 +74,9 @@ export function ProtectedRoute({ children }: { children: ReactNode }) {
   }
   if (!user) {
     return <Navigate to="/login" state={{ from: location }} replace />;
+  }
+  if (roles && !roles.includes(user.roleCode)) {
+    return <Navigate to={homePathFor(user)} replace />;
   }
   return <>{children}</>;
 }

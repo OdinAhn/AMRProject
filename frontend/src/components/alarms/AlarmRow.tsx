@@ -1,3 +1,4 @@
+import { labels } from "../../lib/labels";
 import { Badge, Button, Td } from "../ui";
 import type { AlarmResponse } from "../../types/api";
 import { alarmStatusTone, severityTone } from "./alarmTone";
@@ -12,15 +13,15 @@ interface AlarmRowProps {
 export function AlarmRow({ alarm, onAcknowledge, onResolve, isMutating }: AlarmRowProps) {
   return (
     <tr>
-      <Td>{alarm.alarmType}</Td>
+      <Td>{labels.alarmType(alarm.alarmType)}</Td>
       <Td>
-        <Badge tone={severityTone(alarm.severity)}>{alarm.severity}</Badge>
+        <Badge tone={severityTone(alarm.severity)}>{labels.alarmSeverity(alarm.severity)}</Badge>
       </Td>
       <Td>
-        {alarm.sourceType} #{alarm.sourceId}
+        {labels.alarmSourceType(alarm.sourceType)} #{alarm.sourceId}
       </Td>
       <Td>
-        <Badge tone={alarmStatusTone(alarm.status)}>{alarm.status}</Badge>
+        <Badge tone={alarmStatusTone(alarm.status)}>{labels.alarmStatus(alarm.status)}</Badge>
       </Td>
       <Td className="max-w-xs truncate">
         <span title={alarm.message ?? undefined}>{alarm.message ?? "-"}</span>

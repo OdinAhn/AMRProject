@@ -1,3 +1,4 @@
+import { labels } from "../../lib/labels";
 import { Card, Select } from "../ui";
 import type { SiteResponse, TaskStatus } from "../../types/api";
 
@@ -40,7 +41,7 @@ export function TaskFilters({ sites, siteId, status, onSiteIdChange, onStatusCha
             <option value="">전체 상태</option>
             {STATUSES.map((s) => (
               <option key={s} value={s}>
-                {s}
+                {labels.taskStatus(s)}
               </option>
             ))}
           </Select>

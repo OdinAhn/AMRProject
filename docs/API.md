@@ -203,7 +203,29 @@ Idempotency-Key: 8e2f1c...
 }
 ```
 
-응답: `201 Created`, 생성된 `task` (상태 `QUEUED`, `allowedActions: ["CANCEL"]`)
+응답: `201 Created`, 생성된 `task` (상태 `QUEUED`, `allowedActions: ["CANCEL", "REPORT_UNAVAILABLE"]`)
+
+### 작업 응답(`TaskResponse`) — 28단계 추가 필드
+
+화면이 id만으로는 작업을 알아보기 어려워 표시용 필드를 추가했다. 기존 필드는 그대로라 하위 호환이다.
+
+| 필드 | 설명 |
+|---|---|
+| `originStationName` / `destinationStationName` | 출발지·도착지 작업장 이름 |
+| `assignedRobotId` / `assignedRobotCode` | 현재 배정된 로봇(없으면 `null`) |
+
+`allowedActions` 값 전체(28단계 기준):
+
+| 값 | 조건 | 화면 버튼 |
+|---|---|---|
+| `CANCEL` | 상태가 `QUEUED`/`ASSIGNED`/`RUNNING`/`PAUSED` | 호출 취소 / 취소 |
+| `DISPATCH` | 작업이 `RUNNING`이고 진행 중 단계가 `CONFIRM_LOAD` | 로봇 보내기 |
+| `CONFIRM_UNLOAD` | 작업이 `RUNNING`이고 진행 중 단계가 `CONFIRM_UNLOAD` | 하역 완료 |
+| `REPORT_UNAVAILABLE` | (28단계) 상태가 `QUEUED`/`ASSIGNED`/`RUNNING`/`PAUSED` — `report-unavailable`이 받는 상태와 같음 | 작업 불가 |
+
+배열 순서는 위 표 순서를 따른다(예: 적재 대기 중이면 `["CANCEL", "DISPATCH", "REPORT_UNAVAILABLE"]`).
+
+28단계 이전에는 `DISPATCH`/`CONFIRM_UNLOAD`를 단계만 보고 계산했다. 그래서 `RECOVERY_REQUIRED`처럼 진행 중이 아닌 작업에도 버튼이 나갔고, 누르면 409가 났다. 지금은 작업이 `RUNNING`일 때만 준다. 복구 필요 작업은 관리자가 `recover`의 `RESUME`을 한 뒤에 다시 버튼이 나온다.
 
 ### 버튼 → 상태 전이 매핑 (DESIGN.md §5, STATE_MACHINES.md 기준)
 
@@ -237,6 +259,13 @@ Idempotency-Key: 8e2f1c...
    - 지금은 구독을 먼저 등록한다. 백로그를 재생하는 동안 들어온 실시간 이벤트는 버퍼에 쌓았다가 재생이 끝난 뒤 보낸다.
    - 백로그로 이미 보낸 id는 건너뛴다(`SseEventRelay`).
    - 남은 한계: Kafka 재시도 등으로 Redis에 id 순서가 뒤바뀌어 도착하면(예: 6이 5보다 먼저), 연결된 클라이언트는 둘 다 받지만 그 사이에 끊긴 클라이언트는 `Last-Event-ID=6`으로 재접속해 5를 놓칠 수 있다. 정수 id 커서 방식의 한계라 클라이언트는 재접속 후 필요한 목록을 다시 조회하는 것을 권장한다.
+
+**28단계에서 브라우저로 검증하다 발견해 고친 문제 2가지**:
+
+1. **단계 진행 이벤트가 없었음**. 로봇 보내기·하역 완료처럼 작업 상태가 `RUNNING` 그대로이고 단계만 바뀌는 동작은 `task_events`가 남지 않아 outbox 이벤트도 없었다. 그래서 다른 화면이 실시간으로 갱신되지 않았다.
+   - 지금은 단계가 시작될 때마다 `task.step_started` 이벤트를 발행한다. `payload`는 단계 유형(예: `"CONFIRM_UNLOAD"`)이다.
+   - outbox에만 기록하고 `task_events`(상태 전이 이력)에는 넣지 않는다.
+2. **연결해도 첫 이벤트 전까지 응답 헤더가 전송되지 않았음**. 그래서 브라우저 `EventSource`의 `onopen`이 불리지 않았다. 지금은 연결 직후 SSE 주석 한 줄(`:connected`)을 보내 헤더를 바로 내보낸다. 클라이언트는 주석을 무시한다.
 
 | Method | Path | 설명 |
 |---|---|---|

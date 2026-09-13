@@ -69,7 +69,9 @@ class OperationalRecoveryTest extends AbstractIntegrationTest {
 
         mockMvc.perform(post("/api/admin/tasks/{taskId}/cancel", taskId))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.status").value("RECOVERY_REQUIRED"));
+                .andExpect(jsonPath("$.status").value("RECOVERY_REQUIRED"))
+                // 28단계: 복구 필요 상태에서는 하역 완료 버튼을 주지 않는다(누르면 409). RESUME 뒤에 다시 나온다.
+                .andExpect(jsonPath("$.allowedActions[?(@ == 'CONFIRM_UNLOAD')]").isEmpty());
 
         mockMvc.perform(post("/api/admin/tasks/{taskId}/recover", taskId)
                         .contentType(APPLICATION_JSON)
@@ -77,7 +79,8 @@ class OperationalRecoveryTest extends AbstractIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("RUNNING"))
                 .andExpect(jsonPath("$.steps[3].stepType").value("CONFIRM_UNLOAD"))
-                .andExpect(jsonPath("$.steps[3].status").value("RUNNING"));
+                .andExpect(jsonPath("$.steps[3].status").value("RUNNING"))
+                .andExpect(jsonPath("$.allowedActions[1]").value("CONFIRM_UNLOAD"));
 
         mockMvc.perform(post("/api/worker/tasks/{taskId}/confirm-unload", taskId))
                 .andExpect(status().isOk())

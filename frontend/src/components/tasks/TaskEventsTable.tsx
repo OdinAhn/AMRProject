@@ -1,3 +1,4 @@
+import { labels } from "../../lib/labels";
 import { Card, Table, Td, Th } from "../ui";
 import type { TaskEventResponse } from "../../types/api";
 
@@ -22,11 +23,11 @@ export function TaskEventsTable({ events }: TaskEventsTableProps) {
             <tr key={event.id}>
               <Td className="whitespace-nowrap text-xs">{new Date(event.createdAt).toLocaleString()}</Td>
               <Td>
-                {event.eventType}
+                {labels.taskEventType(event.eventType)}
                 {event.payload && <div className="text-xs text-gray-500">{event.payload}</div>}
               </Td>
-              <Td className="text-xs">
-                {event.fromStatus ?? "-"} → {event.toStatus ?? "-"}
+              <Td className="text-xs whitespace-nowrap">
+                {event.fromStatus ? labels.taskStatus(event.fromStatus) : "-"} → {event.toStatus ? labels.taskStatus(event.toStatus) : "-"}
               </Td>
             </tr>
           ))}

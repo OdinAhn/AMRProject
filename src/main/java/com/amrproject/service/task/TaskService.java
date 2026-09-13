@@ -529,6 +529,10 @@ public class TaskService {
 
     private void advanceToStep(Task task, TaskStep step) {
         step.start();
+        // 28단계: 단계 진행(로봇 보내기·하역 완료 등)은 작업 상태가 RUNNING 그대로라 task_events가 남지 않아
+        // 실시간 이벤트도 없었다 — 화면이 "적재 확인 대기"에 멈춰 있지 않도록 outbox에만 단계 시작을 기록한다.
+        // task_events(상태 전이 이력)는 그대로 상태 전이만 담는다.
+        outboxEventRepository.save(new OutboxEvent("TASK", task.getId(), "task.step_started", step.getStepType().name()));
         if (MOVE_STEP_TYPES.contains(step.getStepType()) || step.getStepType() == TaskStepType.DOCK_AND_CHARGE) {
             dispatchStepCommand(task, step);
         }

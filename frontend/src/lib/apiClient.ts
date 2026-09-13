@@ -62,14 +62,31 @@ async function request<T>(
   }
 
   const text = await response.text();
-  const data = text ? JSON.parse(text) : undefined;
+  const data = parseJson(text);
 
   if (!response.ok) {
     const error = data as ErrorResponse | undefined;
-    throw new ApiError(response.status, error?.code ?? "UNKNOWN_ERROR", error?.message ?? "요청이 실패했습니다.");
+    // 28단계: Spring Security의 역할 거부(403)는 본문이 공통 오류 포맷(JSON)이 아니다 — 전용 메시지로 보여준다.
+    // 작업장 권한 거부(403 STATION_ACCESS_DENIED, 26단계)는 본문에 메시지가 있어 그대로 쓴다.
+    const fallbackMessage = response.status === 403 ? "이 작업을 수행할 권한이 없습니다." : "요청이 실패했습니다.";
+    throw new ApiError(response.status, error?.code ?? `HTTP_${response.status}`, error?.message ?? fallbackMessage);
   }
 
   return data as T;
+}
+
+function parseJson(text: string): unknown {
+  if (!text) return undefined;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return undefined;
+  }
+}
+
+/** 오류 객체를 화면에 보여줄 메시지로 바꾼다. */
+export function errorMessage(err: unknown, fallback = "요청이 실패했습니다."): string {
+  return err instanceof ApiError ? err.message : fallback;
 }
 
 export const api = {
