@@ -235,6 +235,16 @@ stateDiagram-v2
 
 **14단계 구현**: `alarms`/`alarm_events`(`ERD.md` §4.10, `API.md` §3 참고). 다이어그램과 다른 점 두 가지 — ① `OPEN → RESOLVED`는 "자동 해소"뿐 아니라 관리자가 확인 단계를 건너뛰고 바로 `resolve`를 호출하는 경우에도 일어난다(단순화). ② `RESOLVED → OPEN`(재발생)은 미구현이다 — 같은 (alarm_type, source_type, source_id) 조합이 다시 발생하면 기존 row를 재사용하지 않고 새 알람 row를 만든다. `alarm_events.event_type`도 `RAISED`/`ACKNOWLEDGED`/`RESOLVED` 3종만 실제로 쓰고 `REOPENED`는 미사용이다. 8단계(운영 장애 복구)에서 이미 확정된 개입 흐름(`Task.status = RECOVERY_REQUIRED` + `recover` API, §1 참고)은 그대로 유지되며, 이 알람 FSM으로 대체되지 않는다 — `TASK_FAILED` 알람은 `recover`가 작업을 최종 실패 처리할 때 **함께** 발생하는 별도 신호다.
 
+**27단계 — `TASK_RECOVERY_REQUIRED`**: 작업이 §1의 `RECOVERY_REQUIRED`로 들어가는 세 경로(로봇 명령 `FAILED`/`UNKNOWN`, 적재 중 취소, 작업자 작업 불가 보고)가 모두 `TaskService.markRecoveryRequired()`를 거치며 이 알람(`WARNING`, 대상 `TASK`)을 함께 올린다. 메시지에 원인이 들어간다(작업 불가 보고는 사유 포함). 이전에는 작업 상태만 바뀌고 관리자에게 알릴 신호가 없었다. `recover`의 `RESUME`/`FAIL` 시 자동 해소된다. `RESUME`은 명령을 재발행하기 **전에** 해소하므로, 재발행한 명령이 또 실패하면 새 알람이 다시 뜬다. `FAIL`이면 이 알람은 해소되고 `TASK_FAILED`가 새로 남는다.
+
+| 알람 종류 | 발생 | 해소 | 심각도 |
+|---|---|---|---|
+| `ROBOT_COMM_LOST` | 로봇 연결 `OFFLINE` 전이 | 연결 복구 시 자동 | WARNING |
+| `LOCALIZATION_LOST` | 위치 추정 `LOST` 전이 | 복구 시 자동 | WARNING |
+| `LOAD_EXCEPTION` | 적재 센서 `UNKNOWN` 전이 | 복구 시 자동 | WARNING |
+| `TASK_RECOVERY_REQUIRED` | 작업 `RECOVERY_REQUIRED` 전이 (27단계) | `recover` RESUME/FAIL 시 자동 | WARNING |
+| `TASK_FAILED` | `recover` FAIL로 작업 최종 실패 | 관리자가 직접 확인·해제 | CRITICAL |
+
 ```mermaid
 stateDiagram-v2
     [*] --> OPEN

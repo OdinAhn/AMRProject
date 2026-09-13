@@ -16,6 +16,7 @@ import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.json.JsonMapper;
 
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 
 /**
  * 트랜잭셔널 아웃박스 릴레이 (docs/API.md §5). tasks/알람 상태 변경 시 같은
@@ -27,6 +28,7 @@ import java.util.List;
 public class OutboxPublisher {
 
     private static final Logger log = LoggerFactory.getLogger(OutboxPublisher.class);
+    private static final long KAFKA_SEND_TIMEOUT_SECONDS = 5;
 
     private final OutboxEventRepository outboxEventRepository;
     private final StringRedisTemplate redisTemplate;
@@ -50,6 +52,12 @@ public class OutboxPublisher {
      * 브로커 unreachable) 나머지 이벤트가 그 뒤에서 계속 막히지 않게 한다.
      * 실패한 이벤트는 PENDING으로 남아 다음 주기에 재시도된다(레디스/카프카 둘 다
      * 성공해야만 PUBLISHED로 마킹 — 최소 한 번 전달을 보장).
+     *
+     * <p>27단계: {@code KafkaTemplate.send()}는 비동기라 브로커가 거부·타임아웃해도 예외를
+     * 던지지 않고 실패한 future만 돌려준다 — 예전엔 그 결과를 안 봐서 Kafka에 실제로 안 간
+     * 이벤트도 PUBLISHED로 마킹됐다. 이제 결과를 {@link #KAFKA_SEND_TIMEOUT_SECONDS}까지
+     * 기다려 확인한다. 또 Kafka를 Redis보다 먼저 보낸다 — Kafka 실패로 재시도될 때 SSE
+     * 클라이언트가 같은 이벤트를 두 번 받지 않게 하기 위해서다.
      */
     @Scheduled(fixedDelay = 1000)
     @Transactional
@@ -58,9 +66,14 @@ public class OutboxPublisher {
         for (OutboxEvent event : pending) {
             try {
                 String json = jsonMapper.writeValueAsString(EventEnvelope.from(event));
+                kafkaTemplate.send(KafkaConfig.EVENT_TOPIC, String.valueOf(event.getId()), json)
+                        .get(KAFKA_SEND_TIMEOUT_SECONDS, TimeUnit.SECONDS);
                 redisTemplate.convertAndSend(RedisConfig.EVENT_CHANNEL, json);
-                kafkaTemplate.send(KafkaConfig.EVENT_TOPIC, String.valueOf(event.getId()), json);
                 event.markPublished();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                log.warn("outbox 발행이 중단됐습니다 — 남은 이벤트는 다음 주기에 재시도합니다.");
+                return;
             } catch (Exception e) {
                 log.warn("outbox_events(id={}) 발행 실패 — 다음 주기에 재시도합니다.", event.getId(), e);
             }

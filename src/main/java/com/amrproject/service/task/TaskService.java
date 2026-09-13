@@ -68,6 +68,9 @@ public class TaskService {
             TaskStepType.MOVE_TO_CHARGING_STATION
     );
 
+    /** alarms.message 컬럼 길이(V9__alarms.sql) */
+    private static final int ALARM_MESSAGE_MAX_LENGTH = 500;
+
     private final TaskRepository taskRepository;
     private final TaskStepRepository taskStepRepository;
     private final TaskAssignmentRepository taskAssignmentRepository;
@@ -346,6 +349,8 @@ public class TaskService {
         TaskStatus previous = task.getStatus();
         task.resumeFromRecovery();
         recordEvent(task, "RECOVERY_RESUMED", previous, task.getStatus(), null);
+        // 재발행한 명령이 다시 실패하면 markRecoveryRequired가 새 알람을 올리므로, 명령 발행 전에 먼저 해소한다.
+        alarmService.autoResolve(AlarmType.TASK_RECOVERY_REQUIRED, AlarmSourceType.TASK, task.getId());
         // CONFIRM_LOAD/CONFIRM_UNLOAD처럼 명령이 없는 단계(8단계: 적재 중 취소 복구)는
         // 재발행할 명령이 없다 — 작업자가 원래 버튼(dispatch/confirm-unload)으로 이어간다.
         if (MOVE_STEP_TYPES.contains(step.getStepType()) || step.getStepType() == TaskStepType.DOCK_AND_CHARGE) {
@@ -362,6 +367,7 @@ public class TaskService {
         TaskStatus previous = task.getStatus();
         task.failFromRecovery();
         recordEvent(task, "RECOVERY_FAILED", previous, task.getStatus(), null);
+        alarmService.autoResolve(AlarmType.TASK_RECOVERY_REQUIRED, AlarmSourceType.TASK, task.getId());
         alarmService.raise(AlarmType.TASK_FAILED, AlarmSeverity.CRITICAL, AlarmSourceType.TASK, task.getId(),
                 "작업이 복구 불가로 최종 실패 처리되었습니다: " + task.getTaskNo());
         releaseAssignment(task);
@@ -409,9 +415,7 @@ public class TaskService {
 
     private void resolveCancelRequest(Task task) {
         if (isCarryingLoad(task)) {
-            TaskStatus previous = task.getStatus();
-            task.markRecoveryRequired();
-            recordEvent(task, "RECOVERY_REQUIRED", previous, task.getStatus(), null);
+            markRecoveryRequired(task, "RECOVERY_REQUIRED", null, "적재 중 취소 요청");
             return;
         }
         TaskStatus previous = task.getStatus();
@@ -448,8 +452,7 @@ public class TaskService {
             return task;
         }
         if (status == TaskStatus.ASSIGNED || status == TaskStatus.RUNNING || status == TaskStatus.PAUSED) {
-            task.markRecoveryRequired();
-            recordEvent(task, "REPORT_UNAVAILABLE", status, task.getStatus(), null, reason);
+            markRecoveryRequired(task, "REPORT_UNAVAILABLE", reason, "작업자 작업 불가 보고: " + reason);
             return task;
         }
         throw new InvalidStateTransitionException(
@@ -616,9 +619,26 @@ public class TaskService {
             step.fail();
         }
         // FAILED, UNKNOWN 모두 "실제 상태를 알 수 없거나 실패" → 운영자/복구 로직 개입 필요
+        String cause = status == RobotCommandStatus.FAILED ? "로봇 명령 실패" : "로봇 명령 결과 불명";
+        markRecoveryRequired(task, "RECOVERY_REQUIRED", null, cause);
+    }
+
+    /**
+     * 27단계: RECOVERY_REQUIRED로 가는 모든 경로(명령 실패·불명, 적재 중 취소, 작업 불가 보고)가
+     * 이 메서드를 거쳐 TASK_RECOVERY_REQUIRED 알람을 함께 올린다 — 이전엔 작업 상태만 바뀌고
+     * 관리자에게 알릴 신호가 없어 작업 목록을 상태 필터로 직접 뒤져야 했다.
+     * 알람은 recover(RESUME/FAIL) 시 자동 해소된다.
+     */
+    private void markRecoveryRequired(Task task, String eventType, String eventPayload, String cause) {
         TaskStatus previous = task.getStatus();
         task.markRecoveryRequired();
-        recordEvent(task, "RECOVERY_REQUIRED", previous, task.getStatus(), null);
+        recordEvent(task, eventType, previous, task.getStatus(), null, eventPayload);
+        alarmService.raise(AlarmType.TASK_RECOVERY_REQUIRED, AlarmSeverity.WARNING, AlarmSourceType.TASK, task.getId(),
+                truncate("작업 복구가 필요합니다(" + cause + "): " + task.getTaskNo(), ALARM_MESSAGE_MAX_LENGTH));
+    }
+
+    private static String truncate(String value, int maxLength) {
+        return value.length() <= maxLength ? value : value.substring(0, maxLength);
     }
 
     private void recordEvent(Task task, String eventType, TaskStatus from, TaskStatus to, User actor) {

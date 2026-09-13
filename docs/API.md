@@ -149,6 +149,8 @@
 
 **14단계 구현**: `alarms`/`alarm_events` 테이블과 위 4개 엔드포인트를 실제로 구현했다. 자동 발생 4종(`ROBOT_COMM_LOST`/`LOCALIZATION_LOST`/`LOAD_EXCEPTION`/`TASK_FAILED`) 중 로봇 관련 3종은 `SimulatorRobotGateway`가 연결/위치추정/적재 센서 상태를 보고할 때 이상→정상 전이를 감지해 자동 발생·자동 해소한다(정상 dispatch 한 번이면 해소). `TASK_FAILED`는 `TaskService.failRecovery()`(위 `recover`의 `FAIL`)에서 발생하며, 종료 상태라 자동 해소가 없어 관리자가 `acknowledge`/`resolve`로 직접 처리해야 한다. 같은 (알람 종류, 대상 종류, 대상 ID) 조합의 열린 알람은 항상 최대 1개다. `alarm_events`는 API로 노출하지 않는 내부 감사 로그다.
 
+**27단계**: 알람 종류에 `TASK_RECOVERY_REQUIRED`를 추가했다. 작업이 `RECOVERY_REQUIRED`가 되는 모든 경로(명령 실패·불명, 적재 중 취소, 작업 불가 보고)에서 발생하고, `recover` 시 자동 해소된다. 발생·해소 규칙 전체 표는 `STATE_MACHINES.md` §7에 있다.
+
 **19단계**: 응답에 `allowedActions`를 추가했다(Task/Robot 응답과 같은 패턴) — `OPEN`→`["ACKNOWLEDGE","RESOLVE"]`, `ACKNOWLEDGED`→`["RESOLVE"]`, `RESOLVED`→`[]`. 관리자 화면(`/alarms`)이 이 배열만 보고 버튼을 그린다.
 
 `recover` 요청 본문 예시:
@@ -211,7 +213,7 @@ Idempotency-Key: 8e2f1c...
 | `dispatch` | 현재 단계 `RUNNING`(적재 대기) | 해당 단계 `SUCCEEDED` → 다음 단계 명령 발행 |
 | `confirm-unload` | 현재 단계 `RUNNING`(하역 대기) | 해당 단계 `SUCCEEDED` → 마지막 단계면 Task `SUCCEEDED` |
 | `report-out-of-stock` | 적재 대기 단계 | **미구현** — `loads`/`load_transfer_events`/WMS 연동 없이는 이후 정책(자동 취소/관리자 대기/재고 갱신)을 임의로 정할 수 없어 8단계에서도 보류 (DESIGN.md §5) |
-| `report-unavailable` | `QUEUED`/`ASSIGNED`/`RUNNING`/`PAUSED` | (8단계) `QUEUED`면 즉시 `CANCELED`, 배정된 상태면 `RECOVERY_REQUIRED` + 사유를 `task_events.payload`에 기록 — 별도 알람 테이블 없이 기존 `recover` API로 운영자가 처리 |
+| `report-unavailable` | `QUEUED`/`ASSIGNED`/`RUNNING`/`PAUSED` | (8단계) `QUEUED`면 즉시 `CANCELED`, 배정된 상태면 `RECOVERY_REQUIRED` + 사유를 `task_events.payload`에 기록 — 기존 `recover` API로 운영자가 처리. (27단계) 이때 사유가 담긴 `TASK_RECOVERY_REQUIRED` 알람도 함께 발생한다 |
 | `cancel` | `QUEUED`/`ASSIGNED`/`RUNNING`/`PAUSED` | (8단계) `QUEUED`면 즉시 `CANCELED`. 배정된 상태는 적재 여부로 갈린다: 적재 전이거나 하역까지 끝났으면 즉시 `CANCELED`, 적재 중(로봇에 물건이 있음)이면 `RECOVERY_REQUIRED`로 보내 운영자가 `recover`로 결정 |
 
 `report-out-of-stock` 이후 흐름(자동 취소/관리자 대기/WMS 재고 갱신 여부)은 **미정** — DESIGN.md §5에서 이미 열린 질문으로 표시된 항목.
@@ -225,6 +227,16 @@ Idempotency-Key: 8e2f1c...
 **16단계 구현**: 같은 `OutboxPublisher`가 같은 이벤트를 Kafka 토픽 `amr.events`(파티션 1, 복제 1)에도 함께 발행한다 — Redis는 실시간 팬아웃(SSE), Kafka는 나중에 다른 시스템이 재구독/재생할 수 있는 내구성 있는 이벤트 로그 역할이다. 이 앱 내부에는 Kafka 컨슈머가 없다(프로듀서만).
 
 **19단계에서 발견한 버그**: `OutboxPublisher`가 PENDING 이벤트를 순서대로 발행하는 반복문 전체를 하나의 `try` 없이 돌려서, 이벤트 하나(예: Kafka 브로커 unreachable)가 예외를 던지면 그 뒤에 있는 모든 PENDING 이벤트가 매 주기(1초)마다 영원히 처리되지 못하는 head-of-line 블로킹이 있었다. 지금은 이벤트별로 발행을 시도하고 실패한 것만 PENDING으로 남겨(다음 주기 재시도) 나머지는 계속 처리한다.
+
+**27단계에서 수정한 신뢰성 문제 2가지**:
+
+1. **Kafka 발행 실패를 성공으로 기록하던 문제**. `KafkaTemplate.send()`는 비동기라 브로커가 거부하거나 타임아웃돼도 예외 없이 실패한 future만 돌려준다. 예전엔 결과를 보지 않아 Kafka에 실제로 도착하지 않은 이벤트도 `PUBLISHED`로 마킹됐다.
+   - 지금은 `OutboxPublisher`가 전송 결과를 최대 5초 기다려 확인하고, 실패하면 `PENDING`으로 남겨 재시도한다.
+   - 발행 순서도 **Kafka → Redis**로 바꿨다. Kafka 실패로 재시도되는 이벤트가 SSE 클라이언트에 두 번 가지 않게 하기 위해서다.
+2. **SSE 재접속 시 이벤트가 사라지던 문제**. `Last-Event-ID` 백로그를 DB에서 조회·전송한 **뒤에** Redis 구독을 등록해서, 그 사이에 발행된 이벤트는 어느 쪽에도 잡히지 않았다.
+   - 지금은 구독을 먼저 등록한다. 백로그를 재생하는 동안 들어온 실시간 이벤트는 버퍼에 쌓았다가 재생이 끝난 뒤 보낸다.
+   - 백로그로 이미 보낸 id는 건너뛴다(`SseEventRelay`).
+   - 남은 한계: Kafka 재시도 등으로 Redis에 id 순서가 뒤바뀌어 도착하면(예: 6이 5보다 먼저), 연결된 클라이언트는 둘 다 받지만 그 사이에 끊긴 클라이언트는 `Last-Event-ID=6`으로 재접속해 5를 놓칠 수 있다. 정수 id 커서 방식의 한계라 클라이언트는 재접속 후 필요한 목록을 다시 조회하는 것을 권장한다.
 
 | Method | Path | 설명 |
 |---|---|---|
