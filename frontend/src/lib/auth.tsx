@@ -12,9 +12,9 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
-/** 역할별 로그인 후 랜딩 경로 (12단계: WORKER는 관리자 화면에 접근할 수 없다). */
+/** 역할별 로그인 후 랜딩 경로 (12단계: WORKER는 관리자 화면에 접근할 수 없다. 30단계: 관리자는 대시보드). */
 export function homePathFor(user: UserResponse): string {
-  return user.roleCode === "WORKER" ? "/worker/stations" : "/sites";
+  return user.roleCode === "WORKER" ? "/worker/stations" : "/dashboard";
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {

@@ -22,7 +22,9 @@ public record RobotStateResponse(
         Integer batteryPct,
         Integer stateVersion,
         Instant reportedAt,
-        Instant receivedAt
+        Instant receivedAt,
+        /** 30단계: 마지막으로 도착한 지도 노드 id(모르면 null) */
+        Long currentNodeId
 ) {
 
     public static RobotStateResponse from(RobotCurrentState state) {
@@ -37,7 +39,8 @@ public record RobotStateResponse(
                 state.getBatteryPct(),
                 state.getStateVersion(),
                 state.getReportedAt(),
-                state.getReceivedAt()
+                state.getReceivedAt(),
+                state.getCurrentNodeId()
         );
     }
 
@@ -53,7 +56,8 @@ public record RobotStateResponse(
                 snapshot.getBatteryPct(),
                 null,
                 snapshot.getReportedAt(),
-                snapshot.getReceivedAt()
+                snapshot.getReceivedAt(),
+                snapshot.getCurrentNodeId()
         );
     }
 }

@@ -11,6 +11,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Optional;
 
 @Service
 @Transactional(readOnly = true)
@@ -39,6 +40,11 @@ public class RobotStateService {
                         "ROBOT_STATE_NOT_FOUND",
                         "아직 보고된 상태가 없는 로봇입니다: " + robotId
                 ));
+    }
+
+    /** 30단계: 상태 보고가 없는 로봇도 목록에 보여야 해서 예외 대신 Optional을 돌려준다. */
+    public Optional<RobotCurrentState> findCurrentState(Long robotId) {
+        return robotCurrentStateRepository.findById(robotId);
     }
 
     public List<RobotStateSnapshot> getStateHistory(Long robotId) {

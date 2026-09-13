@@ -2,7 +2,9 @@ package com.amrproject.controller.site;
 
 import com.amrproject.dto.request.site.CreateSiteRequest;
 import com.amrproject.dto.request.site.UpdateSiteRequest;
+import com.amrproject.dto.response.site.SiteOverviewResponse;
 import com.amrproject.dto.response.site.SiteResponse;
+import com.amrproject.service.site.SiteOverviewService;
 import com.amrproject.service.site.SiteService;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
@@ -22,9 +24,17 @@ import java.util.List;
 public class SiteController {
 
     private final SiteService siteService;
+    private final SiteOverviewService siteOverviewService;
 
-    public SiteController(SiteService siteService) {
+    public SiteController(SiteService siteService, SiteOverviewService siteOverviewService) {
         this.siteService = siteService;
+        this.siteOverviewService = siteOverviewService;
+    }
+
+    /** 30단계: 관제 대시보드 — 로봇 상태·위치, 진행 중 작업 수, 열린 알람 수를 한 번에 조회한다. */
+    @GetMapping("/{siteId}/overview")
+    public SiteOverviewResponse getOverview(@PathVariable Long siteId) {
+        return siteOverviewService.getOverview(siteId);
     }
 
     @GetMapping

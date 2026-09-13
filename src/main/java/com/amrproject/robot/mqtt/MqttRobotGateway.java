@@ -20,6 +20,7 @@ import com.amrproject.repository.robot.RobotStateSnapshotRepository;
 import com.amrproject.robot.RobotGateway;
 import com.amrproject.service.alarm.AlarmService;
 import com.amrproject.service.robot.RobotConnectionService;
+import com.amrproject.service.robot.RobotStateEventRecorder;
 import jakarta.annotation.PreDestroy;
 import org.eclipse.paho.client.mqttv3.IMqttDeliveryToken;
 import org.eclipse.paho.client.mqttv3.MqttCallback;
@@ -74,6 +75,7 @@ public class MqttRobotGateway implements RobotGateway, MqttCallback {
     private final RobotStateSnapshotRepository robotStateSnapshotRepository;
     private final AlarmService alarmService;
     private final RobotConnectionService robotConnectionService;
+    private final RobotStateEventRecorder robotStateEventRecorder;
 
     private final Map<String, CompletableFuture<Vda5050State>> pendingOrders = new ConcurrentHashMap<>();
     private final AtomicLong headerId = new AtomicLong();
@@ -91,7 +93,8 @@ public class MqttRobotGateway implements RobotGateway, MqttCallback {
             RobotCurrentStateRepository robotCurrentStateRepository,
             RobotStateSnapshotRepository robotStateSnapshotRepository,
             AlarmService alarmService,
-            RobotConnectionService robotConnectionService
+            RobotConnectionService robotConnectionService,
+            RobotStateEventRecorder robotStateEventRecorder
     ) throws MqttException {
         this.mqttClient = mqttClient;
         this.manufacturer = manufacturer;
@@ -101,6 +104,7 @@ public class MqttRobotGateway implements RobotGateway, MqttCallback {
         this.robotStateSnapshotRepository = robotStateSnapshotRepository;
         this.alarmService = alarmService;
         this.robotConnectionService = robotConnectionService;
+        this.robotStateEventRecorder = robotStateEventRecorder;
         mqttClient.setCallback(this);
         mqttClient.subscribe(TOPIC_PREFIX + manufacturer + "/+/state");
     }
@@ -275,11 +279,16 @@ public class MqttRobotGateway implements RobotGateway, MqttCallback {
 
     private void report(Robot robot, RobotCurrentState state, ConnectionState connection, MotionState motion, int batteryPct) {
         ConnectionState previousConnection = state.getConnectionState();
+        MotionState previousMotion = state.getMotionState();
+        Integer previousBattery = state.getBatteryPct();
         state.report(
                 connection, OperationMode.AUTO, motion, state.getSafetyState(),
                 state.getLoadState(), state.getLocalizationState(), batteryPct, Instant.now()
         );
         robotStateSnapshotRepository.save(new RobotStateSnapshot(robot, state));
+        if (previousConnection != connection || previousMotion != motion || !previousBattery.equals(batteryPct)) {
+            robotStateEventRecorder.recordChanged(robot.getId()); // 30단계
+        }
         reconcileConnectionAlarm(robot, previousConnection, connection);
     }
 

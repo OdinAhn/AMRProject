@@ -17,7 +17,7 @@ export function EventFeed({ events }: { events: EventEnvelope[] }) {
         </thead>
         <tbody>
           {events.map((event) => (
-            <EventFeedItem key={event.eventId} event={event} />
+            <EventFeedItem key={event.eventId ?? `${event.eventType}-${event.occurredAt}`} event={event} />
           ))}
           {events.length === 0 && (
             <tr>

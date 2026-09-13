@@ -59,7 +59,10 @@ public class EventStreamController {
             return emitter;
         }
         SseEventRelay relay = new SseEventRelay(
-                (eventId, json) -> emitter.send(SseEmitter.event().id(String.valueOf(eventId)).data(json, MediaType.APPLICATION_JSON)),
+                (eventId, json) -> emitter.send(eventId != null
+                        ? SseEmitter.event().id(String.valueOf(eventId)).data(json, MediaType.APPLICATION_JSON)
+                        // 30단계: 표시 전용 이벤트(robot.position)는 outbox id가 없다 — id를 붙이지 않아 Last-Event-ID를 건드리지 않는다.
+                        : SseEmitter.event().data(json, MediaType.APPLICATION_JSON)),
                 lastEventId != null
         );
 

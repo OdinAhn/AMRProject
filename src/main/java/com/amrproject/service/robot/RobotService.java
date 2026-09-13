@@ -37,19 +37,22 @@ public class RobotService {
     private final RobotCurrentStateRepository robotCurrentStateRepository;
     private final SiteService siteService;
     private final RobotGateway robotGateway;
+    private final RobotStateEventRecorder robotStateEventRecorder;
 
     public RobotService(
             RobotRepository robotRepository,
             RobotConfigurationRepository robotConfigurationRepository,
             RobotCurrentStateRepository robotCurrentStateRepository,
             SiteService siteService,
-            RobotGateway robotGateway
+            RobotGateway robotGateway,
+            RobotStateEventRecorder robotStateEventRecorder
     ) {
         this.robotRepository = robotRepository;
         this.robotConfigurationRepository = robotConfigurationRepository;
         this.robotCurrentStateRepository = robotCurrentStateRepository;
         this.siteService = siteService;
         this.robotGateway = robotGateway;
+        this.robotStateEventRecorder = robotStateEventRecorder;
     }
 
     @Transactional
@@ -104,6 +107,7 @@ public class RobotService {
             );
             robotCurrentStateRepository.save(state);
         }
+        robotStateEventRecorder.recordChanged(robot.getId()); // 30단계: 운영 상태도 대시보드에 바로 반영
         return robot;
     }
 

@@ -15,6 +15,8 @@ AMRProject 백엔드(Spring Boot)를 위한 관리자·작업자 화면. React 1
 | 24 | 작업장 ↔ 지도 노드 연결 폼(`StationMapBindingForm`) |
 | 25 | 지도 버전 상세를 SVG 캔버스 편집기(`MapCanvasEditor`)로 교체 |
 | 28 | 역할별 라우트 가드·404, 전역 실시간 갱신(SSE), 한글 라벨, 확인창·토스트, 사이드바 알람 배지·모바일 메뉴, 작업자 화면 개선, CI에서 lint·build |
+| 29 | 디스패치 화면 안내 문구(자동 실행 반영) |
+| 30 | 관제 대시보드(`/dashboard`, 관리자 첫 화면) — KPI 타일, 로봇 상태표, 활성 지도 위 로봇 위치·이동 애니메이션. 로봇 목록에 연결·배터리 열 |
 
 18단계(MQTT/VDA5050)는 순수 백엔드 인프라라 화면이 필요 없다.
 
@@ -45,6 +47,7 @@ CI(`.github/workflows/ci.yml`의 `frontend` job, 28단계)가 PR마다 `npm ci` 
 | `src/lib/labels.ts` | (28단계) 백엔드 enum → 한글 라벨, 작업 상태 배지 색(`taskStatusTone`) |
 | `src/lib/toast.tsx` | (28단계) `ToastProvider`/`useToast` — 버튼 동작의 성공·실패 피드백 |
 | `src/lib/useSites.ts` | 물류센터 목록 조회 훅 |
+| `src/components/dashboard/` | (30단계) `KpiTiles`, `RobotStatusTable`(+`BatteryBar`), `LiveMapView`(활성 지도 + 로봇 마커) |
 | `src/types/api.ts` | 백엔드 응답 타입 (`docs/API.md`와 대응) |
 | `src/components/ui.tsx` | 공용 UI 프리미티브 (버튼, 카드, 뱃지, 폼 요소, 테이블, 28단계 `ConfirmDialog`/`ConfirmButton`) |
 | `src/components/auth/` | `LoginForm` |
@@ -64,24 +67,27 @@ CI(`.github/workflows/ci.yml`의 `frontend` job, 28단계)가 PR마다 `npm ci` 
 | `src/pages/events/EventsPage.tsx` | 실시간 이벤트 화면 — 레이아웃이 공유하는 SSE 연결의 이벤트를 최신순 피드로 표시 |
 | `src/pages/worker` | 작업자 화면 — 내 작업장 목록, 작업장별 작업 카드(호출·보내기·하역 완료·작업 불가·호출 취소) |
 | `src/pages/NotFoundPage.tsx` | (28단계) 없는 경로 |
+| `src/pages/dashboard/DashboardPage.tsx` | (30단계) 관제 대시보드 — 물류센터 선택(브라우저에 기억), `GET /api/admin/sites/{siteId}/overview` |
 
 ## 라우팅
 
 - `/login` — 로그인
-- `/` 이하 (`AdminLayout`) — **`ADMIN`만**: `/sites`, `/robots`, `/maps`, `/tasks`, `/dispatch`, `/users`, `/alarms`, `/events`
+- `/` 이하 (`AdminLayout`) — **`ADMIN`만**: `/dashboard`(30단계, `/`의 기본 이동 경로), `/sites`, `/robots`, `/maps`, `/tasks`, `/dispatch`, `/users`, `/alarms`, `/events`
 - `/worker` 이하 (`WorkerLayout`) — `WORKER`와 `ADMIN`: `/worker/stations`, `/worker/stations/:stationId/tasks`
 - 그 밖의 경로 — 404 화면
 
-로그인 성공 시 역할에 따라 `/sites`(ADMIN) 또는 `/worker/stations`(WORKER)로 이동한다(`homePathFor`). 28단계부터 역할이 맞지 않는 화면에 들어가면 자기 기본 화면으로 보낸다. 예전에는 WORKER가 주소창에 `/robots`를 입력하면 관리자 레이아웃이 뜨고 API만 403이었다. 화면 가드는 편의일 뿐이고 실제 권한은 서버가 검사한다(26단계 작업장 단위 접근 제어 포함).
+로그인 성공 시 역할에 따라 `/dashboard`(ADMIN, 30단계 전에는 `/sites`) 또는 `/worker/stations`(WORKER)로 이동한다(`homePathFor`). 28단계부터 역할이 맞지 않는 화면에 들어가면 자기 기본 화면으로 보낸다. 예전에는 WORKER가 주소창에 `/robots`를 입력하면 관리자 레이아웃이 뜨고 API만 403이었다. 화면 가드는 편의일 뿐이고 실제 권한은 서버가 검사한다(26단계 작업장 단위 접근 제어 포함).
 
 ## 실시간 갱신 (28단계)
 
 - `AdminLayout`과 `WorkerLayout`이 각각 `EventStreamProvider`로 `GET /api/events/stream` 연결을 **하나만** 연다. 이벤트가 오면 `aggregateType`별로 쿼리를 무효화한다.
-  - `TASK`: `["tasks"]`, `["worker"]`
-  - `ALARM`: `["alarms"]`
+  - `TASK`: `["tasks"]`, `["worker"]`, `["overview"]`
+  - `ALARM`: `["alarms"]`, `["overview"]`
+  - `ROBOT`(30단계 `robot.state_changed`): `["overview"]`, `["robots"]`
   - 해당 데이터를 보여주는 화면이 열려 있으면 TanStack Query가 즉시 다시 조회한다.
 - 19단계에는 `/events` 화면에서만 구독해서 다른 화면은 새로고침하거나 5초 폴링을 기다려야 했다. 이제 알람·작업자 화면의 폴링은 연결이 끊겼을 때를 위한 30초 안전장치만 남아 있다.
-- 새 aggregate 이벤트(예: 로봇 상태)를 화면에 반영하려면 `src/lib/eventStream.tsx`의 `INVALIDATION_KEYS`에 쿼리 키를 추가한다.
+- 30단계 `robot.position`(시뮬레이터 이동 애니메이션 좌표, 초당 5번)은 쿼리를 무효화하지 않고 이벤트 목록에도 넣지 않는다. 별도 컨텍스트(`useRobotPositions`)에만 담아 `LiveMapView`만 다시 그린다 — 같은 컨텍스트에 두면 좌표가 올 때마다 레이아웃 전체가 다시 그려진다. 지도는 최근 3초 안에 받은 좌표가 있으면 그 좌표를, 없으면 개요 API의 `currentNodeId` 노드 위치를 쓴다.
+- 새 aggregate 이벤트를 화면에 반영하려면 `src/lib/eventStream.tsx`의 `INVALIDATION_KEYS`에 쿼리 키를 추가한다.
 - 브라우저 네이티브 `EventSource`는 커스텀 헤더를 못 보내 `?access_token=` 쿼리 파라미터로 토큰을 붙인다. 백엔드는 이 경로에 한해서만 이를 허용한다(19단계, `TokenAuthenticationFilter`). 토큰이 URL에 노출되는 트레이드오프는 `../docs/API.md` §5에 있다.
 
 ## 화면 규칙

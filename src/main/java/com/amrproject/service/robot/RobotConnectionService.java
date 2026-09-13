@@ -47,6 +47,7 @@ public class RobotConnectionService {
     private final RobotStateSnapshotRepository robotStateSnapshotRepository;
     private final RobotRepository robotRepository;
     private final AlarmService alarmService;
+    private final RobotStateEventRecorder robotStateEventRecorder;
     private final Duration heartbeatTimeout;
 
     public RobotConnectionService(
@@ -54,12 +55,14 @@ public class RobotConnectionService {
             RobotStateSnapshotRepository robotStateSnapshotRepository,
             RobotRepository robotRepository,
             AlarmService alarmService,
+            RobotStateEventRecorder robotStateEventRecorder,
             @Value("${app.robot.heartbeat-timeout-seconds:30}") long heartbeatTimeoutSeconds
     ) {
         this.robotCurrentStateRepository = robotCurrentStateRepository;
         this.robotStateSnapshotRepository = robotStateSnapshotRepository;
         this.robotRepository = robotRepository;
         this.alarmService = alarmService;
+        this.robotStateEventRecorder = robotStateEventRecorder;
         this.heartbeatTimeout = Duration.ofSeconds(heartbeatTimeoutSeconds);
     }
 
@@ -75,6 +78,7 @@ public class RobotConnectionService {
             }
             Robot robot = robotRepository.getReferenceById(robotId);
             recordSnapshot(robot);
+            robotStateEventRecorder.recordChanged(robotId);
             alarmService.raise(AlarmType.ROBOT_COMM_LOST, AlarmSeverity.WARNING, AlarmSourceType.ROBOT, robotId,
                     "로봇 하트비트가 " + heartbeatTimeout.toSeconds() + "초 넘게 끊겼습니다: " + robot.getCode());
             changed.add(robotId);
@@ -99,6 +103,7 @@ public class RobotConnectionService {
                 continue;
             }
             recordSnapshot(robotRepository.getReferenceById(robotId));
+            robotStateEventRecorder.recordChanged(robotId);
             alarmService.autoResolve(AlarmType.ROBOT_COMM_LOST, AlarmSourceType.ROBOT, robotId);
         }
     }
@@ -120,6 +125,10 @@ public class RobotConnectionService {
         }
         boolean wasOffline = before.get().getConnectionState() == ConnectionState.OFFLINE;
         robotCurrentStateRepository.receiveTelemetry(robot.getId(), batteryPct, Instant.now());
+        boolean batteryChanged = batteryPct != null && !batteryPct.equals(before.get().getBatteryPct());
+        if (wasOffline || batteryChanged) {
+            robotStateEventRecorder.recordChanged(robot.getId());
+        }
         if (wasOffline) {
             recordSnapshot(robot);
             alarmService.autoResolve(AlarmType.ROBOT_COMM_LOST, AlarmSourceType.ROBOT, robot.getId());

@@ -14,6 +14,8 @@ import com.amrproject.repository.robot.CommandEventRepository;
 import com.amrproject.repository.robot.RobotCurrentStateRepository;
 import com.amrproject.repository.robot.RobotStateSnapshotRepository;
 import com.amrproject.service.alarm.AlarmService;
+import com.amrproject.service.map.MapRouteService;
+import com.amrproject.service.robot.RobotStateEventRecorder;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
@@ -34,6 +36,9 @@ class SimulatorRobotGatewayTest {
     private final RobotCurrentStateRepository robotCurrentStateRepository = Mockito.mock(RobotCurrentStateRepository.class);
     private final RobotStateSnapshotRepository robotStateSnapshotRepository = Mockito.mock(RobotStateSnapshotRepository.class);
     private final AlarmService alarmService = Mockito.mock(AlarmService.class);
+    private final MapRouteService mapRouteService = Mockito.mock(MapRouteService.class);
+    private final SimulatedMotionPublisher simulatedMotionPublisher = Mockito.mock(SimulatedMotionPublisher.class);
+    private final RobotStateEventRecorder robotStateEventRecorder = Mockito.mock(RobotStateEventRecorder.class);
 
     private SimulatorRobotGateway gateway;
     private Robot robot;
@@ -41,7 +46,10 @@ class SimulatorRobotGatewayTest {
 
     @BeforeEach
     void setUp() {
-        gateway = new SimulatorRobotGateway(commandEventRepository, robotCurrentStateRepository, robotStateSnapshotRepository, alarmService);
+        gateway = new SimulatorRobotGateway(
+                commandEventRepository, robotCurrentStateRepository, robotStateSnapshotRepository, alarmService,
+                mapRouteService, simulatedMotionPublisher, robotStateEventRecorder
+        );
 
         Site site = new Site("SITE-01", "테스트 물류센터");
         robot = new Robot("ROBOT-01", "1호기", null, null, site);

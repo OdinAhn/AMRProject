@@ -105,7 +105,7 @@
 
 | Method | Path | 설명 |
 |---|---|---|
-| GET | `/api/admin/robots` | 목록 (필터: site, lifecycle_status, connection_state) |
+| GET | `/api/admin/robots` | 목록 (필터: site, lifecycle_status, connection_state). (30단계) 응답에 `connectionState`/`batteryPct`(상태 보고가 없으면 null)가 포함된다 — 필터는 여전히 `siteId`만 구현 |
 | POST | `/api/admin/robots` | 등록 |
 | GET | `/api/admin/robots/{robotId}` | 상세 (기본정보 + 현재 상태 요약) |
 | PATCH | `/api/admin/robots/{robotId}` | 기본 정보 수정 (17단계 구현) — `name`/`model`/`manufacturer`만 변경 가능. `code`/`site`는 등록 후 변경하지 않는다 |
@@ -114,6 +114,8 @@
 | GET | `/api/admin/robots/{robotId}/configurations` | 설정 이력 (요청 버전 vs 적용 버전) |
 | GET | `/api/admin/robots/{robotId}/state` | 현재 상태 (다축 상태 전체, `robot_current_states`) |
 | GET | `/api/admin/robots/{robotId}/state-history` | 상태 이력 (기간 필터) |
+
+**30단계**: `state`/`state-history` 응답에 `currentNodeId`(로봇이 마지막으로 도착한 지도 노드, 모르면 null)를 추가했다.
 
 `MAINTENANCE`/`DECOMMISSIONED`인 로봇은 배정 대상에서 자동 제외된다 (§ STATE_MACHINES 4.2 참고).
 
@@ -142,6 +144,7 @@
 | POST | `/api/admin/tasks/{taskId}/cancel` | 취소 요청 → 적재 전/하역 후면 즉시 `CANCELED`, 적재 중이면 `RECOVERY_REQUIRED`(8단계, 아래 참고) |
 | POST | `/api/admin/tasks/{taskId}/recover` | `RECOVERY_REQUIRED` 상태 개입: 재개 또는 최종 실패 처리 |
 | POST | `/api/admin/sites/{siteId}/dispatch` | 디스패치 사이클 실행 (7단계): `QUEUED` 작업 자동 배정 + 저배터리 로봇 자동 충전 작업 생성, 결과로 배정/생성된 taskId 목록 반환. (29단계) 같은 사이클이 `AutoDispatchScheduler`로 운영 중(`ACTIVE`)인 모든 물류센터에서 주기적으로(기본 5초) 자동 실행된다. 이 API는 즉시 한 번 더 돌리고 결과를 보고 싶을 때 쓴다 |
+| GET | `/api/admin/sites/{siteId}/overview` | (30단계) 관제 대시보드 현황 — 아래 참고 |
 | GET | `/api/admin/alarms` | 알람 목록 (필터: status, severity, sourceType) |
 | GET | `/api/admin/alarms/{alarmId}` | 상세 |
 | POST | `/api/admin/alarms/{alarmId}/acknowledge` | 확인 처리 (`OPEN`→`ACKNOWLEDGED`. 이미 `ACKNOWLEDGED`면 200으로 현재 상태 반환, `RESOLVED`면 409) |
@@ -152,6 +155,27 @@
 **27단계**: 알람 종류에 `TASK_RECOVERY_REQUIRED`를 추가했다. 작업이 `RECOVERY_REQUIRED`가 되는 모든 경로(명령 실패·불명, 적재 중 취소, 작업 불가 보고)에서 발생하고, `recover` 시 자동 해소된다. 발생·해소 규칙 전체 표는 `STATE_MACHINES.md` §7에 있다.
 
 **19단계**: 응답에 `allowedActions`를 추가했다(Task/Robot 응답과 같은 패턴) — `OPEN`→`["ACKNOWLEDGE","RESOLVE"]`, `ACKNOWLEDGED`→`["RESOLVE"]`, `RESOLVED`→`[]`. 관리자 화면(`/alarms`)이 이 배열만 보고 버튼을 그린다.
+
+**30단계 — 대시보드 개요** `GET /api/admin/sites/{siteId}/overview`: 화면이 로봇·작업·알람 API를 따로 여러 번 부르지 않도록 한 번에 모은다.
+
+```json
+{
+  "siteId": 1,
+  "activeMapVersionId": 3,
+  "robots": [
+    { "robotId": 1, "code": "AMR-01", "name": "로봇1", "lifecycleStatus": "IN_SERVICE",
+      "connectionState": "ONLINE", "motionState": "IDLE", "batteryPct": 92,
+      "currentNodeId": 12, "currentTaskId": 40, "currentTaskNo": "0fd5ff69-..." }
+  ],
+  "openTaskCounts": { "QUEUED": 2, "ASSIGNED": 0, "RUNNING": 1, "PAUSED": 0, "CANCEL_REQUESTED": 0, "RECOVERY_REQUIRED": 0 },
+  "openAlarmCount": 1
+}
+```
+
+- `activeMapVersionId`: 물류센터의 활성 지도 버전. 지도가 여러 개면 id가 가장 작은 지도의 활성 버전이고, 없으면 null이다.
+- `robots[].connectionState`/`motionState`/`batteryPct`/`currentNodeId`: 상태 보고가 없는 로봇은 null이다. `currentTaskId`/`currentTaskNo`는 ACTIVE 배정이 없으면 null이다.
+- `openTaskCounts`: 종료되지 않은 6개 상태를 모두 키로 넣고, 0건도 0으로 준다.
+- `openAlarmCount`: 이 물류센터 소속 로봇·작업이 대상인 `OPEN`/`ACKNOWLEDGED` 알람 수다(`alarms`에 site 컬럼이 없어 대상 테이블로 거슬러 올라가 센다).
 
 `recover` 요청 본문 예시:
 
@@ -244,7 +268,7 @@ Idempotency-Key: 8e2f1c...
 
 ## 5. 실시간 이벤트 (공통)
 
-**15단계 구현**: `GET /api/events/stream`을 Redis Pub/Sub 기반으로 구현했다. `outbox_events`(Task 이벤트는 3단계부터, 알람 이벤트는 14단계부터 기록됨)를 `OutboxPublisher`가 1초 주기로 폴링해 Redis 채널 `amr.events`로 발행하고 `PUBLISHED`로 마킹한다 — 로봇 상태 보고(고빈도)는 스로틀링 설계가 아직 없어 이번 범위에서 제외했다(아래 열린 질문 참고).
+**15단계 구현**: `GET /api/events/stream`을 Redis Pub/Sub 기반으로 구현했다. `outbox_events`(Task 이벤트는 3단계부터, 알람 이벤트는 14단계부터 기록됨)를 `OutboxPublisher`가 1초 주기로 폴링해 Redis 채널 `amr.events`로 발행하고 `PUBLISHED`로 마킹한다 — 로봇 상태 보고(고빈도)는 스로틀링 설계가 아직 없어 이번 범위에서 제외했다(아래 열린 질문 참고 — 30단계에서 `robot.state_changed`/`robot.position`으로 나눠 해소).
 
 **16단계 구현**: 같은 `OutboxPublisher`가 같은 이벤트를 Kafka 토픽 `amr.events`(파티션 1, 복제 1)에도 함께 발행한다 — Redis는 실시간 팬아웃(SSE), Kafka는 나중에 다른 시스템이 재구독/재생할 수 있는 내구성 있는 이벤트 로그 역할이다. 이 앱 내부에는 Kafka 컨슈머가 없다(프로듀서만).
 
@@ -266,6 +290,18 @@ Idempotency-Key: 8e2f1c...
    - 지금은 단계가 시작될 때마다 `task.step_started` 이벤트를 발행한다. `payload`는 단계 유형(예: `"CONFIRM_UNLOAD"`)이다.
    - outbox에만 기록하고 `task_events`(상태 전이 이력)에는 넣지 않는다.
 2. **연결해도 첫 이벤트 전까지 응답 헤더가 전송되지 않았음**. 그래서 브라우저 `EventSource`의 `onopen`이 불리지 않았다. 지금은 연결 직후 SSE 주석 한 줄(`:connected`)을 보내 헤더를 바로 내보낸다. 클라이언트는 주석을 무시한다.
+
+**30단계 — 로봇 이벤트 2종**: 고빈도 상태 보고를 그대로 흘리지 않고 성격에 따라 둘로 나눴다.
+
+| eventType | 경로 | 언제 | payload | eventId / 재접속 백로그 |
+|---|---|---|---|---|
+| `robot.state_changed` | outbox → Redis·Kafka (기존 이벤트와 같음) | 연결·동작·배터리·위치추정·적재 상태가 **실제로 바뀔 때**, 운영 상태(lifecycle) 변경 시. 하트비트(수신 시각만 갱신)는 기록하지 않는다 | `null` — 화면은 이 이벤트를 받으면 대시보드 개요·로봇 목록을 다시 조회한다 | 있음 / 재생됨 |
+| `robot.position` | 시뮬레이터가 Redis 채널에 **직접** 발행(outbox·Kafka 우회) | 이동 명령이 성공한 뒤, 이전 노드에서 목적지 노드까지 활성 지도 통로 그래프의 최단 경로(Dijkstra)를 따라 200ms마다(기본 속도 초당 20 단위) | `{"mapVersionId":3,"x":42.0,"y":50.0,"arrived":false}` | **없음(`eventId: null`)** / 재생 안 됨 — SSE `id`도 붙이지 않아 `Last-Event-ID`에 영향이 없다 |
+
+- `robot.position`은 **표시 전용**이다. 시뮬레이터 명령은 4단계부터 즉시(동기) 완료되고, 그 계약은 바뀌지 않는다. 명령이 커밋된 뒤 화면용 애니메이션 좌표를 흘려보낼 뿐이다. 로봇의 논리적 위치는 `robot_current_states.current_node_id`가 기준이다.
+- 출발 노드를 모르면(첫 이동) 애니메이션 없이 목적지 노드에 바로 놓는다. 활성 지도나 작업장-노드 바인딩이 없으면 위치는 null이다.
+- 경로 계산은 서버의 배정·작업 로직에 쓰이지 않는다(DESIGN.md §3 책임 분리 — 경로 추종은 로봇의 몫). 시뮬레이터가 "실제 로봇이라면 내부에서 했을" 이동을 흉내 낼 때만 쓴다. 24단계 검증이 활성 지도의 통로가 장애물을 지나지 않음을 보장하므로 경로는 자동으로 장애물을 피한다.
+- MQTT 게이트웨이는 `robot.position`을 보내지 않는다(VDA5050 축소 구현에 위치 보고가 없다).
 
 | Method | Path | 설명 |
 |---|---|---|
@@ -295,7 +331,7 @@ Idempotency-Key: 8e2f1c...
 
 ### 열린 질문 (미구현 남은 부분)
 
-- 로봇 상태 보고(고빈도)를 이 스트림에 포함하는 것 — 위치 업데이트가 완료 이벤트를 밀어내지 않도록 스로틀링(`robot.state.updated`를 초 단위로 묶어 보내는 등) 설계가 필요하다.
+- ~~로봇 상태 보고(고빈도)를 이 스트림에 포함하는 것~~ → 30단계에서 아래처럼 나눠 해소했다.
 - `siteId`/`stationId` 쿼리 필터 — `outbox_events`에 siteId가 없어 Task를 다시 join해야 한다.
 - Kafka 토픽의 파티션/복제 전략 — 지금은 단일 브로커 개발 환경 기준 파티션 1·복제 1. 운영 규모에서 재검토 필요.
 
