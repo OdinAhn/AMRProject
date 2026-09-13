@@ -46,9 +46,12 @@
 |---|---|---|
 | POST | `/api/auth/login` | 로그인, 토큰 발급 |
 | POST | `/api/auth/logout` | 로그아웃 |
+| PUT | `/api/auth/password` | (32단계) 본인 비밀번호 변경 — `{currentPassword, newPassword(8자 이상)}`. 현재 비밀번호가 틀리면 400 `CURRENT_PASSWORD_MISMATCH`. 성공하면 기존 토큰이 모두 무효가 되므로 새 토큰을 로그인 응답과 같은 모양(`{token, user}`)으로 돌려준다 |
 | GET | `/api/auth/me` | 현재 사용자 정보(username, displayName, role). 접근 가능 station 목록은 아직 응답에 포함하지 않는다 — 필요하면 `GET /api/admin/users/{userId}/station-assignments`로 별도 조회 |
 
 토큰이 상태 없는(stateless) 자체 서명 값이라 서버가 들고 있는 세션이 없다 — `logout`은 클라이언트가 토큰을 버리는 것으로 처리되고 서버 측 토큰 무효화(블랙리스트)는 구현하지 않는다. 대신 26단계부터 매 요청마다 사용자 상태를 확인하므로, 계정을 `DISABLED`로 바꾸면 그 사용자의 모든 토큰이 즉시 무효가 된다.
+
+**32단계 — 비밀번호 변경과 토큰 무효화**: 토큰에 발급 시각(`iat`, 초)을 넣고, `users.password_changed_at`보다 먼저 발급된 토큰은 인증하지 않는다(본인 변경·관리자 초기화 모두). 서버에 토큰을 저장하지 않는 방식을 유지하면서도, 비밀번호를 바꾸면 도난당했거나 다른 기기에 남은 토큰을 끊을 수 있다. 32단계 이전에 발급돼 `iat`이 없는 토큰은 발급 시각 0으로 보아, 비밀번호를 바꾼 적이 있는 사용자면 무효가 된다. 초 단위 비교라 변경과 같은 초에 발급된 토큰은 유효하게 남는다.
 
 **최초 관리자 계정(26단계)**: 사용자 생성 API는 `ADMIN`이 필요해 빈 DB에서는 API만으로 첫 관리자를 만들 수 없다. 환경 변수 `BOOTSTRAP_ADMIN_USERNAME`/`BOOTSTRAP_ADMIN_PASSWORD`가 둘 다 설정돼 있고 `ADMIN` 사용자가 한 명도 없으면, 기동 시 `AdminBootstrapRunner`가 관리자 계정을 한 번 만든다. 관리자가 이미 있으면 아무것도 하지 않는다.
 
@@ -126,7 +129,8 @@
 | GET | `/api/admin/users` | 목록 |
 | POST | `/api/admin/users` | 생성 |
 | GET | `/api/admin/users/{userId}` | 상세 |
-| PATCH | `/api/admin/users/{userId}` | 수정 (role, status 등) |
+| PATCH | `/api/admin/users/{userId}` | 수정 — `displayName`/`status`, (32단계) `roleCode`. 활성 관리자가 한 명도 남지 않게 되는 강등·비활성화는 409 `LAST_ACTIVE_ADMIN` |
+| PUT | `/api/admin/users/{userId}/password` | (32단계) 관리자 비밀번호 초기화 — `{newPassword(8자 이상)}`, 204. 그 사용자의 기존 토큰은 모두 무효가 된다 |
 | GET | `/api/admin/users/{userId}/station-assignments` | 작업장 접근 권한 목록 |
 | POST | `/api/admin/users/{userId}/station-assignments` | 작업장 접근 권한 부여 |
 | DELETE | `/api/admin/users/{userId}/station-assignments/{stationId}` | 권한 회수 |

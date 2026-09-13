@@ -8,7 +8,7 @@ import { RobotLifecyclePanel } from "../../components/robots/RobotLifecyclePanel
 import { RobotStatePanel } from "../../components/robots/RobotStatePanel";
 import { PageHeader } from "../../components/ui";
 import { ApiError, api, errorMessage } from "../../lib/apiClient";
-import { useToast } from "../../lib/toast";
+import { useToast } from "../../lib/toastContext";
 import type {
   CreateRobotConfigurationRequest,
   RobotConfigurationResponse,

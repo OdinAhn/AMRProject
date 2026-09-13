@@ -4,7 +4,7 @@ import { AlarmFilters } from "../../components/alarms/AlarmFilters";
 import { AlarmTable } from "../../components/alarms/AlarmTable";
 import { ErrorBanner, PageHeader, Pagination, Spinner } from "../../components/ui";
 import { api, errorMessage } from "../../lib/apiClient";
-import { useToast } from "../../lib/toast";
+import { useToast } from "../../lib/toastContext";
 import type { AlarmResponse, PageResponse } from "../../types/api";
 
 const PAGE_SIZE = 20;

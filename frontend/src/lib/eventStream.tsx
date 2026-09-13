@@ -1,11 +1,14 @@
 import { useQueryClient } from "@tanstack/react-query";
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { getToken } from "./apiClient";
+import { EventStreamContext, RobotPositionsContext, type RobotPosition } from "./eventStreamContext";
 import type { EventEnvelope, RobotPositionPayload } from "../types/api";
 import type { ConnectionStatus } from "../components/events/ConnectionStatusBadge";
 
 const MAX_EVENTS = 200;
 const POSITION_EVENT_TYPE = "robot.position";
+/** 표시용 좌표가 이 시간 동안 새로 오지 않으면 버린다 — 지도는 그때부터 로봇의 현재 노드 위치를 쓴다. */
+const POSITION_TTL_MS = 3000;
 
 /**
  * 이벤트 종류별로 무효화할 쿼리 키. 해당 aggregate를 보여주는 화면이 열려 있으면
@@ -17,23 +20,6 @@ const INVALIDATION_KEYS: Record<string, string[][]> = {
   ALARM: [["alarms"], ["overview"]],
   ROBOT: [["overview"], ["robots"]],
 };
-
-interface EventStreamContextValue {
-  events: EventEnvelope[];
-  status: ConnectionStatus;
-  clear: () => void;
-}
-
-export interface RobotPosition extends RobotPositionPayload {
-  receivedAt: number;
-}
-
-const EventStreamContext = createContext<EventStreamContextValue | undefined>(undefined);
-/**
- * 30단계: 시뮬레이터가 초당 여러 번 보내는 표시 전용 좌표(robot.position)는 이벤트 목록과 분리된 컨텍스트로 둔다 —
- * 같은 컨텍스트에 두면 좌표가 올 때마다 레이아웃 전체(사이드바 등)가 다시 그려진다.
- */
-const RobotPositionsContext = createContext<Record<number, RobotPosition>>({});
 
 /**
  * `GET /api/events/stream`(15단계) 구독을 레이아웃 수준에서 하나만 연다(28단계).
@@ -53,6 +39,8 @@ export function EventStreamProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const token = getToken();
     const source = new EventSource(`/api/events/stream?access_token=${encodeURIComponent(token ?? "")}`);
+    // 32단계: 좌표 만료를 렌더 중 Date.now() 비교(순수하지 않음) 대신 로봇별 타이머로 처리한다.
+    const expiryTimers = new Map<number, ReturnType<typeof setTimeout>>();
 
     source.onopen = () => setStatus("open");
     source.onerror = () => setStatus("error");
@@ -60,8 +48,17 @@ export function EventStreamProvider({ children }: { children: ReactNode }) {
       const envelope = JSON.parse(message.data) as EventEnvelope;
       if (envelope.eventType === POSITION_EVENT_TYPE) {
         if (!envelope.payload) return;
+        const robotId = envelope.aggregateId;
         const payload = JSON.parse(envelope.payload) as RobotPositionPayload;
-        setPositions((prev) => ({ ...prev, [envelope.aggregateId]: { ...payload, receivedAt: Date.now() } }));
+        setPositions((prev) => ({ ...prev, [robotId]: payload }));
+        clearTimeout(expiryTimers.get(robotId));
+        expiryTimers.set(
+          robotId,
+          setTimeout(() => {
+            expiryTimers.delete(robotId);
+            setPositions(({ [robotId]: _expired, ...rest }) => rest);
+          }, POSITION_TTL_MS),
+        );
         return;
       }
       setEvents((prev) => [envelope, ...prev].slice(0, MAX_EVENTS));
@@ -72,6 +69,7 @@ export function EventStreamProvider({ children }: { children: ReactNode }) {
 
     return () => {
       source.close();
+      expiryTimers.forEach((timer) => clearTimeout(timer));
     };
   }, [queryClient]);
 
@@ -82,17 +80,4 @@ export function EventStreamProvider({ children }: { children: ReactNode }) {
       <RobotPositionsContext.Provider value={positions}>{children}</RobotPositionsContext.Provider>
     </EventStreamContext.Provider>
   );
-}
-
-export function useEventStream(): EventStreamContextValue {
-  const context = useContext(EventStreamContext);
-  if (!context) {
-    throw new Error("useEventStream은 EventStreamProvider 안에서만 사용할 수 있습니다.");
-  }
-  return context;
-}
-
-/** 30단계: 로봇 id → 마지막으로 받은 표시용 좌표. */
-export function useRobotPositions(): Record<number, RobotPosition> {
-  return useContext(RobotPositionsContext);
 }

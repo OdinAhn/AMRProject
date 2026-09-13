@@ -2,6 +2,7 @@ package com.amrproject.controller.user;
 
 import com.amrproject.dto.request.user.CreateStationAssignmentRequest;
 import com.amrproject.dto.request.user.CreateUserRequest;
+import com.amrproject.dto.request.user.ResetPasswordRequest;
 import com.amrproject.dto.request.user.UpdateUserRequest;
 import com.amrproject.dto.response.user.StationAssignmentResponse;
 import com.amrproject.dto.response.user.UserResponse;
@@ -14,6 +15,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -49,6 +51,13 @@ public class UserController {
     @PatchMapping("/{userId}")
     public UserResponse update(@PathVariable Long userId, @RequestBody UpdateUserRequest request) {
         return UserResponse.from(userService.update(userId, request));
+    }
+
+    /** 32단계: 관리자 비밀번호 초기화. 그 사용자의 기존 토큰은 모두 무효가 된다. */
+    @PutMapping("/{userId}/password")
+    public ResponseEntity<Void> resetPassword(@PathVariable Long userId, @Valid @RequestBody ResetPasswordRequest request) {
+        userService.resetPassword(userId, request.newPassword());
+        return ResponseEntity.noContent().build();
     }
 
     @GetMapping("/{userId}/station-assignments")

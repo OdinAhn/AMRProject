@@ -17,6 +17,7 @@ import type {
   TaskStepStatus,
   TaskStepType,
   TaskType,
+  UserStatus,
 } from "../types/api";
 
 const TASK_STATUS: Record<TaskStatus, string> = {
@@ -137,6 +138,16 @@ const LOCALIZATION_STATE: Record<LocalizationState, string> = {
   UNKNOWN: "알 수 없음",
 };
 
+const ROLE: Record<string, string> = {
+  ADMIN: "관리자",
+  WORKER: "작업자",
+};
+
+const USER_STATUS: Record<UserStatus, string> = {
+  ACTIVE: "활성",
+  DISABLED: "비활성",
+};
+
 const STATION_TYPE: Record<StationType, string> = {
   PICKUP: "입고",
   DROPOFF: "출고",
@@ -167,6 +178,8 @@ export const labels = {
   loadState: (v: LoadState) => lookup(LOAD_STATE, v),
   localizationState: (v: LocalizationState) => lookup(LOCALIZATION_STATE, v),
   stationType: (v: StationType) => lookup(STATION_TYPE, v),
+  role: (v: string) => ROLE[v] ?? v,
+  userStatus: (v: UserStatus) => lookup(USER_STATUS, v),
 };
 
 /** 작업 상태 배지 색 — 목록·상세·작업자 화면이 모두 같은 규칙을 쓴다. */

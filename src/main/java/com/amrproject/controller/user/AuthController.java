@@ -1,5 +1,6 @@
 package com.amrproject.controller.user;
 
+import com.amrproject.dto.request.user.ChangePasswordRequest;
 import com.amrproject.dto.request.user.LoginRequest;
 import com.amrproject.dto.response.user.LoginResponse;
 import com.amrproject.dto.response.user.UserResponse;
@@ -10,6 +11,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -40,6 +42,16 @@ public class AuthController {
     @PostMapping("/logout")
     public ResponseEntity<Void> logout() {
         return ResponseEntity.noContent().build();
+    }
+
+    /**
+     * 32단계: 본인 비밀번호 변경. 기존 토큰(다른 기기 포함)은 모두 무효가 되므로, 지금 쓰던 화면이 로그인 상태를 유지하도록
+     * 새 토큰을 발급해 로그인 응답과 같은 모양으로 돌려준다.
+     */
+    @PutMapping("/password")
+    public LoginResponse changePassword(@Valid @RequestBody ChangePasswordRequest request, Authentication authentication) {
+        var user = userService.changeOwnPassword(authentication.getName(), request.currentPassword(), request.newPassword());
+        return new LoginResponse(authService.issueToken(user), UserResponse.from(user));
     }
 
     @GetMapping("/me")

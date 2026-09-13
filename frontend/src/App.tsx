@@ -6,6 +6,7 @@ import { AlarmsPage } from "./pages/alarms/AlarmsPage";
 import { DashboardPage } from "./pages/dashboard/DashboardPage";
 import { DispatchPage } from "./pages/dispatch/DispatchPage";
 import { EventsPage } from "./pages/events/EventsPage";
+import { AccountPage } from "./pages/AccountPage";
 import { LoginPage } from "./pages/LoginPage";
 import { NotFoundPage } from "./pages/NotFoundPage";
 import { MapVersionDetailPage } from "./pages/maps/MapVersionDetailPage";
@@ -50,6 +51,7 @@ function App() {
         <Route path="users/:userId" element={<UserDetailPage />} />
         <Route path="alarms" element={<AlarmsPage />} />
         <Route path="events" element={<EventsPage />} />
+        <Route path="account" element={<AccountPage />} />
       </Route>
       <Route
         path="/worker"
@@ -62,6 +64,7 @@ function App() {
         <Route index element={<Navigate to="/worker/stations" replace />} />
         <Route path="stations" element={<WorkerStationsPage />} />
         <Route path="stations/:stationId/tasks" element={<WorkerStationTasksPage />} />
+        <Route path="account" element={<AccountPage />} />
       </Route>
       <Route path="*" element={<NotFoundPage />} />
     </Routes>

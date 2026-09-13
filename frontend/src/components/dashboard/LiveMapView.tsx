@@ -1,14 +1,12 @@
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../../lib/apiClient";
-import { useRobotPositions } from "../../lib/eventStream";
+import { useRobotPositions } from "../../lib/eventStreamContext";
 import { Card } from "../ui";
 import type { EdgeResponse, NodeResponse, ObstacleResponse, RobotSummary } from "../../types/api";
 
 const VIEW_SIZE = 100;
 const NODE_RADIUS = 1.2;
 const ROBOT_RADIUS = 2.4;
-/** 이 시간보다 오래된 표시용 좌표는 무시하고 노드 위치를 쓴다 — 애니메이션이 끝났거나 연결이 끊긴 경우. */
-const POSITION_TTL_MS = 3000;
 
 interface LiveMapViewProps {
   mapVersionId: number;
@@ -43,11 +41,11 @@ export function LiveMapView({ mapVersionId, robots }: LiveMapViewProps) {
 
   const nodes = nodesQuery.data ?? [];
   const nodeById = new Map(nodes.map((node) => [node.id, node]));
-  const now = Date.now();
 
   const placedRobots = robots.flatMap((robot) => {
     const live = positions[robot.robotId];
-    if (live && live.mapVersionId === mapVersionId && now - live.receivedAt < POSITION_TTL_MS) {
+    // 최근 좌표만 남아 있다(오래된 좌표는 EventStreamProvider가 지운다).
+    if (live && live.mapVersionId === mapVersionId) {
       return [{ robot, x: live.x, y: live.y, moving: !live.arrived }];
     }
     const node = robot.currentNodeId ? nodeById.get(robot.currentNodeId) : undefined;

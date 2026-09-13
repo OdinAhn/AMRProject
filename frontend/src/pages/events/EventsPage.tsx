@@ -1,7 +1,7 @@
 import { EventFeed } from "../../components/events/EventFeed";
 import { ConnectionStatusBadge } from "../../components/events/ConnectionStatusBadge";
 import { Button, PageHeader } from "../../components/ui";
-import { useEventStream } from "../../lib/eventStream";
+import { useEventStream } from "../../lib/eventStreamContext";
 
 export function EventsPage() {
   const { events, status, clear } = useEventStream();

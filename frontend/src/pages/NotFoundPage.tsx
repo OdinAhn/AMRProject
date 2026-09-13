@@ -1,5 +1,5 @@
 import { Link } from "react-router";
-import { homePathFor, useAuth } from "../lib/auth";
+import { homePathFor, useAuth } from "../lib/authContext";
 
 export function NotFoundPage() {
   const { user } = useAuth();

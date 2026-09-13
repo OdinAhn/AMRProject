@@ -35,6 +35,11 @@ public class AuthService {
         return new LoginResult(accessTokenService.issueToken(user), user);
     }
 
+    /** 32단계: 비밀번호 변경 직후처럼 이미 확인된 사용자에게 새 토큰을 발급한다. */
+    public String issueToken(User user) {
+        return accessTokenService.issueToken(user);
+    }
+
     public record LoginResult(String token, User user) {
     }
 }

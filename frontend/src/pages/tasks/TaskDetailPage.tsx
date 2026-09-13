@@ -7,7 +7,7 @@ import { TaskStepsTable } from "../../components/tasks/TaskStepsTable";
 import { PageHeader } from "../../components/ui";
 import { api, errorMessage } from "../../lib/apiClient";
 import { shortTaskNo } from "../../lib/labels";
-import { useToast } from "../../lib/toast";
+import { useToast } from "../../lib/toastContext";
 import type { RobotResponse, TaskEventResponse, TaskResponse } from "../../types/api";
 
 export function TaskDetailPage() {
