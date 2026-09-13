@@ -664,5 +664,6 @@ DESIGN.md §6에 명시되지 않았지만, ERD를 구체화하며 추가한 테
 - 보존 정책(이력 테이블 파티셔닝/아카이빙)은 이 초안에 포함하지 않았다 — 운영 단계(§9 관측/로그)에서 별도로 설계한다.
   - **31단계**: 최소 보관 정책을 구현했다. `outbox_events`(PUBLISHED만)와 `robot_state_snapshots`를 `app.retention.days`(기본 30일) 기준으로 매일 1000건씩 나눠 삭제한다(`DataRetentionService`). `task_events`/`command_events`/`alarm_events`는 감사 추적 성격이라 지우지 않는다. 파티셔닝·아카이빙은 여전히 미정이다.
   - **31단계 인덱스(V12)**: `outbox_events (status, id)`, `outbox_events (status, created_at)`, `robot_state_snapshots (robot_id, reported_at)`, `robot_state_snapshots (received_at)`, `tasks (site_id, status, created_at)`, `tasks (status, created_at)`, `alarms (status, created_at)`, `resource_reservations (resource_type, resource_id, status)`.
+  - **34단계 인덱스(V14, 운영 통계)**: `tasks (site_id, completed_at)`, `tasks (site_id, created_at)`, `task_assignments (robot_id, assigned_at)`, `alarms (created_at)`. 통계는 스키마를 바꾸지 않고 기존 시각 컬럼(`tasks.created_at`/`completed_at`, `task_assignments.assigned_at`/`released_at`, `alarms.created_at`)만으로 계산한다.
 - `robots.lifecycle_status`가 `MAINTENANCE`인데 로봇이 여전히 `AUTO`를 보고하는 등 두 축이 어긋난 상태가 일정 시간 이상 지속되면 알람을 띄울지 여부는 미정.
 - 충전 작업이 정말 `tasks`/`task_steps`를 재사용하는 구조가 맞는지, 아니면 `charging_sessions`만으로 충분한지는 7단계(다중 로봇 운영/충전) 구현 시 재확인한다.

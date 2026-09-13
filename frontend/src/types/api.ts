@@ -478,3 +478,40 @@ export interface EventEnvelope {
   payload: string | null;
   occurredAt: string;
 }
+
+/** 34단계: GET /api/admin/sites/{siteId}/statistics — 비율·평균은 대상이 없으면 null */
+export interface SiteStatisticsResponse {
+  siteId: number;
+  from: string;
+  to: string;
+  zone: string;
+  tasks: {
+    created: number;
+    succeeded: number;
+    failed: number;
+    canceled: number;
+    successRatePct: number | null;
+    avgLeadTimeSeconds: number | null;
+    avgWaitSeconds: number | null;
+  };
+  daily: DailyTaskCount[];
+  robots: RobotUtilization[];
+  alarms: { alarmType: AlarmType; severity: AlarmSeverity; count: number }[];
+}
+
+export interface DailyTaskCount {
+  date: string;
+  created: number;
+  succeeded: number;
+  failed: number;
+  canceled: number;
+}
+
+export interface RobotUtilization {
+  robotId: number;
+  code: string;
+  name: string;
+  completedTasks: number;
+  busySeconds: number;
+  utilizationPct: number | null;
+}

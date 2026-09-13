@@ -7,9 +7,18 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 
+import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 
 public interface TaskAssignmentRepository extends JpaRepository<TaskAssignment, Long> {
+
+    /** 34단계 통계: 물류센터 로봇의 배정 중 [from, to)와 겹치는 것(아직 진행 중인 배정 포함). 로봇 가동률 계산용. */
+    @Query("""
+            select a from TaskAssignment a join fetch a.robot r
+            where r.site.id = :siteId and a.assignedAt < :to and (a.releasedAt is null or a.releasedAt > :from)
+            """)
+    List<TaskAssignment> findOverlapping(Long siteId, Instant from, Instant to);
 
     Optional<TaskAssignment> findByRobotIdAndStatus(Long robotId, TaskAssignmentStatus status);
 

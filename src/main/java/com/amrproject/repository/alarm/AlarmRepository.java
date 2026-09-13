@@ -10,6 +10,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 
@@ -29,6 +30,26 @@ public interface AlarmRepository extends JpaRepository<Alarm, Long> {
                     and a.sourceId in (select t.id from Task t where t.site.id = :siteId)))
             """)
     long countBySiteAndStatusIn(Long siteId, List<AlarmStatus> statuses);
+
+    /** 34단계 통계: 기간 안에 발생한 알람 수(종류·심각도별). */
+    interface TypeCount {
+        AlarmType getAlarmType();
+
+        AlarmSeverity getSeverity();
+
+        long getCount();
+    }
+
+    @Query("""
+            select a.alarmType as alarmType, a.severity as severity, count(a) as count from Alarm a
+            where a.createdAt >= :from and a.createdAt < :to
+              and ((a.sourceType = com.amrproject.domain.entity.alarm.AlarmSourceType.ROBOT
+                    and a.sourceId in (select r.id from Robot r where r.site.id = :siteId))
+                or (a.sourceType = com.amrproject.domain.entity.alarm.AlarmSourceType.TASK
+                    and a.sourceId in (select t.id from Task t where t.site.id = :siteId)))
+            group by a.alarmType, a.severity
+            """)
+    List<TypeCount> countRaisedBySite(Long siteId, Instant from, Instant to);
 
     Optional<Alarm> findFirstByAlarmTypeAndSourceTypeAndSourceIdAndStatusIn(
             AlarmType alarmType, AlarmSourceType sourceType, Long sourceId, List<AlarmStatus> statuses

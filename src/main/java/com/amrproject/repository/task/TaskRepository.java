@@ -10,6 +10,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 
+import java.time.Instant;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
@@ -60,4 +61,27 @@ public interface TaskRepository extends JpaRepository<Task, Long> {
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select t from Task t where t.id = :id")
     Optional<Task> findByIdForUpdate(Long id);
+
+    /** 34단계 통계: 기간 안에 종료된 작업의 시각 정보. firstAssignedAt은 첫 로봇 배정 시각(배정 전에 취소됐으면 null). */
+    interface CompletedTaskTiming {
+        TaskStatus getStatus();
+
+        Instant getCreatedAt();
+
+        Instant getCompletedAt();
+
+        Instant getFirstAssignedAt();
+    }
+
+    @Query("""
+            select t.status as status, t.createdAt as createdAt, t.completedAt as completedAt,
+                   (select min(a.assignedAt) from TaskAssignment a where a.task = t) as firstAssignedAt
+            from Task t
+            where t.site.id = :siteId and t.completedAt >= :from and t.completedAt < :to
+            """)
+    List<CompletedTaskTiming> findCompletedTimings(Long siteId, Instant from, Instant to);
+
+    /** 34단계 통계: 기간 안에 생성된 작업의 생성 시각(일별 접수량). */
+    @Query("select t.createdAt from Task t where t.site.id = :siteId and t.createdAt >= :from and t.createdAt < :to")
+    List<Instant> findCreatedAts(Long siteId, Instant from, Instant to);
 }

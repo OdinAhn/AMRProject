@@ -155,6 +155,7 @@
 | POST | `/api/admin/sites/{siteId}/emergency-stop` | (33단계) 물류센터의 운영 중(`IN_SERVICE`) 로봇 전체 비상정지 — 로봇별 결과 배열 |
 | POST | `/api/admin/sites/{siteId}/dispatch` | 디스패치 사이클 실행 (7단계): `QUEUED` 작업 자동 배정 + 저배터리 로봇 자동 충전 작업 생성, 결과로 배정/생성된 taskId 목록 반환. (29단계) 같은 사이클이 `AutoDispatchScheduler`로 운영 중(`ACTIVE`)인 모든 물류센터에서 주기적으로(기본 5초) 자동 실행된다. 이 API는 즉시 한 번 더 돌리고 결과를 보고 싶을 때 쓴다 |
 | GET | `/api/admin/sites/{siteId}/overview` | (30단계) 관제 대시보드 현황 — 아래 참고 |
+| GET | `/api/admin/sites/{siteId}/statistics` | (34단계) 운영 통계 — 쿼리 `from`, `to`(YYYY-MM-DD, 양 끝 포함), `zone`(기본 `Asia/Seoul`). 아래 참고 |
 | GET | `/api/admin/alarms` | 알람 목록 (필터: status, severity, sourceType). **31단계: 페이지 응답**(아래 참고) |
 | GET | `/api/admin/alarms/{alarmId}` | 상세 |
 | POST | `/api/admin/alarms/{alarmId}/acknowledge` | 확인 처리 (`OPEN`→`ACKNOWLEDGED`. 이미 `ACKNOWLEDGED`면 200으로 현재 상태 반환, `RESOLVED`면 409) |
@@ -210,6 +211,28 @@
 - `robots[].connectionState`/`motionState`/`batteryPct`/`currentNodeId`: 상태 보고가 없는 로봇은 null이다. `currentTaskId`/`currentTaskNo`는 ACTIVE 배정이 없으면 null이다.
 - `openTaskCounts`: 종료되지 않은 6개 상태를 모두 키로 넣고, 0건도 0으로 준다.
 - `openAlarmCount`: 이 물류센터 소속 로봇·작업이 대상인 `OPEN`/`ACKNOWLEDGED` 알람 수다(`alarms`에 site 컬럼이 없어 대상 테이블로 거슬러 올라가 센다).
+
+**34단계 — 운영 통계** `GET /api/admin/sites/{siteId}/statistics?from=2026-09-07&to=2026-09-13&zone=Asia/Seoul`:
+
+```json
+{
+  "siteId": 1, "from": "2026-09-07", "to": "2026-09-13", "zone": "Asia/Seoul",
+  "tasks": { "created": 120, "succeeded": 110, "failed": 2, "canceled": 5,
+             "successRatePct": 98.2, "avgLeadTimeSeconds": 412, "avgWaitSeconds": 35 },
+  "daily": [ { "date": "2026-09-07", "created": 18, "succeeded": 17, "failed": 0, "canceled": 1 } ],
+  "robots": [ { "robotId": 1, "code": "AMR-01", "name": "로봇1", "completedTasks": 60,
+                "busySeconds": 250000, "utilizationPct": 41.3 } ],
+  "alarms": [ { "alarmType": "ROBOT_COMM_LOST", "severity": "CRITICAL", "count": 3 } ]
+}
+```
+
+- **기간**: `zone` 기준 날짜 `[from 00:00, to+1 00:00)`이다. 둘 다 생략하면 오늘까지 최근 7일이고, `to`만 주면 그날까지 7일이다. 시작일이 종료일보다 늦거나 92일을 넘으면 400 `STATISTICS_RANGE_INVALID`, 모르는 시간대면 400 `STATISTICS_ZONE_INVALID`, 날짜 형식이 틀리면 400 `VALIDATION_FAILED`다. DB는 UTC로 저장하므로 날짜 경계와 `daily` 구분은 모두 `zone`으로 계산한다.
+- `tasks.created`는 기간 안에 **생성**된 작업 수, `succeeded`/`failed`/`canceled`는 기간 안에 **종료**(`completed_at`)된 작업 수다. 같은 작업이 두 기준에서 다른 날에 잡힐 수 있다.
+- `successRatePct` = 성공 ÷ (성공 + 실패) × 100(소수 첫째 자리). 취소는 운영 판단이라 뺀다. `avgLeadTimeSeconds`는 성공 작업의 생성→완료 평균, `avgWaitSeconds`는 종료된 작업 중 로봇이 배정된 적 있는 작업의 생성→첫 배정 평균이다. 대상이 없으면 셋 다 null이다.
+- `daily`는 `from`~`to`의 모든 날짜를 0건도 빠짐없이 채운다.
+- `robots`: 물류센터 소속 로봇 전체(코드순). `busySeconds`는 기간과 겹치는 배정 구간(`task_assignments.assigned_at`~`released_at`, 진행 중이면 지금까지)의 합이고, `utilizationPct`는 기간 중 **이미 지난 시간** 대비 비율이다(오늘이 포함된 기간이 하루 끝까지 기다리지 않도록). 기간이 아직 시작되지 않았으면 null. `completedTasks`는 기간 안에 완료(`COMPLETED`)된 배정 수다. 충전 작업도 배정이라 가동 시간에 들어간다.
+- `alarms`: 기간 안에 **발생**한 알람 수를 종류·심각도별로 많은 순으로 준다(해소 여부 무관, 이 물류센터 로봇·작업 대상).
+- 실시간 이벤트로 다시 계산하지 않는다. 화면은 새로고침 버튼으로 다시 조회한다.
 
 `recover` 요청 본문 예시:
 

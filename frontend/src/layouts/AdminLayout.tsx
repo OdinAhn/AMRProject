@@ -10,6 +10,7 @@ import type { AlarmResponse, PageResponse } from "../types/api";
 
 const NAV_ITEMS = [
   { to: "/dashboard", label: "대시보드" },
+  { to: "/statistics", label: "운영 통계" },
   { to: "/sites", label: "물류센터/작업장" },
   { to: "/robots", label: "로봇" },
   { to: "/maps", label: "지도" },
