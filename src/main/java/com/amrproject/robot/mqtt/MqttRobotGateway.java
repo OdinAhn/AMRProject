@@ -127,7 +127,11 @@ public class MqttRobotGateway implements RobotGateway, MqttCallback {
             report(robot, state, ConnectionState.OFFLINE, MotionState.IDLE, state.getBatteryPct());
             return;
         } catch (InterruptedException | ExecutionException e) {
-            Thread.currentThread().interrupt();
+            // 27단계: 인터럽트 플래그는 실제로 인터럽트됐을 때만 복원한다 — 예전엔 ExecutionException에도
+            // 설정해서, 이 스레드의 이후 블로킹 호출(DB 등)이 영문 모를 InterruptedException으로 실패할 수 있었다.
+            if (e instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+            }
             pendingOrders.remove(orderId);
             command.fail();
             recordCommandEvent(command, "FAILED");

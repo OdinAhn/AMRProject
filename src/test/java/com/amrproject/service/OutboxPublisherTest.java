@@ -6,6 +6,7 @@ import com.amrproject.domain.entity.event.OutboxEventStatus;
 import com.amrproject.repository.event.OutboxEventRepository;
 import com.amrproject.service.event.OutboxPublisher;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
@@ -41,6 +42,7 @@ class OutboxPublisherTest {
     void PENDING_이벤트를_Redis와_Kafka에_발행하고_PUBLISHED로_마킹한다() {
         OutboxEvent event = new OutboxEvent("TASK", 42L, "task.succeeded", null);
         when(outboxEventRepository.findByStatusOrderByIdAsc(OutboxEventStatus.PENDING)).thenReturn(List.of(event));
+        when(kafkaTemplate.send(any(), any(), any())).thenReturn(CompletableFuture.completedFuture(null));
 
         publisher.publishPending();
 
@@ -74,12 +76,30 @@ class OutboxPublisherTest {
                 .thenReturn(List.of(failing, succeeding));
         when(kafkaTemplate.send(any(), any(), any()))
                 .thenThrow(new RuntimeException("kafka unreachable"))
-                .thenReturn(null);
+                .thenReturn(CompletableFuture.completedFuture(null));
 
         publisher.publishPending();
 
         assertThat(failing.getStatus()).isEqualTo(OutboxEventStatus.PENDING);
         assertThat(succeeding.getStatus()).isEqualTo(OutboxEventStatus.PUBLISHED);
-        verify(redisTemplate, Mockito.times(2)).convertAndSend(any(), any());
+        // 27단계: Kafka가 먼저라, Kafka에 실패한 이벤트는 Redis(SSE)로도 나가지 않는다 — 재시도 때 중복 전달 방지.
+        verify(redisTemplate, Mockito.times(1)).convertAndSend(any(), any());
+    }
+
+    /**
+     * 27단계 회귀 테스트: KafkaTemplate.send()는 비동기라 브로커 실패가 예외가 아니라 실패한
+     * future로 온다 — 예전엔 결과를 확인하지 않아 이런 이벤트도 PUBLISHED로 마킹됐다.
+     */
+    @Test
+    void Kafka_전송_future가_실패하면_PENDING으로_남기고_Redis로도_보내지_않는다() {
+        OutboxEvent event = new OutboxEvent("TASK", 3L, "task.c", null);
+        when(outboxEventRepository.findByStatusOrderByIdAsc(OutboxEventStatus.PENDING)).thenReturn(List.of(event));
+        when(kafkaTemplate.send(any(), any(), any()))
+                .thenReturn(CompletableFuture.failedFuture(new RuntimeException("broker rejected")));
+
+        publisher.publishPending();
+
+        assertThat(event.getStatus()).isEqualTo(OutboxEventStatus.PENDING);
+        verify(redisTemplate, Mockito.never()).convertAndSend(any(), any());
     }
 }

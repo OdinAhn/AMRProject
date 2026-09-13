@@ -602,7 +602,7 @@ erDiagram
 | 컬럼 | 타입 | 설명 |
 |---|---|---|
 | id | BIGINT PK | |
-| alarm_type | VARCHAR | `ROBOT_COMM_LOST`, `LOCALIZATION_LOST`, `TASK_FAILED`, `LOAD_EXCEPTION` |
+| alarm_type | VARCHAR | `ROBOT_COMM_LOST`, `LOCALIZATION_LOST`, `TASK_FAILED`, `LOAD_EXCEPTION`, `TASK_RECOVERY_REQUIRED`(27단계) |
 | severity | VARCHAR | `INFO`, `WARNING`, `CRITICAL` — 14단계 구현은 `TASK_FAILED`=`CRITICAL`, 나머지=`WARNING`으로 고정 배정한다 |
 | source_type | VARCHAR | `ROBOT`, `TASK`, `STATION`, `SYSTEM` — 14단계 구현은 `ROBOT`/`TASK`만 실제 사용 |
 | source_id | BIGINT | |

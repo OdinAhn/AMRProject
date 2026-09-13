@@ -13,6 +13,7 @@ import com.amrproject.dto.request.task.CreateTaskRequest;
 import com.amrproject.dto.request.robot.InjectFaultRequest;
 import com.amrproject.dto.request.task.RecoverTaskRequest;
 import com.amrproject.dto.request.task.RecoveryResolution;
+import com.amrproject.dto.request.task.ReportUnavailableRequest;
 import com.amrproject.repository.alarm.AlarmRepository;
 import com.amrproject.repository.robot.RobotRepository;
 import com.amrproject.robot.SimulatedFault;
@@ -186,6 +187,63 @@ class AlarmTest extends AbstractIntegrationTest {
         // RESOLVED된 알람은 다시 확인 처리를 할 수 없다.
         mockMvc.perform(post("/api/admin/alarms/{alarmId}/acknowledge", alarm.getId()))
                 .andExpect(status().isConflict());
+    }
+
+    @Test
+    void 명령_실패로_복구가_필요해지면_복구필요_알람이_발생하고_RESUME하면_자동_해소된다() throws Exception {
+        Long siteId = createSite("SITE-ALM5", "알람 물류센터5");
+        Long originId = createStation(siteId, "ST-ALM9", "입고", StationType.PICKUP);
+        Long destinationId = createStation(siteId, "ST-ALM10", "출고", StationType.DROPOFF);
+        Long robotId = createRobot(siteId, "ROBOT-ALM5", "알람로봇5");
+        Long taskId = createTask(originId, destinationId, "idem-alm-5");
+
+        injectFault(robotId, SimulatedFault.COMMAND_FAILURE);
+        Robot robot = robotRepository.findById(robotId).orElseThrow();
+        taskService.assignRobot(taskId, robot);
+        taskService.start(taskId);
+
+        Alarm alarm = openAlarm(AlarmType.TASK_RECOVERY_REQUIRED, AlarmSourceType.TASK, taskId);
+        assertThat(alarm.getStatus()).isEqualTo(AlarmStatus.OPEN);
+        assertThat(alarm.getMessage()).contains("로봇 명령 실패");
+
+        mockMvc.perform(post("/api/admin/tasks/{taskId}/recover", taskId)
+                        .contentType(APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new RecoverTaskRequest(RecoveryResolution.RESUME))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("RUNNING"));
+
+        assertThat(alarmRepository.findById(alarm.getId()).orElseThrow().getStatus()).isEqualTo(AlarmStatus.RESOLVED);
+    }
+
+    @Test
+    void 작업자가_작업불가를_보고하면_사유가_담긴_복구필요_알람이_발생하고_FAIL하면_해소되고_실패알람이_남는다() throws Exception {
+        Long siteId = createSite("SITE-ALM6", "알람 물류센터6");
+        Long originId = createStation(siteId, "ST-ALM11", "입고", StationType.PICKUP);
+        Long destinationId = createStation(siteId, "ST-ALM12", "출고", StationType.DROPOFF);
+        Long robotId = createRobot(siteId, "ROBOT-ALM6", "알람로봇6");
+        Long taskId = createTask(originId, destinationId, "idem-alm-6");
+
+        Robot robot = robotRepository.findById(robotId).orElseThrow();
+        taskService.assignRobot(taskId, robot);
+        taskService.start(taskId);
+
+        mockMvc.perform(post("/api/worker/tasks/{taskId}/report-unavailable", taskId)
+                        .contentType(APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new ReportUnavailableRequest("통로 막힘"))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("RECOVERY_REQUIRED"));
+
+        Alarm alarm = openAlarm(AlarmType.TASK_RECOVERY_REQUIRED, AlarmSourceType.TASK, taskId);
+        assertThat(alarm.getMessage()).contains("통로 막힘");
+
+        mockMvc.perform(post("/api/admin/tasks/{taskId}/recover", taskId)
+                        .contentType(APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new RecoverTaskRequest(RecoveryResolution.FAIL))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("FAILED"));
+
+        assertThat(alarmRepository.findById(alarm.getId()).orElseThrow().getStatus()).isEqualTo(AlarmStatus.RESOLVED);
+        assertThat(openAlarm(AlarmType.TASK_FAILED, AlarmSourceType.TASK, taskId).getStatus()).isEqualTo(AlarmStatus.OPEN);
     }
 
     private Alarm openAlarm(AlarmType type, AlarmSourceType sourceType, Long sourceId) {

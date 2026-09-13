@@ -366,7 +366,7 @@ export interface CreateStationAssignmentRequest {
   stationId: number;
 }
 
-export type AlarmType = "ROBOT_COMM_LOST" | "LOCALIZATION_LOST" | "TASK_FAILED" | "LOAD_EXCEPTION";
+export type AlarmType = "ROBOT_COMM_LOST" | "LOCALIZATION_LOST" | "TASK_FAILED" | "LOAD_EXCEPTION" | "TASK_RECOVERY_REQUIRED";
 export type AlarmSeverity = "INFO" | "WARNING" | "CRITICAL";
 export type AlarmStatus = "OPEN" | "ACKNOWLEDGED" | "RESOLVED";
 export type AlarmSourceType = "ROBOT" | "TASK" | "STATION" | "SYSTEM";
