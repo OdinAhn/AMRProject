@@ -6,6 +6,7 @@ import { AlarmsPage } from "./pages/alarms/AlarmsPage";
 import { DispatchPage } from "./pages/dispatch/DispatchPage";
 import { EventsPage } from "./pages/events/EventsPage";
 import { LoginPage } from "./pages/LoginPage";
+import { NotFoundPage } from "./pages/NotFoundPage";
 import { MapVersionDetailPage } from "./pages/maps/MapVersionDetailPage";
 import { MapVersionsPage } from "./pages/maps/MapVersionsPage";
 import { MapsPage } from "./pages/maps/MapsPage";
@@ -27,7 +28,7 @@ function App() {
       <Route
         path="/"
         element={
-          <ProtectedRoute>
+          <ProtectedRoute roles={["ADMIN"]}>
             <AdminLayout />
           </ProtectedRoute>
         }
@@ -51,7 +52,7 @@ function App() {
       <Route
         path="/worker"
         element={
-          <ProtectedRoute>
+          <ProtectedRoute roles={["ADMIN", "WORKER"]}>
             <WorkerLayout />
           </ProtectedRoute>
         }
@@ -60,6 +61,7 @@ function App() {
         <Route path="stations" element={<WorkerStationsPage />} />
         <Route path="stations/:stationId/tasks" element={<WorkerStationTasksPage />} />
       </Route>
+      <Route path="*" element={<NotFoundPage />} />
     </Routes>
   );
 }

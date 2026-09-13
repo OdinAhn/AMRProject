@@ -1,3 +1,4 @@
+import { labels } from "../../lib/labels";
 import { Card, Select } from "../ui";
 import type { AlarmSeverity, AlarmSourceType, AlarmStatus } from "../../types/api";
 
@@ -30,7 +31,7 @@ export function AlarmFilters({
             <option value="">전체 상태</option>
             {STATUSES.map((s) => (
               <option key={s} value={s}>
-                {s}
+                {labels.alarmStatus(s)}
               </option>
             ))}
           </Select>
@@ -40,7 +41,7 @@ export function AlarmFilters({
             <option value="">전체 심각도</option>
             {SEVERITIES.map((s) => (
               <option key={s} value={s}>
-                {s}
+                {labels.alarmSeverity(s)}
               </option>
             ))}
           </Select>
@@ -50,7 +51,7 @@ export function AlarmFilters({
             <option value="">전체 대상</option>
             {SOURCE_TYPES.map((s) => (
               <option key={s} value={s}>
-                {s}
+                {labels.alarmSourceType(s)}
               </option>
             ))}
           </Select>

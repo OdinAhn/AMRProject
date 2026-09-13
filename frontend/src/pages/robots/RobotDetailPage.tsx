@@ -7,7 +7,8 @@ import { RobotConfigHistoryTable } from "../../components/robots/RobotConfigHist
 import { RobotLifecyclePanel } from "../../components/robots/RobotLifecyclePanel";
 import { RobotStatePanel } from "../../components/robots/RobotStatePanel";
 import { PageHeader } from "../../components/ui";
-import { ApiError, api } from "../../lib/apiClient";
+import { ApiError, api, errorMessage } from "../../lib/apiClient";
+import { useToast } from "../../lib/toast";
 import type {
   CreateRobotConfigurationRequest,
   RobotConfigurationResponse,
@@ -20,6 +21,7 @@ import type {
 export function RobotDetailPage() {
   const { robotId } = useParams<{ robotId: string }>();
   const queryClient = useQueryClient();
+  const { showToast } = useToast();
   const [configError, setConfigError] = useState<string | null>(null);
   const [basicInfoError, setBasicInfoError] = useState<string | null>(null);
 
@@ -51,7 +53,11 @@ export function RobotDetailPage() {
   const updateLifecycle = useMutation({
     mutationFn: (lifecycleStatus: RobotLifecycleStatus) =>
       api.patch<RobotResponse>(`/api/admin/robots/${robotId}/lifecycle-status`, { lifecycleStatus }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["robots", robotId] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["robots", robotId] });
+      showToast("운영 상태를 변경했습니다.");
+    },
+    onError: (err) => showToast(errorMessage(err, "운영 상태 변경에 실패했습니다."), "error"),
   });
 
   const createConfig = useMutation({

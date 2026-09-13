@@ -203,7 +203,27 @@ Idempotency-Key: 8e2f1c...
 }
 ```
 
-응답: `201 Created`, 생성된 `task` (상태 `QUEUED`, `allowedActions: ["CANCEL"]`)
+응답: `201 Created`, 생성된 `task` (상태 `QUEUED`, `allowedActions: ["CANCEL", "REPORT_UNAVAILABLE"]`)
+
+### 작업 응답(`TaskResponse`) — 28단계 추가 필드
+
+화면이 id만으로는 작업을 알아보기 어려워 표시용 필드를 추가했다. 기존 필드는 그대로라 하위 호환이다.
+
+| 필드 | 설명 |
+|---|---|
+| `originStationName` / `destinationStationName` | 출발지·도착지 작업장 이름 |
+| `assignedRobotId` / `assignedRobotCode` | 현재 배정된 로봇(없으면 `null`) |
+
+`allowedActions` 값 전체(28단계 기준):
+
+| 값 | 조건 | 화면 버튼 |
+|---|---|---|
+| `CANCEL` | 상태가 `QUEUED`/`ASSIGNED`/`RUNNING`/`PAUSED` | 호출 취소 / 취소 |
+| `DISPATCH` | 진행 중 단계가 `CONFIRM_LOAD` | 로봇 보내기 |
+| `CONFIRM_UNLOAD` | 진행 중 단계가 `CONFIRM_UNLOAD` | 하역 완료 |
+| `REPORT_UNAVAILABLE` | (28단계) 상태가 `QUEUED`/`ASSIGNED`/`RUNNING`/`PAUSED` — `report-unavailable`이 받는 상태와 같음 | 작업 불가 |
+
+배열 순서는 위 표 순서를 따른다(예: 적재 대기 중이면 `["CANCEL", "DISPATCH", "REPORT_UNAVAILABLE"]`).
 
 ### 버튼 → 상태 전이 매핑 (DESIGN.md §5, STATE_MACHINES.md 기준)
 

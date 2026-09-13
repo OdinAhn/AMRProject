@@ -1,8 +1,16 @@
+import { labels } from "../../lib/labels";
 import { Badge, Card, Table, Td, Th } from "../ui";
 import type { TaskStepResponse } from "../../types/api";
 
 interface TaskStepsTableProps {
   steps: TaskStepResponse[];
+}
+
+function stepTone(status: TaskStepResponse["status"]) {
+  if (status === "SUCCEEDED") return "green" as const;
+  if (status === "FAILED") return "red" as const;
+  if (status === "RUNNING") return "blue" as const;
+  return "gray" as const;
 }
 
 export function TaskStepsTable({ steps }: TaskStepsTableProps) {
@@ -13,7 +21,7 @@ export function TaskStepsTable({ steps }: TaskStepsTableProps) {
         <thead>
           <tr>
             <Th>#</Th>
-            <Th>유형</Th>
+            <Th>단계</Th>
             <Th>상태</Th>
           </tr>
         </thead>
@@ -21,9 +29,9 @@ export function TaskStepsTable({ steps }: TaskStepsTableProps) {
           {steps.map((step) => (
             <tr key={step.id}>
               <Td>{step.stepNo}</Td>
-              <Td>{step.stepType}</Td>
+              <Td>{labels.taskStepType(step.stepType)}</Td>
               <Td>
-                <Badge tone={step.status === "SUCCEEDED" ? "green" : step.status === "FAILED" ? "red" : "gray"}>{step.status}</Badge>
+                <Badge tone={stepTone(step.status)}>{labels.taskStepStatus(step.status)}</Badge>
               </Td>
             </tr>
           ))}

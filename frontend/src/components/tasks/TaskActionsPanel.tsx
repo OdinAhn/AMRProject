@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { Badge, Button, Card, ErrorBanner, Select } from "../ui";
+import { labels, taskStatusTone } from "../../lib/labels";
+import { Badge, Button, Card, ConfirmButton, ErrorBanner, Select } from "../ui";
 import type { RobotResponse, TaskResponse } from "../../types/api";
 
 interface TaskActionsPanelProps {
@@ -28,14 +29,20 @@ export function TaskActionsPanel({
   const [robotId, setRobotId] = useState("");
 
   const canAssign = task.status === "QUEUED";
-  const canCancel = ["QUEUED", "ASSIGNED", "RUNNING", "PAUSED"].includes(task.status);
+  const canCancel = task.allowedActions.includes("CANCEL");
   const canRecover = task.status === "RECOVERY_REQUIRED";
+  // 28단계: 같은 물류센터의 운영 중(IN_SERVICE) 로봇만 배정 후보로 보여준다 — 다른 센터·정비 중 로봇은 어차피 배정에 실패한다.
+  const assignableRobots = robots.filter((robot) => robot.siteId === task.siteId && robot.lifecycleStatus === "IN_SERVICE");
 
   return (
     <Card className="mb-4">
-      <div className="mb-3 flex items-center gap-3">
-        <Badge tone="blue">{task.status}</Badge>
-        <span className="text-sm text-gray-500">{task.taskType}</span>
+      <div className="mb-3 flex flex-wrap items-center gap-3">
+        <Badge tone={taskStatusTone(task.status)}>{labels.taskStatus(task.status)}</Badge>
+        <span className="text-sm text-gray-500">{labels.taskType(task.taskType)}</span>
+        <span className="text-sm text-gray-700">
+          {task.originStationName} → {task.destinationStationName}
+        </span>
+        {task.assignedRobotCode && <span className="text-sm text-gray-500">로봇 {task.assignedRobotCode}</span>}
       </div>
 
       <div className="flex flex-wrap items-end gap-3">
@@ -44,12 +51,15 @@ export function TaskActionsPanel({
             <div className="w-56">
               <Select value={robotId} onChange={(e) => setRobotId(e.target.value)}>
                 <option value="">배정할 로봇 선택</option>
-                {robots.map((robot) => (
+                {assignableRobots.map((robot) => (
                   <option key={robot.id} value={robot.id}>
                     {robot.name} ({robot.code})
                   </option>
                 ))}
               </Select>
+              {assignableRobots.length === 0 && (
+                <p className="mt-1 text-xs text-gray-500">이 물류센터에 운영 중인 로봇이 없습니다.</p>
+              )}
             </div>
             <Button onClick={() => onAssign(Number(robotId))} disabled={!robotId || isAssigning}>
               배정
@@ -57,18 +67,37 @@ export function TaskActionsPanel({
           </>
         )}
         {canCancel && (
-          <Button variant="danger" onClick={onCancel} disabled={isCanceling}>
+          <ConfirmButton
+            title="작업을 취소할까요?"
+            message="적재 전이거나 하역이 끝났으면 바로 취소되고, 로봇에 물건이 실려 있으면 '복구 필요' 상태로 바뀝니다."
+            confirmLabel="작업 취소"
+            onConfirm={onCancel}
+            disabled={isCanceling}
+          >
             취소
-          </Button>
+          </ConfirmButton>
         )}
         {canRecover && (
           <>
-            <Button onClick={() => onRecover("RESUME")} disabled={isRecovering}>
-              재개(RESUME)
-            </Button>
-            <Button variant="danger" onClick={() => onRecover("FAIL")} disabled={isRecovering}>
-              최종 실패 처리(FAIL)
-            </Button>
+            <ConfirmButton
+              variant="primary"
+              title="작업을 재개할까요?"
+              message="실패했거나 결과가 불확실한 단계를 다시 시도합니다. 로봇의 실제 상태를 확인한 뒤 진행하세요."
+              confirmLabel="재개"
+              onConfirm={() => onRecover("RESUME")}
+              disabled={isRecovering}
+            >
+              재개
+            </ConfirmButton>
+            <ConfirmButton
+              title="최종 실패로 처리할까요?"
+              message="작업이 실패로 종료되고 로봇 배정이 해제됩니다. 되돌릴 수 없습니다."
+              confirmLabel="최종 실패 처리"
+              onConfirm={() => onRecover("FAIL")}
+              disabled={isRecovering}
+            >
+              최종 실패 처리
+            </ConfirmButton>
           </>
         )}
       </div>

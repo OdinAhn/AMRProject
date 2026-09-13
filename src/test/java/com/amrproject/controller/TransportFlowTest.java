@@ -54,9 +54,14 @@ class TransportFlowTest extends AbstractIntegrationTest {
                 .andExpect(jsonPath("$.steps[0].status").value("SUCCEEDED"))
                 .andExpect(jsonPath("$.steps[1].stepType").value("CONFIRM_LOAD"))
                 .andExpect(jsonPath("$.steps[1].status").value("RUNNING"))
+                .andExpect(jsonPath("$.originStationName").value("입고"))
+                .andExpect(jsonPath("$.destinationStationName").value("출고"))
+                .andExpect(jsonPath("$.assignedRobotId").value(robotId))
+                .andExpect(jsonPath("$.assignedRobotCode").value("ROBOT-FLOW1"))
                 .andExpect(jsonPath("$.allowedActions[0]").value("CANCEL"))
                 .andExpect(jsonPath("$.allowedActions[1]").value("DISPATCH"))
-                .andExpect(jsonPath("$.allowedActions.length()").value(2));
+                .andExpect(jsonPath("$.allowedActions[2]").value("REPORT_UNAVAILABLE"))
+                .andExpect(jsonPath("$.allowedActions.length()").value(3));
 
         mockMvc.perform(post("/api/worker/tasks/{taskId}/dispatch", taskId))
                 .andExpect(status().isOk())
@@ -67,7 +72,8 @@ class TransportFlowTest extends AbstractIntegrationTest {
                 .andExpect(jsonPath("$.steps[3].status").value("RUNNING"))
                 .andExpect(jsonPath("$.allowedActions[0]").value("CANCEL"))
                 .andExpect(jsonPath("$.allowedActions[1]").value("CONFIRM_UNLOAD"))
-                .andExpect(jsonPath("$.allowedActions.length()").value(2));
+                .andExpect(jsonPath("$.allowedActions[2]").value("REPORT_UNAVAILABLE"))
+                .andExpect(jsonPath("$.allowedActions.length()").value(3));
 
         mockMvc.perform(post("/api/worker/tasks/{taskId}/confirm-unload", taskId))
                 .andExpect(status().isOk())
