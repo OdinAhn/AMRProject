@@ -65,6 +65,9 @@ const TASK_EVENT_TYPE: Record<string, string> = {
   RECOVERY_RESUMED: "복구 재개",
   RECOVERY_FAILED: "최종 실패 처리",
   REPORT_UNAVAILABLE: "작업 불가 보고",
+  PAUSED: "일시정지",
+  RESUMED: "일시정지 해제",
+  PRIORITY_CHANGED: "우선순위 변경",
 };
 
 const ALARM_TYPE: Record<AlarmType, string> = {
@@ -73,6 +76,7 @@ const ALARM_TYPE: Record<AlarmType, string> = {
   TASK_FAILED: "작업 최종 실패",
   LOAD_EXCEPTION: "적재 센서 이상",
   TASK_RECOVERY_REQUIRED: "작업 복구 필요",
+  ROBOT_EMERGENCY_STOP: "로봇 비상정지",
 };
 
 const ALARM_SEVERITY: Record<AlarmSeverity, string> = {
@@ -181,6 +185,20 @@ export const labels = {
   role: (v: string) => ROLE[v] ?? v,
   userStatus: (v: UserStatus) => lookup(USER_STATUS, v),
 };
+
+/** 33단계: 우선순위(0~9) 표시 — 화면에서 고를 수 있는 값은 보통(0)·높음(5)·긴급(9)이다. */
+export const PRIORITY_OPTIONS = [
+  { value: 0, label: "보통" },
+  { value: 5, label: "높음" },
+  { value: 9, label: "긴급" },
+];
+
+export function priorityLabel(priority: number): string {
+  if (priority >= 9) return "긴급";
+  if (priority >= 5) return "높음";
+  if (priority > 0) return `우선 ${priority}`;
+  return "보통";
+}
 
 /** 작업 상태 배지 색 — 목록·상세·작업자 화면이 모두 같은 규칙을 쓴다. */
 export function taskStatusTone(status: TaskStatus) {

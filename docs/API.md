@@ -147,6 +147,12 @@
 | POST | `/api/admin/tasks/{taskId}/assign` | 로봇 지정 배정 (`robotId`) → `ASSIGNED` 후 즉시 첫 단계 시작 |
 | POST | `/api/admin/tasks/{taskId}/cancel` | 취소 요청 → 적재 전/하역 후면 즉시 `CANCELED`, 적재 중이면 `RECOVERY_REQUIRED`(8단계, 아래 참고) |
 | POST | `/api/admin/tasks/{taskId}/recover` | `RECOVERY_REQUIRED` 상태 개입: 재개 또는 최종 실패 처리 |
+| POST | `/api/admin/tasks/{taskId}/pause` | (33단계) 작업 흐름 일시정지 `RUNNING → PAUSED`. 이미 PAUSED면 200 그대로. 로봇을 물리적으로 세우지는 않는다 |
+| POST | `/api/admin/tasks/{taskId}/resume` | (33단계) 일시정지 해제 `PAUSED → RUNNING`. 이미 RUNNING이면 200 그대로 |
+| PATCH | `/api/admin/tasks/{taskId}/priority` | (33단계) 우선순위 변경 `{priority: 0~9}` — `QUEUED`에서만, 배정 뒤에는 409 `TASK_CHANGE_PRIORITY_NOT_ALLOWED` |
+| POST | `/api/admin/robots/{robotId}/emergency-stop` | (33단계) 로봇 비상정지 — 아래 참고 |
+| POST | `/api/admin/robots/{robotId}/simulator/emergency-stop-release` | (33단계, 시뮬레이터 전용) 현장 비상정지 해제를 흉내 낸다, 204 |
+| POST | `/api/admin/sites/{siteId}/emergency-stop` | (33단계) 물류센터의 운영 중(`IN_SERVICE`) 로봇 전체 비상정지 — 로봇별 결과 배열 |
 | POST | `/api/admin/sites/{siteId}/dispatch` | 디스패치 사이클 실행 (7단계): `QUEUED` 작업 자동 배정 + 저배터리 로봇 자동 충전 작업 생성, 결과로 배정/생성된 taskId 목록 반환. (29단계) 같은 사이클이 `AutoDispatchScheduler`로 운영 중(`ACTIVE`)인 모든 물류센터에서 주기적으로(기본 5초) 자동 실행된다. 이 API는 즉시 한 번 더 돌리고 결과를 보고 싶을 때 쓴다 |
 | GET | `/api/admin/sites/{siteId}/overview` | (30단계) 관제 대시보드 현황 — 아래 참고 |
 | GET | `/api/admin/alarms` | 알람 목록 (필터: status, severity, sourceType). **31단계: 페이지 응답**(아래 참고) |
@@ -159,6 +165,15 @@
 **27단계**: 알람 종류에 `TASK_RECOVERY_REQUIRED`를 추가했다. 작업이 `RECOVERY_REQUIRED`가 되는 모든 경로(명령 실패·불명, 적재 중 취소, 작업 불가 보고)에서 발생하고, `recover` 시 자동 해소된다. 발생·해소 규칙 전체 표는 `STATE_MACHINES.md` §7에 있다.
 
 **19단계**: 응답에 `allowedActions`를 추가했다(Task/Robot 응답과 같은 패턴) — `OPEN`→`["ACKNOWLEDGE","RESOLVE"]`, `ACKNOWLEDGED`→`["RESOLVE"]`, `RESOLVED`→`[]`. 관리자 화면(`/alarms`)이 이 배열만 보고 버튼을 그린다.
+
+**33단계 — 우선순위·일시정지·비상정지**:
+- **우선순위**: 작업 생성(`POST /api/worker/tasks`, `POST /api/external/tasks`)에 선택 필드 `priority`(0~9, 기본 0)를 받는다. 자동·수동 디스패치는 우선순위 내림차순, 같으면 먼저 들어온 순서로 배정한다(7단계부터 쿼리는 이미 그 순서였지만 값을 바꿀 방법이 없었다). 화면은 보통(0)·높음(5)·긴급(9)을 고른다.
+- **일시정지**: 작업 흐름만 멈춘다. `PAUSED` 작업은 작업자 단계 버튼(`DISPATCH`/`CONFIRM_UNLOAD`)이 사라지고, API로 호출해도 409다. 로봇 물리 정지와는 별개다(STATE_MACHINES.md §1).
+- **비상정지**: `EMERGENCY_STOP` 명령을 로봇에 보내고, 그 로봇이 맡은 `ASSIGNED`/`RUNNING`/`PAUSED`/`CANCEL_REQUESTED` 작업을 `RECOVERY_REQUIRED`로 보낸다(`TASK_RECOVERY_REQUIRED` 알람, 원인 "로봇 비상정지"). 명령 전달이 불확실(UNKNOWN)해도 작업은 멈춘 것으로 다룬다.
+  - 응답 `{robotId, robotCode, commandNo, commandStatus}`의 `commandStatus`는 **전달 여부일 뿐**이다. 실제로 멈췄는지는 `GET .../state`의 `safetyState`로 확인한다(DESIGN.md §3). 시뮬레이터는 즉시 `EMERGENCY_STOP`을 보고하고 명령을 SUCCEEDED로 끝낸다. MQTT 어댑터는 VDA 5050 `instantActions`의 `stopPause`를 발행하고 ACCEPTED까지만 둔다(축소 구현이 안전 상태를 파싱하지 않음).
+  - 로봇이 `EMERGENCY_STOP`을 보고하면 `ROBOT_EMERGENCY_STOP`(CRITICAL) 알람이 뜨고, 자동 배정 대상에서 빠지며(`safetyState = NORMAL` 조건 추가), 시뮬레이터는 새 이동 명령을 거부한다(FAILED → 작업 복구 필요).
+  - 해제는 현장에서만 가능하다고 가정한다(STATE_MACHINES.md §4.4). 시뮬레이터 전용 해제 API가 로봇의 NORMAL 보고를 흉내 내고, 알람은 자동 해소된다.
+- `allowedActions`에 관리자용 `PAUSE`(RUNNING)·`RESUME`(PAUSED)·`CHANGE_PRIORITY`(QUEUED)를 **기존 값 뒤에** 붙였다.
 
 **31단계 — 목록 페이지네이션 (응답 모양이 바뀐 호환성 깨짐 변경)**: `GET /api/admin/tasks`와 `GET /api/admin/alarms`는 배열 대신 페이지 객체를 반환한다. 예전엔 조건에 맞는 행을 전부 읽어 반환했다(알람은 전체를 읽어 메모리에서 필터링). 같은 PR에서 관리자 화면(작업·알람 목록, 사이드바 알람 수)을 함께 바꿨다.
 
@@ -265,8 +280,12 @@ Idempotency-Key: 8e2f1c...
 | `DISPATCH` | 작업이 `RUNNING`이고 진행 중 단계가 `CONFIRM_LOAD` | 로봇 보내기 |
 | `CONFIRM_UNLOAD` | 작업이 `RUNNING`이고 진행 중 단계가 `CONFIRM_UNLOAD` | 하역 완료 |
 | `REPORT_UNAVAILABLE` | (28단계) 상태가 `QUEUED`/`ASSIGNED`/`RUNNING`/`PAUSED` — `report-unavailable`이 받는 상태와 같음 | 작업 불가 |
+| `PAUSE` / `RESUME` | (33단계) `RUNNING` / `PAUSED` — 관리자 화면 | 일시정지 / 일시정지 해제 |
+| `CHANGE_PRIORITY` | (33단계) `QUEUED` — 관리자 화면 | 우선순위 선택 |
 
 배열 순서는 위 표 순서를 따른다(예: 적재 대기 중이면 `["CANCEL", "DISPATCH", "REPORT_UNAVAILABLE"]`).
+
+33단계: 화면 버튼과 별개로 서버도 `dispatch`/`confirm-unload`를 작업이 `RUNNING`일 때만 받는다(409). 28단계에서 버튼만 숨겨, 일시정지·복구 필요 작업에 API로 `dispatch`를 부르면 로봇에 이동 명령이 나가던 문제를 막았다.
 
 28단계 이전에는 `DISPATCH`/`CONFIRM_UNLOAD`를 단계만 보고 계산했다. 그래서 `RECOVERY_REQUIRED`처럼 진행 중이 아닌 작업에도 버튼이 나갔고, 누르면 409가 났다. 지금은 작업이 `RUNNING`일 때만 준다. 복구 필요 작업은 관리자가 `recover`의 `RESUME`을 한 뒤에 다시 버튼이 나온다.
 

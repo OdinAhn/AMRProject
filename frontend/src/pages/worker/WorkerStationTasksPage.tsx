@@ -45,10 +45,10 @@ export function WorkerStationTasksPage() {
   };
 
   const callRobot = useMutation({
-    mutationFn: (destinationId: string) =>
+    mutationFn: ({ destinationId, priority }: { destinationId: string; priority: number }) =>
       api.post<TaskResponse>(
         "/api/worker/tasks",
-        { originStationId: Number(stationId), destinationStationId: Number(destinationId) },
+        { originStationId: Number(stationId), destinationStationId: Number(destinationId), priority },
         { "Idempotency-Key": crypto.randomUUID() },
       ),
     onSuccess: () => {
@@ -105,7 +105,7 @@ export function WorkerStationTasksPage() {
       <CallRobotForm
         stationId={stationId}
         destinationOptions={siteStationsQuery.data ?? []}
-        onSubmit={(destinationId) => callRobot.mutate(destinationId)}
+        onSubmit={(destinationId, priority) => callRobot.mutate({ destinationId, priority })}
         isPending={callRobot.isPending}
         error={null}
         resetToken={callResetToken}

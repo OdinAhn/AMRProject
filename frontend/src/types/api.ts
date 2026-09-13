@@ -352,6 +352,21 @@ export interface BindStationMapRequest {
 export interface CreateTaskRequest {
   originStationId: number;
   destinationStationId: number;
+  /** 33단계: 0(보통)~9(긴급), 생략하면 0 */
+  priority?: number;
+}
+
+/** 33단계 */
+export interface ChangeTaskPriorityRequest {
+  priority: number;
+}
+
+/** 33단계: 비상정지 요청 결과 — commandStatus는 전달 여부일 뿐, 실제 정지는 로봇 상태의 safetyState로 확인한다 */
+export interface EmergencyStopResponse {
+  robotId: number;
+  robotCode: string;
+  commandNo: string;
+  commandStatus: string;
 }
 
 export interface AssignRobotRequest {
@@ -395,7 +410,13 @@ export interface CreateStationAssignmentRequest {
   stationId: number;
 }
 
-export type AlarmType = "ROBOT_COMM_LOST" | "LOCALIZATION_LOST" | "TASK_FAILED" | "LOAD_EXCEPTION" | "TASK_RECOVERY_REQUIRED";
+export type AlarmType =
+  | "ROBOT_COMM_LOST"
+  | "LOCALIZATION_LOST"
+  | "TASK_FAILED"
+  | "LOAD_EXCEPTION"
+  | "TASK_RECOVERY_REQUIRED"
+  | "ROBOT_EMERGENCY_STOP";
 export type AlarmSeverity = "INFO" | "WARNING" | "CRITICAL";
 export type AlarmStatus = "OPEN" | "ACKNOWLEDGED" | "RESOLVED";
 export type AlarmSourceType = "ROBOT" | "TASK" | "STATION" | "SYSTEM";
@@ -424,6 +445,7 @@ export interface RobotSummary {
   lifecycleStatus: RobotLifecycleStatus;
   connectionState: ConnectionState | null;
   motionState: MotionState | null;
+  safetyState: SafetyState | null;
   batteryPct: number | null;
   currentNodeId: number | null;
   currentTaskId: number | null;

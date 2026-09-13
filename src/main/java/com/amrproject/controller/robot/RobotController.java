@@ -5,9 +5,11 @@ import com.amrproject.dto.request.robot.CreateRobotRequest;
 import com.amrproject.dto.request.robot.InjectFaultRequest;
 import com.amrproject.dto.request.robot.UpdateRobotLifecycleStatusRequest;
 import com.amrproject.dto.request.robot.UpdateRobotRequest;
+import com.amrproject.dto.response.robot.EmergencyStopResponse;
 import com.amrproject.dto.response.robot.RobotConfigurationResponse;
 import com.amrproject.dto.response.robot.RobotResponse;
 import com.amrproject.dto.response.robot.RobotStateResponse;
+import com.amrproject.service.robot.EmergencyStopService;
 import com.amrproject.service.robot.RobotService;
 import com.amrproject.service.robot.RobotStateService;
 import jakarta.validation.Valid;
@@ -30,10 +32,12 @@ public class RobotController {
 
     private final RobotService robotService;
     private final RobotStateService robotStateService;
+    private final EmergencyStopService emergencyStopService;
 
-    public RobotController(RobotService robotService, RobotStateService robotStateService) {
+    public RobotController(RobotService robotService, RobotStateService robotStateService, EmergencyStopService emergencyStopService) {
         this.robotService = robotService;
         this.robotStateService = robotStateService;
+        this.emergencyStopService = emergencyStopService;
     }
 
     @GetMapping
@@ -98,6 +102,19 @@ public class RobotController {
      * 시뮬레이터 전용 운영 도구 — 실제 제품 기능이 아니다 (docs/API.md §7).
      * 해당 로봇에 대한 다음 명령 디스패치 한 번에만 적용된다.
      */
+    /** 33단계: 로봇 비상정지. 응답의 명령 상태는 전달 여부일 뿐 — 실제 정지는 state의 safetyState로 확인한다. */
+    @PostMapping("/{robotId}/emergency-stop")
+    public EmergencyStopResponse emergencyStop(@PathVariable Long robotId) {
+        return EmergencyStopResponse.from(emergencyStopService.stopRobot(robotId));
+    }
+
+    /** 33단계(시뮬레이터 전용): 현장 비상정지 해제를 흉내 낸다. 실제 로봇은 원격 해제가 불가능하다고 가정한다. */
+    @PostMapping("/{robotId}/simulator/emergency-stop-release")
+    public ResponseEntity<Void> releaseSimulatedEmergencyStop(@PathVariable Long robotId) {
+        emergencyStopService.releaseSimulatedEmergencyStop(robotId);
+        return ResponseEntity.noContent().build();
+    }
+
     @PostMapping("/{robotId}/simulator/faults")
     public ResponseEntity<Void> injectFault(@PathVariable Long robotId, @Valid @RequestBody InjectFaultRequest request) {
         robotStateService.injectFault(robotId, request.type());

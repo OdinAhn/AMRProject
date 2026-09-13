@@ -7,6 +7,7 @@ import com.amrproject.domain.entity.robot.Robot;
 import com.amrproject.domain.entity.robot.RobotConfiguration;
 import com.amrproject.domain.entity.robot.RobotCurrentState;
 import com.amrproject.domain.entity.robot.RobotLifecycleStatus;
+import com.amrproject.domain.entity.robot.SafetyState;
 import com.amrproject.domain.entity.site.Station;
 import com.amrproject.domain.entity.site.StationType;
 import com.amrproject.domain.entity.task.Task;
@@ -118,6 +119,7 @@ public class DispatchService {
         }
         RobotCurrentState current = state.get();
         return current.getOperationMode() == OperationMode.AUTO
+                && current.getSafetyState() == SafetyState.NORMAL // 33단계: 비상·보호 정지 중인 로봇은 배정하지 않는다
                 && current.getConnectionState() == ConnectionState.ONLINE
                 && current.getLocalizationState() == LocalizationState.LOCALIZED
                 && current.getBatteryPct() > lowBatteryThreshold(robot);

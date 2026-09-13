@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link, useParams } from "react-router";
+import { EmergencyStopPanel } from "../../components/robots/EmergencyStopPanel";
 import { RobotBasicInfoForm } from "../../components/robots/RobotBasicInfoForm";
 import { RobotConfigForm } from "../../components/robots/RobotConfigForm";
 import { RobotConfigHistoryTable } from "../../components/robots/RobotConfigHistoryTable";
@@ -11,6 +12,7 @@ import { ApiError, api, errorMessage } from "../../lib/apiClient";
 import { useToast } from "../../lib/toastContext";
 import type {
   CreateRobotConfigurationRequest,
+  EmergencyStopResponse,
   RobotConfigurationResponse,
   RobotLifecycleStatus,
   RobotResponse,
@@ -60,6 +62,27 @@ export function RobotDetailPage() {
     onError: (err) => showToast(errorMessage(err, "운영 상태 변경에 실패했습니다."), "error"),
   });
 
+  // 33단계: 비상정지와 시뮬레이터 현장 해제
+  const invalidateState = () => {
+    queryClient.invalidateQueries({ queryKey: ["robots", robotId] });
+  };
+  const emergencyStop = useMutation({
+    mutationFn: () => api.post<EmergencyStopResponse>(`/api/admin/robots/${robotId}/emergency-stop`),
+    onSuccess: () => {
+      invalidateState();
+      showToast("비상정지를 요청했습니다.");
+    },
+    onError: (err) => showToast(errorMessage(err, "비상정지 요청에 실패했습니다."), "error"),
+  });
+  const releaseEmergencyStop = useMutation({
+    mutationFn: () => api.post(`/api/admin/robots/${robotId}/simulator/emergency-stop-release`),
+    onSuccess: () => {
+      invalidateState();
+      showToast("비상정지를 해제했습니다(시뮬레이터).");
+    },
+    onError: (err) => showToast(errorMessage(err, "해제에 실패했습니다."), "error"),
+  });
+
   const createConfig = useMutation({
     mutationFn: (body: CreateRobotConfigurationRequest) =>
       api.post<RobotConfigurationResponse>(`/api/admin/robots/${robotId}/configurations`, body),
@@ -95,6 +118,14 @@ export function RobotDetailPage() {
       )}
 
       {robot && <RobotLifecyclePanel robot={robot} onChangeStatus={(status) => updateLifecycle.mutate(status)} />}
+
+      <EmergencyStopPanel
+        state={stateQuery.data}
+        onStop={() => emergencyStop.mutate()}
+        isStopping={emergencyStop.isPending}
+        onSimulatedRelease={() => releaseEmergencyStop.mutate()}
+        isReleasing={releaseEmergencyStop.isPending}
+      />
 
       <RobotStatePanel state={stateQuery.data} />
 

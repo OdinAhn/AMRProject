@@ -50,8 +50,11 @@ stateDiagram-v2
 | PAUSED | CANCEL_REQUESTED | 취소 요청 | |
 | CANCEL_REQUESTED | CANCELED | 적재 전이거나 하역까지 끝난 상태 | 8단계: 동기 시뮬레이터라 "취소 명령을 보내고 응답을 기다리는" 절차가 없어 즉시 확정한다 |
 | CANCEL_REQUESTED | RECOVERY_REQUIRED | 적재 중(물품이 로봇에 있음) | 8단계: 물품을 실은 채 임의로 취소를 확정하지 않고 운영자가 `recover`(RESUME/FAIL)로 결정하게 한다 — 취소 명령 응답 없음/실패도 같은 경로 |
+| PAUSED | RECOVERY_REQUIRED | (33단계) 일시정지 중 로봇 비상정지 | 비상정지는 작업 상태와 무관하게 로봇을 멈추므로, 물건을 실은 채 멈췄을 수 있어 운영자 판단으로 넘긴다 |
 | RECOVERY_REQUIRED | RUNNING | 상태 대조 결과 정상, 남은 단계부터 재개 | |
 | RECOVERY_REQUIRED | FAILED | 자동 복구 불가, 운영자가 최종 실패 처리 | 감사 로그 필수 |
+
+**33단계 구현**: `RUNNING ↔ PAUSED`는 관리자 `pause`/`resume` API로 일어난다(업무 흐름 정지 — 로봇 안전 정지와 별개). 로봇 비상정지는 그 로봇이 맡은 `ASSIGNED`/`RUNNING`/`PAUSED`/`CANCEL_REQUESTED` 작업을 `RECOVERY_REQUIRED`로 보낸다. 작업자 단계 확인(`dispatch`/`confirm-unload`)은 작업이 `RUNNING`일 때만 받는다.
 
 **종료 상태**: `SUCCEEDED`, `CANCELED`, `FAILED` — 이후 전이 없음.
 
@@ -182,6 +185,7 @@ stateDiagram-v2
     EMERGENCY_STOP --> NORMAL : 현장 수동 해제 (원격 해제 불가 가정)
 ```
 
+- **33단계 구현**: `POST /api/admin/robots/{robotId}/emergency-stop`이 `EMERGENCY_STOP` 명령을 보낸다. 시뮬레이터는 즉시 `NORMAL → EMERGENCY_STOP`을 보고하고(동작 `IDLE`), 해제 전까지 새 이동 명령을 거부한다. `EMERGENCY_STOP → NORMAL`은 원격 API가 없고, 시뮬레이터 전용 "현장 해제" API로만 흉내 낸다. `EMERGENCY_STOP` 진입 시 `ROBOT_EMERGENCY_STOP`(CRITICAL) 알람, 해제 시 자동 해소. `PROTECTIVE_STOP`은 여전히 발생 경로가 없다. 자동 배정은 `safety_state = NORMAL`인 로봇만 대상으로 한다.
 - **화면의 "정지 요청" 성공과 이 `safety_state`는 별개다.** 서버는 정지 명령을 SENT/ACCEPTED까지만 확인할 수 있고, 실제 `EMERGENCY_STOP`/`PROTECTIVE_STOP` 여부는 로봇이 보고하는 이 값으로만 판단한다 (DESIGN.md §3).
 
 ### 4.5 적재 (load_state)
@@ -261,6 +265,7 @@ stateDiagram-v2
 | `LOAD_EXCEPTION` | 적재 센서 `UNKNOWN` 전이 | 복구 시 자동 | WARNING |
 | `TASK_RECOVERY_REQUIRED` | 작업 `RECOVERY_REQUIRED` 전이 (27단계) | `recover` RESUME/FAIL 시 자동 | WARNING |
 | `TASK_FAILED` | `recover` FAIL로 작업 최종 실패 | 관리자가 직접 확인·해제 | CRITICAL |
+| `ROBOT_EMERGENCY_STOP` | 로봇 안전 상태 `EMERGENCY_STOP` 보고 (33단계) | `NORMAL` 보고 시 자동 | CRITICAL |
 
 ```mermaid
 stateDiagram-v2

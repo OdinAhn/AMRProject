@@ -2,8 +2,10 @@ package com.amrproject.controller.site;
 
 import com.amrproject.dto.request.site.CreateSiteRequest;
 import com.amrproject.dto.request.site.UpdateSiteRequest;
+import com.amrproject.dto.response.robot.EmergencyStopResponse;
 import com.amrproject.dto.response.site.SiteOverviewResponse;
 import com.amrproject.dto.response.site.SiteResponse;
+import com.amrproject.service.robot.EmergencyStopService;
 import com.amrproject.service.site.SiteOverviewService;
 import com.amrproject.service.site.SiteService;
 import jakarta.validation.Valid;
@@ -25,10 +27,18 @@ public class SiteController {
 
     private final SiteService siteService;
     private final SiteOverviewService siteOverviewService;
+    private final EmergencyStopService emergencyStopService;
 
-    public SiteController(SiteService siteService, SiteOverviewService siteOverviewService) {
+    public SiteController(SiteService siteService, SiteOverviewService siteOverviewService, EmergencyStopService emergencyStopService) {
         this.siteService = siteService;
         this.siteOverviewService = siteOverviewService;
+        this.emergencyStopService = emergencyStopService;
+    }
+
+    /** 33단계: 물류센터 전체 비상정지 — 운영 중인 로봇을 모두 멈추고 각 로봇의 작업을 복구 필요로 보낸다. */
+    @PostMapping("/{siteId}/emergency-stop")
+    public List<EmergencyStopResponse> emergencyStop(@PathVariable Long siteId) {
+        return emergencyStopService.stopSite(siteId).stream().map(EmergencyStopResponse::from).toList();
     }
 
     /** 30단계: 관제 대시보드 — 로봇 상태·위치, 진행 중 작업 수, 열린 알람 수를 한 번에 조회한다. */
