@@ -68,8 +68,18 @@ class SseEventRelayTest {
         assertThat(relay.onLive(event(2))).isFalse();
     }
 
-    private void record(long eventId, String json) {
+    private void record(Long eventId, String json) {
         sent.add(eventId);
+    }
+
+    @Test
+    void id가_없는_표시전용_이벤트는_백로그와_무관하게_그대로_보낸다() {
+        SseEventRelay relay = new SseEventRelay(this::record, true);
+
+        relay.onLive(new SseEventRelay.Event(null, "{}"));
+        relay.replay(List.of(event(10)));
+
+        assertThat(sent).containsExactly(10L, null);
     }
 
     private static SseEventRelay.Event event(long id) {

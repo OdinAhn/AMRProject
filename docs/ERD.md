@@ -439,10 +439,10 @@ erDiagram
 | load_state | VARCHAR | `EMPTY`, `LOADED`, `UNKNOWN` |
 | localization_state | VARCHAR | `LOCALIZED`, `LOST`, `UNKNOWN` |
 | battery_pct | INT | |
-| current_node_id | BIGINT FK → nodes | nullable |
-| pose_x / pose_y / pose_heading | DECIMAL | |
+| current_node_id | BIGINT FK → nodes | nullable. **30단계 구현(V11)**: `robot_current_states`와 이 이력 테이블 둘 다에 추가했다. 시뮬레이터는 이동 명령이 성공하면 목적지 작업장이 연결된 활성 지도 노드로 채우고, 지도·바인딩이 없으면 null로 둔다. 엔티티에서는 `robot_id`와 같은 이유로 연관관계 없이 스칼라(`Long`)로 매핑한다 |
+| pose_x / pose_y / pose_heading | DECIMAL | **미구현** — 노드 사이 좌표는 DB에 남기지 않고 화면 표시용 `robot.position` 이벤트로만 흘려보낸다(API.md §5) |
 | reported_at | DATETIME | 로봇이 보고한 시각 |
-| received_at | DATETIME | 서버 수신 시각 |
+| received_at | DATETIME | 서버 수신 시각. 29단계부터 하트비트 기반 연결 감시가 이 값을 본다(STATE_MACHINES.md §4.1) |
 
 ### 4.5 작업 (tasks, task_steps, task_assignments, task_events)
 

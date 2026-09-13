@@ -38,7 +38,9 @@ public class RobotController {
 
     @GetMapping
     public List<RobotResponse> getAll(@RequestParam(required = false) Long siteId) {
-        return robotService.getAll(siteId).stream().map(RobotResponse::from).toList();
+        return robotService.getAll(siteId).stream()
+                .map(robot -> RobotResponse.from(robot, robotStateService.findCurrentState(robot.getId()).orElse(null)))
+                .toList();
     }
 
     @PostMapping
@@ -49,7 +51,7 @@ public class RobotController {
 
     @GetMapping("/{robotId}")
     public RobotResponse getById(@PathVariable Long robotId) {
-        return RobotResponse.from(robotService.getById(robotId));
+        return RobotResponse.from(robotService.getById(robotId), robotStateService.findCurrentState(robotId).orElse(null));
     }
 
     @PatchMapping("/{robotId}")

@@ -26,10 +26,11 @@ import java.util.Set;
 class SseEventRelay {
 
     interface Sender {
-        void send(long eventId, String json) throws IOException;
+        void send(Long eventId, String json) throws IOException;
     }
 
-    record Event(long eventId, String json) {
+    /** eventId가 null인 이벤트(30단계 robot.position 같은 표시 전용 이벤트)는 SSE id 없이 보내고 중복 제거 대상도 아니다. */
+    record Event(Long eventId, String json) {
     }
 
     private final Sender sender;

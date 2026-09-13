@@ -12,7 +12,7 @@ import java.time.Instant;
 /**
  * 로봇의 "현재" 상태만 담는 1:1 테이블 (docs/ERD.md §5 "robot_current_states").
  * 각 축은 독립적으로 전이된다 — docs/STATE_MACHINES.md §4.
- * current_node_id/pose는 지도 스키마(6단계) 전까지 보류.
+ * current_node_id는 30단계에서 추가했다(시뮬레이터가 이동 명령 성공 시 목적지 노드로 갱신). pose(x/y/heading)는 여전히 보류.
  *
  * <p>robots와 PK를 공유하지만 연관관계(@OneToOne/@MapsId)로 매핑하지 않고
  * robot_id를 단순 스칼라 값으로만 갖는다 — @MapsId는 Spring Data의
@@ -62,6 +62,10 @@ public class RobotCurrentState {
     @Column(name = "received_at", nullable = false)
     private Instant receivedAt;
 
+    /** 30단계: 로봇이 마지막으로 도착한 지도 노드(nodes.id). robotId와 같은 이유로 연관관계 없이 스칼라로 둔다. 모르면 null. */
+    @Column(name = "current_node_id")
+    private Long currentNodeId;
+
     protected RobotCurrentState() {
     }
 
@@ -104,6 +108,15 @@ public class RobotCurrentState {
         this.stateVersion = this.stateVersion + 1;
         this.reportedAt = reportedAt;
         this.receivedAt = Instant.now();
+    }
+
+    /** 30단계: 이동 명령 성공으로 로봇이 지도 노드에 도착했다. 노드를 모르면(지도·바인딩 없음) null로 둔다. */
+    public void arriveAt(Long nodeId) {
+        this.currentNodeId = nodeId;
+    }
+
+    public Long getCurrentNodeId() {
+        return currentNodeId;
     }
 
     public Long getRobotId() {

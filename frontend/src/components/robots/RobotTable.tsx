@@ -1,4 +1,5 @@
 import { labels } from "../../lib/labels";
+import { BatteryBar } from "../dashboard/RobotStatusTable";
 import { Link } from "react-router";
 import { Badge, Card, Table, Td, Th } from "../ui";
 import type { RobotResponse, SiteResponse } from "../../types/api";
@@ -20,6 +21,8 @@ export function RobotTable({ robots, sites }: RobotTableProps) {
             <Th>이름</Th>
             <Th>물류센터</Th>
             <Th>운영 상태</Th>
+            <Th>연결</Th>
+            <Th>배터리</Th>
             <Th>설정(요청/적용)</Th>
             <Th />
           </tr>
@@ -32,6 +35,18 @@ export function RobotTable({ robots, sites }: RobotTableProps) {
               <Td>{siteCodeOf(robot.siteId)}</Td>
               <Td>
                 <Badge tone={robot.lifecycleStatus === "IN_SERVICE" ? "green" : "gray"}>{labels.robotLifecycle(robot.lifecycleStatus)}</Badge>
+              </Td>
+              <Td>
+                {robot.connectionState ? (
+                  <Badge tone={robot.connectionState === "ONLINE" ? "green" : robot.connectionState === "STALE" ? "yellow" : "red"}>
+                    {labels.connectionState(robot.connectionState)}
+                  </Badge>
+                ) : (
+                  <span className="text-gray-400">-</span>
+                )}
+              </Td>
+              <Td>
+                <BatteryBar pct={robot.batteryPct} />
               </Td>
               <Td>
                 v{robot.desiredConfigVersion ?? "-"} / v{robot.appliedConfigVersion ?? "-"}

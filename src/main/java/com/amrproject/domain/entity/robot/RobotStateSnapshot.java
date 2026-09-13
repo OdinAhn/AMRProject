@@ -62,12 +62,16 @@ public class RobotStateSnapshot {
     @Column(name = "received_at", nullable = false)
     private Instant receivedAt;
 
+    @Column(name = "current_node_id")
+    private Long currentNodeId;
+
     protected RobotStateSnapshot() {
     }
 
     public RobotStateSnapshot(Robot robot, RobotCurrentState state) {
         this.robot = robot;
         this.connectionState = state.getConnectionState();
+        this.currentNodeId = state.getCurrentNodeId();
         this.operationMode = state.getOperationMode();
         this.motionState = state.getMotionState();
         this.safetyState = state.getSafetyState();
@@ -120,5 +124,9 @@ public class RobotStateSnapshot {
 
     public Instant getReceivedAt() {
         return receivedAt;
+    }
+
+    public Long getCurrentNodeId() {
+        return currentNodeId;
     }
 }

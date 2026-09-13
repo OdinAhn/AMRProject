@@ -76,6 +76,8 @@ export interface RobotResponse {
   appliedConfigVersion: number | null;
   createdAt: string;
   updatedAt: string;
+  connectionState: ConnectionState | null;
+  batteryPct: number | null;
 }
 
 export interface RobotStateResponse {
@@ -90,6 +92,7 @@ export interface RobotStateResponse {
   stateVersion: number | null;
   reportedAt: string;
   receivedAt: string;
+  currentNodeId: number | null;
 }
 
 export interface RobotConfigurationResponse {
@@ -392,8 +395,38 @@ export interface AlarmResponse {
   updatedAt: string;
 }
 
+export interface RobotSummary {
+  robotId: number;
+  code: string;
+  name: string;
+  lifecycleStatus: RobotLifecycleStatus;
+  connectionState: ConnectionState | null;
+  motionState: MotionState | null;
+  batteryPct: number | null;
+  currentNodeId: number | null;
+  currentTaskId: number | null;
+  currentTaskNo: string | null;
+}
+
+export interface SiteOverviewResponse {
+  siteId: number;
+  activeMapVersionId: number | null;
+  robots: RobotSummary[];
+  openTaskCounts: Partial<Record<TaskStatus, number>>;
+  openAlarmCount: number;
+}
+
+/** 30단계 robot.position 이벤트의 payload(JSON 문자열)를 파싱한 값 */
+export interface RobotPositionPayload {
+  mapVersionId: number;
+  x: number;
+  y: number;
+  arrived: boolean;
+}
+
 export interface EventEnvelope {
-  eventId: number;
+  /** outbox 이벤트 id — 표시 전용 이벤트(robot.position)는 null */
+  eventId: number | null;
   eventType: string;
   aggregateType: string;
   aggregateId: number;

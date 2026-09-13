@@ -3,6 +3,7 @@ import { AdminLayout } from "./layouts/AdminLayout";
 import { WorkerLayout } from "./layouts/WorkerLayout";
 import { ProtectedRoute } from "./lib/auth";
 import { AlarmsPage } from "./pages/alarms/AlarmsPage";
+import { DashboardPage } from "./pages/dashboard/DashboardPage";
 import { DispatchPage } from "./pages/dispatch/DispatchPage";
 import { EventsPage } from "./pages/events/EventsPage";
 import { LoginPage } from "./pages/LoginPage";
@@ -33,7 +34,8 @@ function App() {
           </ProtectedRoute>
         }
       >
-        <Route index element={<Navigate to="/sites" replace />} />
+        <Route index element={<Navigate to="/dashboard" replace />} />
+        <Route path="dashboard" element={<DashboardPage />} />
         <Route path="sites" element={<SitesPage />} />
         <Route path="sites/:siteId" element={<SiteDetailPage />} />
         <Route path="robots" element={<RobotsPage />} />

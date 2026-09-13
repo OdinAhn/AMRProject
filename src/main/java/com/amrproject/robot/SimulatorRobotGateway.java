@@ -19,7 +19,11 @@ import com.amrproject.domain.entity.robot.SafetyState;
 import com.amrproject.repository.robot.CommandEventRepository;
 import com.amrproject.repository.robot.RobotCurrentStateRepository;
 import com.amrproject.repository.robot.RobotStateSnapshotRepository;
+import com.amrproject.domain.entity.site.Station;
+import com.amrproject.domain.entity.task.TaskStep;
 import com.amrproject.service.alarm.AlarmService;
+import com.amrproject.service.map.MapRouteService;
+import com.amrproject.service.robot.RobotStateEventRecorder;
 import org.springframework.stereotype.Component;
 
 import java.time.Instant;
@@ -34,6 +38,10 @@ import java.util.concurrent.ConcurrentHashMap;
  * <p>장애 주입({@link #injectFault})으로 예약된 장애는 해당 로봇에 대한
  * 다음 dispatch 한 번에만 적용되고 소비된다. 메모리에만 있는 값이라
  * 애플리케이션 재시작 시 초기화된다 — 테스트/운영 보조용이며 영속 데이터가 아니다.
+ *
+ * <p>30단계: 이동 명령이 성공하면 목적지 작업장이 연결된 활성 지도 노드로 {@code current_node_id}를 갱신하고,
+ * 이전 노드에서 통로 그래프 최단 경로를 따라 움직이는 모습을 {@link SimulatedMotionPublisher}로 화면에 흘려보낸다(표시 전용 —
+ * 명령은 지금처럼 즉시 완료된다). 상태 축이 바뀔 때마다 {@code robot.state_changed} 이벤트도 남긴다.
  */
 @Component
 public class SimulatorRobotGateway implements RobotGateway {
@@ -42,6 +50,9 @@ public class SimulatorRobotGateway implements RobotGateway {
     private final RobotCurrentStateRepository robotCurrentStateRepository;
     private final RobotStateSnapshotRepository robotStateSnapshotRepository;
     private final AlarmService alarmService;
+    private final MapRouteService mapRouteService;
+    private final SimulatedMotionPublisher simulatedMotionPublisher;
+    private final RobotStateEventRecorder robotStateEventRecorder;
     private final Map<Long, SimulatedFault> pendingFaults = new ConcurrentHashMap<>();
     /** 29단계: COMMUNICATION_LOSS 장애로 끊긴 로봇 — 다음 정상 명령 전까지 시뮬레이터 하트비트가 되살리지 않는다(메모리 전용). */
     private final Set<Long> communicationLostRobotIds = ConcurrentHashMap.newKeySet();
@@ -50,12 +61,18 @@ public class SimulatorRobotGateway implements RobotGateway {
             CommandEventRepository commandEventRepository,
             RobotCurrentStateRepository robotCurrentStateRepository,
             RobotStateSnapshotRepository robotStateSnapshotRepository,
-            AlarmService alarmService
+            AlarmService alarmService,
+            MapRouteService mapRouteService,
+            SimulatedMotionPublisher simulatedMotionPublisher,
+            RobotStateEventRecorder robotStateEventRecorder
     ) {
         this.commandEventRepository = commandEventRepository;
         this.robotCurrentStateRepository = robotCurrentStateRepository;
         this.robotStateSnapshotRepository = robotStateSnapshotRepository;
         this.alarmService = alarmService;
+        this.mapRouteService = mapRouteService;
+        this.simulatedMotionPublisher = simulatedMotionPublisher;
+        this.robotStateEventRecorder = robotStateEventRecorder;
     }
 
     @Override
@@ -97,7 +114,41 @@ public class SimulatorRobotGateway implements RobotGateway {
         command.succeed();
         recordCommandEvent(command, "SUCCEEDED");
         int batteryPct = isCharging ? targetBatteryPct(robot) : state.getBatteryPct();
+        if (command.getCommandType() == RobotCommandType.MOVE_TO) {
+            arriveAtTargetNode(robot, state, command);
+        }
         report(robot, state, ConnectionState.ONLINE, OperationMode.AUTO, MotionState.IDLE, state.getSafetyState(), localization, loadState, batteryPct);
+    }
+
+    /**
+     * 30단계: 목적지 작업장이 활성 지도의 노드에 연결돼 있으면 그 노드로 위치를 옮기고, 이전 노드가 있으면 경로 애니메이션을 건다.
+     * 활성 지도나 작업장 바인딩이 없으면 위치를 모르는 것으로 두고(null) 명령 결과에는 영향을 주지 않는다.
+     */
+    private void arriveAtTargetNode(Robot robot, RobotCurrentState state, RobotCommand command) {
+        Station target = resolveTargetStation(command.getTaskStep());
+        if (target == null) {
+            return;
+        }
+        mapRouteService.findActiveVersionId(robot.getSite().getId()).ifPresentOrElse(versionId -> {
+            Long targetNodeId = mapRouteService.findStationNodeId(target.getId(), versionId).orElse(null);
+            Long previousNodeId = state.getCurrentNodeId();
+            state.arriveAt(targetNodeId);
+            if (previousNodeId != null && targetNodeId != null && !previousNodeId.equals(targetNodeId)) {
+                simulatedMotionPublisher.animateAfterCommit(robot.getId(), versionId,
+                        mapRouteService.shortestPath(versionId, previousNodeId, targetNodeId));
+            }
+        }, () -> state.arriveAt(null));
+    }
+
+    private Station resolveTargetStation(TaskStep step) {
+        if (step == null) {
+            return null;
+        }
+        return switch (step.getStepType()) {
+            case MOVE_TO_ORIGIN -> step.getTask().getOriginStation();
+            case MOVE_TO_DESTINATION, MOVE_TO_CHARGING_STATION -> step.getTask().getDestinationStation();
+            default -> null;
+        };
     }
 
     private int targetBatteryPct(Robot robot) {
@@ -135,9 +186,15 @@ public class SimulatorRobotGateway implements RobotGateway {
         ConnectionState previousConnection = state.getConnectionState();
         LocalizationState previousLocalization = state.getLocalizationState();
         LoadState previousLoadState = state.getLoadState();
+        MotionState previousMotion = state.getMotionState();
+        Integer previousBattery = state.getBatteryPct();
 
         state.report(connection, mode, motion, safety, loadState, localization, batteryPct, Instant.now());
         robotStateSnapshotRepository.save(new RobotStateSnapshot(robot, state));
+        if (previousConnection != connection || previousMotion != motion || previousLocalization != localization
+                || previousLoadState != loadState || !previousBattery.equals(batteryPct)) {
+            robotStateEventRecorder.recordChanged(robot.getId());
+        }
 
         reconcileAlarms(robot, previousConnection, connection, previousLocalization, localization, previousLoadState, loadState);
     }

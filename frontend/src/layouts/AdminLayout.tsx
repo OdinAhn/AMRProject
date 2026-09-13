@@ -8,6 +8,7 @@ import { EventStreamProvider, useEventStream } from "../lib/eventStream";
 import type { AlarmResponse } from "../types/api";
 
 const NAV_ITEMS = [
+  { to: "/dashboard", label: "대시보드" },
   { to: "/sites", label: "물류센터/작업장" },
   { to: "/robots", label: "로봇" },
   { to: "/maps", label: "지도" },
