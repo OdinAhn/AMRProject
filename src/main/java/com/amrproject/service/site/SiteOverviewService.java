@@ -96,6 +96,7 @@ public class SiteOverviewService {
                 robot.getLifecycleStatus(),
                 state != null ? state.getConnectionState() : null,
                 state != null ? state.getMotionState() : null,
+                state != null ? state.getSafetyState() : null,
                 state != null ? state.getBatteryPct() : null,
                 state != null ? state.getCurrentNodeId() : null,
                 currentTask != null ? currentTask.getId() : null,

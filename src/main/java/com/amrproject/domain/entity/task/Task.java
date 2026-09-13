@@ -153,14 +153,22 @@ public class Task extends BaseAuditableEntity {
         this.completedAt = Instant.now();
     }
 
+    /** 33단계: 일시정지 중인 작업도 로봇 비상정지로 복구 필요가 될 수 있다(PAUSED 허용). */
     public void markRecoveryRequired() {
-        if (status != TaskStatus.ASSIGNED && status != TaskStatus.RUNNING && status != TaskStatus.CANCEL_REQUESTED) {
+        if (status != TaskStatus.ASSIGNED && status != TaskStatus.RUNNING && status != TaskStatus.CANCEL_REQUESTED
+                && status != TaskStatus.PAUSED) {
             throw new InvalidStateTransitionException(
                     "TASK_RECOVERY_NOT_ALLOWED",
                     "현재 상태(" + status + ")에서는 복구 대기 상태로 전이할 수 없습니다."
             );
         }
         this.status = TaskStatus.RECOVERY_REQUIRED;
+    }
+
+    /** 33단계: 우선순위(0~9, 클수록 먼저 배정)는 아직 배정되지 않은(QUEUED) 작업만 바꿀 수 있다 — 이미 로봇이 움직인 작업은 의미가 없다. */
+    public void changePriority(int priority) {
+        requireStatus(TaskStatus.QUEUED, "CHANGE_PRIORITY");
+        this.priority = priority;
     }
 
     public void resumeFromRecovery() {

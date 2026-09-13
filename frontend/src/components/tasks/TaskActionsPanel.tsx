@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { labels, taskStatusTone } from "../../lib/labels";
+import { labels, PRIORITY_OPTIONS, priorityLabel, taskStatusTone } from "../../lib/labels";
 import { Badge, Button, Card, ConfirmButton, ErrorBanner, Select } from "../ui";
 import type { RobotResponse, TaskResponse } from "../../types/api";
 
@@ -12,6 +12,10 @@ interface TaskActionsPanelProps {
   isCanceling: boolean;
   onRecover: (resolution: "RESUME" | "FAIL") => void;
   isRecovering: boolean;
+  onPause: () => void;
+  onResume: () => void;
+  onChangePriority: (priority: number) => void;
+  isChangingFlow: boolean;
   error: string | null;
 }
 
@@ -24,6 +28,10 @@ export function TaskActionsPanel({
   isCanceling,
   onRecover,
   isRecovering,
+  onPause,
+  onResume,
+  onChangePriority,
+  isChangingFlow,
   error,
 }: TaskActionsPanelProps) {
   const [robotId, setRobotId] = useState("");
@@ -43,6 +51,7 @@ export function TaskActionsPanel({
           {task.originStationName} → {task.destinationStationName}
         </span>
         {task.assignedRobotCode && <span className="text-sm text-gray-500">로봇 {task.assignedRobotCode}</span>}
+        <span className="text-sm text-gray-500">우선순위 {priorityLabel(task.priority)}</span>
       </div>
 
       <div className="flex flex-wrap items-end gap-3">
@@ -65,6 +74,41 @@ export function TaskActionsPanel({
               배정
             </Button>
           </>
+        )}
+        {/* 33단계: 우선순위는 배정 전(QUEUED)에만, 일시정지·재개는 서버의 allowedActions로 판단한다 */}
+        {task.allowedActions.includes("CHANGE_PRIORITY") && (
+          <div className="w-28">
+            <Select
+              aria-label="우선순위 변경"
+              value={PRIORITY_OPTIONS.some((o) => o.value === task.priority) ? task.priority : ""}
+              disabled={isChangingFlow}
+              onChange={(e) => e.target.value !== "" && onChangePriority(Number(e.target.value))}
+            >
+              {!PRIORITY_OPTIONS.some((o) => o.value === task.priority) && <option value="">{priorityLabel(task.priority)}</option>}
+              {PRIORITY_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </Select>
+          </div>
+        )}
+        {task.allowedActions.includes("PAUSE") && (
+          <ConfirmButton
+            variant="secondary"
+            title="작업을 일시정지할까요?"
+            message="작업 흐름만 멈춥니다(작업자 버튼·다음 단계 진행이 멈춤). 로봇을 물리적으로 세우려면 로봇 비상정지를 쓰세요."
+            confirmLabel="일시정지"
+            onConfirm={onPause}
+            disabled={isChangingFlow}
+          >
+            일시정지
+          </ConfirmButton>
+        )}
+        {task.allowedActions.includes("RESUME") && (
+          <Button onClick={onResume} disabled={isChangingFlow}>
+            일시정지 해제
+          </Button>
         )}
         {canCancel && (
           <ConfirmButton

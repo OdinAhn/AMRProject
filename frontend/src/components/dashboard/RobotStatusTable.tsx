@@ -24,6 +24,11 @@ export function RobotStatusTable({ robots }: { robots: RobotSummary[] }) {
                 <Link to={`/robots/${robot.robotId}`} className="font-medium text-indigo-600 hover:underline">
                   {robot.code}
                 </Link>
+                {robot.safetyState && robot.safetyState !== "NORMAL" && (
+                  <span className="ml-2">
+                    <Badge tone="red">{labels.safetyState(robot.safetyState)}</Badge>
+                  </span>
+                )}
                 {robot.lifecycleStatus !== "IN_SERVICE" && (
                   <span className="ml-2 text-xs text-gray-400">{labels.robotLifecycle(robot.lifecycleStatus)}</span>
                 )}

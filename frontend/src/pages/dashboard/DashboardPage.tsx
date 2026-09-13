@@ -1,13 +1,14 @@
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link } from "react-router";
 import { KpiTiles } from "../../components/dashboard/KpiTiles";
 import { LiveMapView } from "../../components/dashboard/LiveMapView";
 import { RobotStatusTable } from "../../components/dashboard/RobotStatusTable";
-import { Card, ErrorBanner, PageHeader, Select, Spinner } from "../../components/ui";
+import { Card, ConfirmButton, ErrorBanner, PageHeader, Select, Spinner } from "../../components/ui";
 import { api, errorMessage } from "../../lib/apiClient";
+import { useToast } from "../../lib/toastContext";
 import { useSites } from "../../lib/useSites";
-import type { SiteOverviewResponse } from "../../types/api";
+import type { EmergencyStopResponse, SiteOverviewResponse } from "../../types/api";
 
 const SITE_STORAGE_KEY = "amr.dashboard.siteId";
 
@@ -37,6 +38,18 @@ export function DashboardPage() {
     refetchInterval: 30000,
   });
 
+  // 33단계: 물류센터 전체 비상정지
+  const queryClient = useQueryClient();
+  const { showToast } = useToast();
+  const stopAll = useMutation({
+    mutationFn: () => api.post<EmergencyStopResponse[]>(`/api/admin/sites/${siteId}/emergency-stop`),
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ["overview", siteId] });
+      showToast(`운영 중인 로봇 ${result.length}대에 비상정지를 요청했습니다.`);
+    },
+    onError: (err) => showToast(errorMessage(err, "전체 비상정지 요청에 실패했습니다."), "error"),
+  });
+
   const changeSite = (value: string) => {
     setSelectedSiteId(value);
     try {
@@ -54,14 +67,25 @@ export function DashboardPage() {
         title="관제 대시보드"
         actions={
           sites.length > 0 && (
-            <div className="w-56">
-              <Select value={siteId} onChange={(e) => changeSite(e.target.value)} aria-label="물류센터 선택">
-                {sites.map((site) => (
-                  <option key={site.id} value={site.id}>
-                    {site.name} ({site.code})
-                  </option>
-                ))}
-              </Select>
+            <div className="flex items-center gap-3">
+              <ConfirmButton
+                title="이 물류센터의 모든 로봇을 비상정지할까요?"
+                message="운영 중인 로봇이 모두 즉시 멈추고, 진행 중인 작업은 복구 필요 상태가 됩니다. 해제는 로봇마다 현장에서 해야 합니다."
+                confirmLabel="전체 비상정지"
+                onConfirm={() => stopAll.mutate()}
+                disabled={!siteId || stopAll.isPending}
+              >
+                전체 비상정지
+              </ConfirmButton>
+              <div className="w-56">
+                <Select value={siteId} onChange={(e) => changeSite(e.target.value)} aria-label="물류센터 선택">
+                  {sites.map((site) => (
+                    <option key={site.id} value={site.id}>
+                      {site.name} ({site.code})
+                    </option>
+                  ))}
+                </Select>
+              </div>
             </div>
           )
         }

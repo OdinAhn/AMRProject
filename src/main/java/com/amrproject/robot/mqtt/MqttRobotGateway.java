@@ -9,6 +9,7 @@ import com.amrproject.domain.entity.robot.MotionState;
 import com.amrproject.domain.entity.robot.OperationMode;
 import com.amrproject.domain.entity.robot.Robot;
 import com.amrproject.domain.entity.robot.RobotCommand;
+import com.amrproject.domain.entity.robot.RobotCommandType;
 import com.amrproject.domain.entity.robot.RobotConfiguration;
 import com.amrproject.domain.entity.robot.RobotCurrentState;
 import com.amrproject.domain.entity.robot.RobotStateSnapshot;
@@ -113,6 +114,11 @@ public class MqttRobotGateway implements RobotGateway, MqttCallback {
     public void dispatch(RobotCommand command) {
         Robot robot = command.getRobot();
         RobotCurrentState state = currentStateOf(robot);
+
+        if (command.getCommandType() == RobotCommandType.EMERGENCY_STOP) {
+            emergencyStop(robot, command);
+            return;
+        }
         String orderId = command.getCommandNo();
         CompletableFuture<Vda5050State> future = new CompletableFuture<>();
         pendingOrders.put(orderId, future);
@@ -234,6 +240,32 @@ public class MqttRobotGateway implements RobotGateway, MqttCallback {
     @Override
     public void deliveryComplete(IMqttDeliveryToken token) {
         // 발행 확인은 필요 없다 — 완료 여부는 state 메시지로 판단한다.
+    }
+
+    /**
+     * 33단계: VDA 5050 instantActions의 {@code stopPause}를 보낸다. 로봇이 실제로 멈췄는지는 이 축소 구현이 state의 안전 상태를
+     * 파싱하지 않아 확인할 수 없으므로 명령은 ACCEPTED(전달됨)까지만 둔다 — SUCCEEDED로 표시하지 않는다(DESIGN.md §3).
+     */
+    private void emergencyStop(Robot robot, RobotCommand command) {
+        command.send();
+        recordCommandEvent(command, "SENT");
+        try {
+            Map<String, Object> instantActions = Map.of(
+                    "headerId", headerId.incrementAndGet(),
+                    "timestamp", Instant.now().toString(),
+                    "version", "2.0.0",
+                    "manufacturer", manufacturer,
+                    "serialNumber", robot.getCode(),
+                    "actions", List.of(Map.of("actionType", "stopPause", "actionId", command.getCommandNo(), "blockingType", "HARD"))
+            );
+            mqttClient.publish(TOPIC_PREFIX + manufacturer + "/" + robot.getCode() + "/instantActions",
+                    new MqttMessage(jsonMapper.writeValueAsString(instantActions).getBytes(StandardCharsets.UTF_8)));
+            command.accept();
+            recordCommandEvent(command, "ACCEPTED");
+        } catch (MqttException e) {
+            command.markUnknown();
+            recordCommandEvent(command, "TIMEOUT");
+        }
     }
 
     private void publishOrder(Robot robot, String orderId, String nodeId) throws MqttException {

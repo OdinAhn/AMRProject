@@ -68,7 +68,9 @@ class TransportFlowTest extends AbstractIntegrationTest {
                 .andExpect(jsonPath("$.allowedActions[0]").value("CANCEL"))
                 .andExpect(jsonPath("$.allowedActions[1]").value("DISPATCH"))
                 .andExpect(jsonPath("$.allowedActions[2]").value("REPORT_UNAVAILABLE"))
-                .andExpect(jsonPath("$.allowedActions.length()").value(3));
+                // 33단계: 관리자용 PAUSE가 뒤에 붙는다.
+                .andExpect(jsonPath("$.allowedActions[3]").value("PAUSE"))
+                .andExpect(jsonPath("$.allowedActions.length()").value(4));
 
         mockMvc.perform(post("/api/worker/tasks/{taskId}/dispatch", taskId))
                 .andExpect(status().isOk())
@@ -80,7 +82,9 @@ class TransportFlowTest extends AbstractIntegrationTest {
                 .andExpect(jsonPath("$.allowedActions[0]").value("CANCEL"))
                 .andExpect(jsonPath("$.allowedActions[1]").value("CONFIRM_UNLOAD"))
                 .andExpect(jsonPath("$.allowedActions[2]").value("REPORT_UNAVAILABLE"))
-                .andExpect(jsonPath("$.allowedActions.length()").value(3));
+                // 33단계: 관리자용 PAUSE가 뒤에 붙는다.
+                .andExpect(jsonPath("$.allowedActions[3]").value("PAUSE"))
+                .andExpect(jsonPath("$.allowedActions.length()").value(4));
 
         mockMvc.perform(post("/api/worker/tasks/{taskId}/confirm-unload", taskId))
                 .andExpect(status().isOk())

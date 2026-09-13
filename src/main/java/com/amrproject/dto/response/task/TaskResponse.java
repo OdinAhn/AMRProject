@@ -66,6 +66,16 @@ public record TaskResponse(
         if (UNAVAILABLE_REPORTABLE.contains(task.getStatus())) {
             allowedActions.add("REPORT_UNAVAILABLE");
         }
+        // 33단계: 관리자용 동작은 기존 값의 순서를 바꾸지 않도록 뒤에 붙인다.
+        if (task.getStatus() == TaskStatus.RUNNING) {
+            allowedActions.add("PAUSE");
+        }
+        if (task.getStatus() == TaskStatus.PAUSED) {
+            allowedActions.add("RESUME");
+        }
+        if (task.getStatus() == TaskStatus.QUEUED) {
+            allowedActions.add("CHANGE_PRIORITY");
+        }
         TaskAssignment assignment = task.getCurrentAssignment();
         return new TaskResponse(
                 task.getId(),

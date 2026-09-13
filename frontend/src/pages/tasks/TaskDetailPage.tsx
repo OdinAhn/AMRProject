@@ -60,6 +60,20 @@ export function TaskDetailPage() {
     ...mutationHandlers("복구 처리를 반영했습니다."),
   });
 
+  // 33단계
+  const pause = useMutation({
+    mutationFn: () => api.post<TaskResponse>(`/api/admin/tasks/${taskId}/pause`),
+    ...mutationHandlers("작업을 일시정지했습니다."),
+  });
+  const resume = useMutation({
+    mutationFn: () => api.post<TaskResponse>(`/api/admin/tasks/${taskId}/resume`),
+    ...mutationHandlers("일시정지를 해제했습니다."),
+  });
+  const changePriority = useMutation({
+    mutationFn: (priority: number) => api.patch<TaskResponse>(`/api/admin/tasks/${taskId}/priority`, { priority }),
+    ...mutationHandlers("우선순위를 변경했습니다."),
+  });
+
   const task = taskQuery.data;
 
   return (
@@ -83,6 +97,10 @@ export function TaskDetailPage() {
           isCanceling={cancel.isPending}
           onRecover={(resolution) => recover.mutate(resolution)}
           isRecovering={recover.isPending}
+          onPause={() => pause.mutate()}
+          onResume={() => resume.mutate()}
+          onChangePriority={(priority) => changePriority.mutate(priority)}
+          isChangingFlow={pause.isPending || resume.isPending || changePriority.isPending}
           error={error}
         />
       )}

@@ -79,6 +79,19 @@ public class SimulatorRobotGateway implements RobotGateway {
     public void dispatch(RobotCommand command) {
         Robot robot = command.getRobot();
         RobotCurrentState state = currentStateOf(robot);
+
+        if (command.getCommandType() == RobotCommandType.EMERGENCY_STOP) {
+            emergencyStop(robot, state, command);
+            return;
+        }
+        // 33단계: 비상정지 상태의 로봇은 현장에서 해제되기 전까지 새 명령을 거부한다(장애 주입은 소비하지 않는다).
+        if (state.getSafetyState() == SafetyState.EMERGENCY_STOP) {
+            command.send();
+            recordCommandEvent(command, "SENT");
+            command.fail();
+            recordCommandEvent(command, "REJECTED_EMERGENCY_STOP");
+            return;
+        }
         SimulatedFault fault = pendingFaults.remove(robot.getId());
         boolean isCharging = command.getCommandType() == RobotCommandType.START_CHARGE;
         MotionState progressMotion = isCharging ? MotionState.CHARGING : MotionState.MOVING;
@@ -156,6 +169,35 @@ public class SimulatorRobotGateway implements RobotGateway {
         return configuration != null ? configuration.getChargingTargetPct() : 100;
     }
 
+    /**
+     * 33단계: 비상정지 명령 — 가상 로봇은 즉시 멈추고 안전 상태를 EMERGENCY_STOP으로 보고한다(연결 상태는 그대로 둔다).
+     * 실제 로봇이라면 이 보고가 늦거나 오지 않을 수 있어, 화면은 명령 결과가 아니라 보고된 안전 상태로 정지 여부를 판단한다.
+     */
+    private void emergencyStop(Robot robot, RobotCurrentState state, RobotCommand command) {
+        command.send();
+        recordCommandEvent(command, "SENT");
+        command.accept();
+        recordCommandEvent(command, "ACCEPTED");
+        command.startRunning();
+        command.succeed();
+        recordCommandEvent(command, "SUCCEEDED");
+        report(robot, state, state.getConnectionState(), state.getOperationMode(), MotionState.IDLE, SafetyState.EMERGENCY_STOP,
+                state.getLocalizationState(), state.getLoadState(), state.getBatteryPct());
+    }
+
+    /**
+     * 33단계: 현장에서 비상정지를 해제한 것을 흉내 낸다(시뮬레이터 전용). 실제 로봇의 비상정지는 원격 해제가 불가능하다고 가정한다
+     * (STATE_MACHINES.md §4.4) — 서버 API가 아니라 로봇이 NORMAL을 보고해야 풀린다.
+     */
+    public void releaseEmergencyStop(Robot robot) {
+        RobotCurrentState state = currentStateOf(robot);
+        if (state.getSafetyState() != SafetyState.EMERGENCY_STOP) {
+            return;
+        }
+        report(robot, state, state.getConnectionState(), state.getOperationMode(), state.getMotionState(), SafetyState.NORMAL,
+                state.getLocalizationState(), state.getLoadState(), state.getBatteryPct());
+    }
+
     /** 29단계: 통신 두절 장애가 적용된 뒤 아직 정상 명령을 받지 못한 로봇 id(시뮬레이터 하트비트 제외 대상). */
     public Set<Long> communicationLostRobotIds() {
         return Set.copyOf(communicationLostRobotIds);
@@ -188,15 +230,27 @@ public class SimulatorRobotGateway implements RobotGateway {
         LoadState previousLoadState = state.getLoadState();
         MotionState previousMotion = state.getMotionState();
         Integer previousBattery = state.getBatteryPct();
+        SafetyState previousSafety = state.getSafetyState();
 
         state.report(connection, mode, motion, safety, loadState, localization, batteryPct, Instant.now());
         robotStateSnapshotRepository.save(new RobotStateSnapshot(robot, state));
         if (previousConnection != connection || previousMotion != motion || previousLocalization != localization
-                || previousLoadState != loadState || !previousBattery.equals(batteryPct)) {
+                || previousLoadState != loadState || previousSafety != safety || !previousBattery.equals(batteryPct)) {
             robotStateEventRecorder.recordChanged(robot.getId());
         }
 
         reconcileAlarms(robot, previousConnection, connection, previousLocalization, localization, previousLoadState, loadState);
+        reconcileSafetyAlarm(robot, previousSafety, safety);
+    }
+
+    /** 33단계: 비상정지 진입 시 CRITICAL 알람, 해제 보고 시 자동 해소. */
+    private void reconcileSafetyAlarm(Robot robot, SafetyState previous, SafetyState current) {
+        if (current == SafetyState.EMERGENCY_STOP && previous != SafetyState.EMERGENCY_STOP) {
+            alarmService.raise(AlarmType.ROBOT_EMERGENCY_STOP, AlarmSeverity.CRITICAL, AlarmSourceType.ROBOT, robot.getId(),
+                    "로봇이 비상정지되었습니다(현장 확인 후 해제 필요): " + robot.getCode());
+        } else if (current != SafetyState.EMERGENCY_STOP && previous == SafetyState.EMERGENCY_STOP) {
+            alarmService.autoResolve(AlarmType.ROBOT_EMERGENCY_STOP, AlarmSourceType.ROBOT, robot.getId());
+        }
     }
 
     /**

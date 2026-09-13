@@ -137,7 +137,7 @@ public class TaskService {
                 return new TaskCreationResult(existing.get(), false);
             }
         }
-        return createTransportTask(request.originStationId(), request.destinationStationId(), requestedBy, idempotencyKey, null);
+        return createTransportTask(request.originStationId(), request.destinationStationId(), requestedBy, idempotencyKey, null, request.priority());
     }
 
     /**
@@ -164,11 +164,11 @@ public class TaskService {
                 return new TaskCreationResult(existing.get(), false);
             }
         }
-        return createTransportTask(request.originStationId(), request.destinationStationId(), null, idempotencyKey, request.externalRef());
+        return createTransportTask(request.originStationId(), request.destinationStationId(), null, idempotencyKey, request.externalRef(), request.priority());
     }
 
     private TaskCreationResult createTransportTask(
-            Long originStationId, Long destinationStationId, User requestedBy, String idempotencyKey, String externalRef
+            Long originStationId, Long destinationStationId, User requestedBy, String idempotencyKey, String externalRef, Integer priority
     ) {
         Station origin = stationService.getById(originStationId);
         Station destination = stationService.getById(destinationStationId);
@@ -178,7 +178,7 @@ public class TaskService {
                 UUID.randomUUID().toString(),
                 site,
                 TaskType.TRANSPORT,
-                0,
+                priority != null ? priority : 0,
                 origin,
                 destination,
                 requestedBy,
@@ -340,6 +340,14 @@ public class TaskService {
                     expectedType + " 단계가 진행 중이 아니어서(현재: " + step.getStatus() + ") 처리할 수 없습니다."
             );
         }
+        // 33단계: 작업이 진행 중(RUNNING)일 때만 단계를 넘긴다. 예전엔 단계만 봐서 일시정지·복구 필요·취소 요청 중인 작업에서도
+        // '로봇 보내기'가 통과해 로봇에 이동 명령이 나갔다(28단계에서 화면 버튼만 숨겼고 서버 검증이 빠져 있었다).
+        if (task.getStatus() != TaskStatus.RUNNING) {
+            throw new InvalidStateTransitionException(
+                    actionCode + "_NOT_ALLOWED",
+                    "작업 상태가 RUNNING이 아니어서(현재: " + task.getStatus() + ") 처리할 수 없습니다."
+            );
+        }
         completeStepInternal(task, step);
         return task;
     }
@@ -458,6 +466,64 @@ public class TaskService {
             }
         }
         return loaded;
+    }
+
+    /**
+     * 33단계: 관리자 일시정지. 작업 흐름만 멈춘다 — 작업자 버튼(보내기·하역 완료)이 사라지고 자동 배정·다음 단계 진행이 멈춘다.
+     * 로봇의 물리적 정지는 별개로, 필요하면 비상정지(EmergencyStopService)를 쓴다(STATE_MACHINES.md §1: PAUSED는 업무 흐름 정지일 뿐).
+     * 이미 일시정지면 현재 상태를 그대로 반환한다(멱등).
+     */
+    @Transactional
+    public Task pause(Long taskId, User actor) {
+        Task task = getById(taskId);
+        if (task.getStatus() == TaskStatus.PAUSED) {
+            return task;
+        }
+        TaskStatus previous = task.getStatus();
+        task.pause();
+        recordEvent(task, "PAUSED", previous, task.getStatus(), actor);
+        return task;
+    }
+
+    /** 33단계: 일시정지 해제. 이미 진행 중이면 현재 상태를 그대로 반환한다(멱등). */
+    @Transactional
+    public Task resume(Long taskId, User actor) {
+        Task task = getById(taskId);
+        if (task.getStatus() == TaskStatus.RUNNING) {
+            return task;
+        }
+        TaskStatus previous = task.getStatus();
+        task.resume();
+        recordEvent(task, "RESUMED", previous, task.getStatus(), actor);
+        return task;
+    }
+
+    /** 33단계: 대기 작업의 우선순위 변경. 배정된 뒤에는 409. 사유 대신 새 우선순위를 이력 payload에 남긴다. */
+    @Transactional
+    public Task changePriority(Long taskId, int priority, User actor) {
+        Task task = getById(taskId);
+        if (task.getPriority() == priority) {
+            return task;
+        }
+        task.changePriority(priority);
+        recordEvent(task, "PRIORITY_CHANGED", task.getStatus(), task.getStatus(), actor, String.valueOf(priority));
+        return task;
+    }
+
+    private static final Set<TaskStatus> EMERGENCY_INTERRUPTIBLE = Set.of(
+            TaskStatus.ASSIGNED, TaskStatus.RUNNING, TaskStatus.PAUSED, TaskStatus.CANCEL_REQUESTED
+    );
+
+    /**
+     * 33단계: 로봇이 비상정지되면 그 로봇이 맡고 있던 작업을 복구 필요로 보낸다 — 물건을 실은 채 멈췄을 수 있어
+     * 운영자가 로봇·현장 상태를 확인하고 recover(RESUME/FAIL)로 결정한다. 알람(TASK_RECOVERY_REQUIRED)도 함께 뜬다.
+     */
+    @Transactional
+    public void interruptByEmergencyStop(Robot robot) {
+        taskAssignmentRepository.findByRobotIdAndStatus(robot.getId(), TaskAssignmentStatus.ACTIVE)
+                .map(TaskAssignment::getTask)
+                .filter(task -> EMERGENCY_INTERRUPTIBLE.contains(task.getStatus()))
+                .ifPresent(task -> markRecoveryRequired(task, "RECOVERY_REQUIRED", null, "로봇 비상정지"));
     }
 
     /**

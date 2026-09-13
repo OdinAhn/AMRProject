@@ -7,6 +7,7 @@ import com.amrproject.domain.entity.task.TaskStep;
 import com.amrproject.dto.response.PageResponse;
 import com.amrproject.domain.entity.user.User;
 import com.amrproject.dto.request.task.AssignRobotRequest;
+import com.amrproject.dto.request.task.ChangeTaskPriorityRequest;
 import com.amrproject.dto.request.task.RecoverTaskRequest;
 import com.amrproject.dto.response.task.TaskEventResponse;
 import com.amrproject.dto.response.task.TaskResponse;
@@ -15,6 +16,7 @@ import com.amrproject.service.user.UserService;
 import jakarta.validation.Valid;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -74,6 +76,31 @@ public class AdminTaskController {
     @PostMapping("/{taskId}/assign")
     public TaskResponse assign(@PathVariable Long taskId, @Valid @RequestBody AssignRobotRequest request) {
         taskService.assignAndStart(taskId, request.robotId());
+        return TaskResponse.from(taskService.getById(taskId), taskService.getSteps(taskId));
+    }
+
+    /** 33단계: 작업 흐름 일시정지(RUNNING → PAUSED). 로봇을 물리적으로 멈추려면 로봇 비상정지를 쓴다. */
+    @PostMapping("/{taskId}/pause")
+    public TaskResponse pause(@PathVariable Long taskId, Authentication authentication) {
+        taskService.pause(taskId, userService.getByUsername(authentication.getName()));
+        return TaskResponse.from(taskService.getById(taskId), taskService.getSteps(taskId));
+    }
+
+    /** 33단계: 일시정지 해제(PAUSED → RUNNING). */
+    @PostMapping("/{taskId}/resume")
+    public TaskResponse resume(@PathVariable Long taskId, Authentication authentication) {
+        taskService.resume(taskId, userService.getByUsername(authentication.getName()));
+        return TaskResponse.from(taskService.getById(taskId), taskService.getSteps(taskId));
+    }
+
+    /** 33단계: 대기(QUEUED) 작업 우선순위 변경. */
+    @PatchMapping("/{taskId}/priority")
+    public TaskResponse changePriority(
+            @PathVariable Long taskId,
+            @Valid @RequestBody ChangeTaskPriorityRequest request,
+            Authentication authentication
+    ) {
+        taskService.changePriority(taskId, request.priority(), userService.getByUsername(authentication.getName()));
         return TaskResponse.from(taskService.getById(taskId), taskService.getSteps(taskId));
     }
 

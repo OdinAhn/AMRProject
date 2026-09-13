@@ -3,6 +3,7 @@ package com.amrproject.dto.response.site;
 import com.amrproject.domain.entity.robot.ConnectionState;
 import com.amrproject.domain.entity.robot.MotionState;
 import com.amrproject.domain.entity.robot.RobotLifecycleStatus;
+import com.amrproject.domain.entity.robot.SafetyState;
 import com.amrproject.domain.entity.task.TaskStatus;
 
 import java.util.List;
@@ -30,6 +31,8 @@ public record SiteOverviewResponse(
             RobotLifecycleStatus lifecycleStatus,
             ConnectionState connectionState,
             MotionState motionState,
+            /** 33단계: 비상·보호 정지 여부 */
+            SafetyState safetyState,
             Integer batteryPct,
             Long currentNodeId,
             Long currentTaskId,

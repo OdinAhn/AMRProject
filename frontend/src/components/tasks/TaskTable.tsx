@@ -1,5 +1,5 @@
 import { Link } from "react-router";
-import { labels, shortTaskNo, taskStatusTone } from "../../lib/labels";
+import { labels, priorityLabel, shortTaskNo, taskStatusTone } from "../../lib/labels";
 import { Badge, Card, Table, Td, Th } from "../ui";
 import type { TaskResponse } from "../../types/api";
 
@@ -16,6 +16,7 @@ export function TaskTable({ tasks }: TaskTableProps) {
             <Th>번호</Th>
             <Th>유형</Th>
             <Th>상태</Th>
+            <Th>우선순위</Th>
             <Th>출발지 → 목적지</Th>
             <Th>로봇</Th>
             <Th>생성 시각</Th>
@@ -29,6 +30,13 @@ export function TaskTable({ tasks }: TaskTableProps) {
               <Td>{labels.taskType(task.taskType)}</Td>
               <Td>
                 <Badge tone={taskStatusTone(task.status)}>{labels.taskStatus(task.status)}</Badge>
+              </Td>
+              <Td>
+                {task.priority > 0 ? (
+                  <Badge tone={task.priority >= 9 ? "red" : "yellow"}>{priorityLabel(task.priority)}</Badge>
+                ) : (
+                  <span className="text-gray-400">보통</span>
+                )}
               </Td>
               <Td className="whitespace-nowrap">
                 {task.originStationName} → {task.destinationStationName}
