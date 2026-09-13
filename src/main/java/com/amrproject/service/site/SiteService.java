@@ -1,6 +1,7 @@
 package com.amrproject.service.site;
 
 import com.amrproject.domain.entity.site.Site;
+import com.amrproject.domain.entity.site.SiteStatus;
 import com.amrproject.dto.request.site.CreateSiteRequest;
 import com.amrproject.dto.request.site.UpdateSiteRequest;
 import com.amrproject.exception.DuplicateResourceException;
@@ -36,6 +37,11 @@ public class SiteService {
 
     public List<Site> getAll() {
         return siteRepository.findAll();
+    }
+
+    /** 29단계: 자동 디스패치 대상 — 운영 중(ACTIVE)인 물류센터만. */
+    public List<Site> getActive() {
+        return siteRepository.findByStatus(SiteStatus.ACTIVE);
     }
 
     @Transactional

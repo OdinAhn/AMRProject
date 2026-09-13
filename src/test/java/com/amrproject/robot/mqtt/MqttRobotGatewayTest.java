@@ -1,12 +1,18 @@
 package com.amrproject.robot.mqtt;
 
+import com.amrproject.domain.entity.robot.ConnectionState;
 import com.amrproject.domain.entity.robot.Robot;
+import com.amrproject.domain.entity.robot.RobotCurrentState;
+import com.amrproject.domain.entity.robot.RobotLifecycleStatus;
 import com.amrproject.domain.entity.site.StationType;
 import com.amrproject.dto.request.robot.CreateRobotRequest;
+import com.amrproject.dto.request.robot.UpdateRobotLifecycleStatusRequest;
 import com.amrproject.dto.request.site.CreateSiteRequest;
 import com.amrproject.dto.request.site.CreateStationRequest;
 import com.amrproject.dto.request.task.CreateTaskRequest;
+import com.amrproject.repository.robot.RobotCurrentStateRepository;
 import com.amrproject.repository.robot.RobotRepository;
+import com.amrproject.service.robot.RobotConnectionService;
 import com.amrproject.service.task.TaskService;
 import com.amrproject.support.AbstractIntegrationTest;
 import org.eclipse.paho.client.mqttv3.MqttClient;
@@ -15,6 +21,7 @@ import org.eclipse.paho.client.mqttv3.persist.MemoryPersistence;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
@@ -25,8 +32,10 @@ import tools.jackson.databind.json.JsonMapper;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.http.MediaType.APPLICATION_JSON;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -68,6 +77,15 @@ class MqttRobotGatewayTest extends AbstractIntegrationTest {
     @Autowired
     private RobotRepository robotRepository;
 
+    @Autowired
+    private RobotCurrentStateRepository robotCurrentStateRepository;
+
+    @Autowired
+    private RobotConnectionService robotConnectionService;
+
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
+
     @Test
     void 가상_VDA5050_로봇이_응답하면_명령이_SUCCEEDED로_끝난다() throws Exception {
         Long siteId = createSite("SITE-MQTT1", "MQTT 물류센터1");
@@ -104,6 +122,47 @@ class MqttRobotGatewayTest extends AbstractIntegrationTest {
         mockMvc.perform(get("/api/worker/tasks/{taskId}", taskId))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("RECOVERY_REQUIRED"));
+    }
+
+    /**
+     * 29단계: 주문과 무관한 state 메시지(orderId 없음)도 하트비트로 기록돼, 하트비트가 끊겨 OFFLINE이 된 로봇이
+     * 텔레메트리를 다시 보내면 ONLINE으로 복구되고 배터리가 반영된다(콜백 스레드가 아니라 별도 스레드에서 비동기 처리).
+     */
+    @Test
+    void 주문과_무관한_state_메시지로도_끊긴_연결이_복구된다() throws Exception {
+        Long siteId = createSite("SITE-MQTT3", "MQTT 물류센터3");
+        Long robotId = createRobot(siteId, "ROBOT-MQTT3", "MQTT로봇3");
+        mockMvc.perform(patch("/api/admin/robots/{robotId}/lifecycle-status", robotId)
+                        .contentType(APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new UpdateRobotLifecycleStatusRequest(RobotLifecycleStatus.IN_SERVICE))))
+                .andExpect(status().isOk());
+        jdbcTemplate.update("update robot_current_states set received_at = date_sub(received_at, interval 10 minute) where robot_id = ?", robotId);
+        robotConnectionService.markStaleRobotsOffline();
+        assertThat(robotCurrentStateRepository.findById(robotId).orElseThrow().getConnectionState()).isEqualTo(ConnectionState.OFFLINE);
+
+        MqttClient robotClient = new MqttClient(brokerUrl(), MqttClient.generateClientId(), new MemoryPersistence());
+        robotClient.connect();
+        try {
+            Vda5050State heartbeat = new Vda5050State(null, false, List.of(), new Vda5050State.BatteryState(42.0));
+            robotClient.publish(
+                    "uagv/v2/" + MANUFACTURER + "/ROBOT-MQTT3/state",
+                    new MqttMessage(objectMapper.writeValueAsString(heartbeat).getBytes(StandardCharsets.UTF_8))
+            );
+        } finally {
+            robotClient.disconnect();
+            robotClient.close();
+        }
+
+        RobotCurrentState state = null;
+        for (int i = 0; i < 50; i++) {
+            state = robotCurrentStateRepository.findById(robotId).orElseThrow();
+            if (state.getConnectionState() == ConnectionState.ONLINE) {
+                break;
+            }
+            Thread.sleep(100);
+        }
+        assertThat(state.getConnectionState()).isEqualTo(ConnectionState.ONLINE);
+        assertThat(state.getBatteryPct()).isEqualTo(42);
     }
 
     private static String brokerUrl() {

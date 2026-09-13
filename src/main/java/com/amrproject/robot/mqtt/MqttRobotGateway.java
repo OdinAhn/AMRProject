@@ -19,11 +19,15 @@ import com.amrproject.repository.robot.RobotCurrentStateRepository;
 import com.amrproject.repository.robot.RobotStateSnapshotRepository;
 import com.amrproject.robot.RobotGateway;
 import com.amrproject.service.alarm.AlarmService;
+import com.amrproject.service.robot.RobotConnectionService;
+import jakarta.annotation.PreDestroy;
 import org.eclipse.paho.client.mqttv3.IMqttDeliveryToken;
 import org.eclipse.paho.client.mqttv3.MqttCallback;
 import org.eclipse.paho.client.mqttv3.MqttClient;
 import org.eclipse.paho.client.mqttv3.MqttException;
 import org.eclipse.paho.client.mqttv3.MqttMessage;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Primary;
@@ -37,6 +41,8 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicLong;
@@ -57,6 +63,7 @@ import java.util.concurrent.atomic.AtomicLong;
 public class MqttRobotGateway implements RobotGateway, MqttCallback {
 
     private static final String TOPIC_PREFIX = "uagv/v2/";
+    private static final Logger log = LoggerFactory.getLogger(MqttRobotGateway.class);
     private static final long TIMEOUT_SECONDS = 3;
 
     private final MqttClient mqttClient;
@@ -66,9 +73,15 @@ public class MqttRobotGateway implements RobotGateway, MqttCallback {
     private final RobotCurrentStateRepository robotCurrentStateRepository;
     private final RobotStateSnapshotRepository robotStateSnapshotRepository;
     private final AlarmService alarmService;
+    private final RobotConnectionService robotConnectionService;
 
     private final Map<String, CompletableFuture<Vda5050State>> pendingOrders = new ConcurrentHashMap<>();
     private final AtomicLong headerId = new AtomicLong();
+    private final ExecutorService telemetryExecutor = Executors.newSingleThreadExecutor(runnable -> {
+        Thread thread = new Thread(runnable, "mqtt-telemetry");
+        thread.setDaemon(true);
+        return thread;
+    });
 
     public MqttRobotGateway(
             MqttClient mqttClient,
@@ -77,7 +90,8 @@ public class MqttRobotGateway implements RobotGateway, MqttCallback {
             CommandEventRepository commandEventRepository,
             RobotCurrentStateRepository robotCurrentStateRepository,
             RobotStateSnapshotRepository robotStateSnapshotRepository,
-            AlarmService alarmService
+            AlarmService alarmService,
+            RobotConnectionService robotConnectionService
     ) throws MqttException {
         this.mqttClient = mqttClient;
         this.manufacturer = manufacturer;
@@ -86,6 +100,7 @@ public class MqttRobotGateway implements RobotGateway, MqttCallback {
         this.robotCurrentStateRepository = robotCurrentStateRepository;
         this.robotStateSnapshotRepository = robotStateSnapshotRepository;
         this.alarmService = alarmService;
+        this.robotConnectionService = robotConnectionService;
         mqttClient.setCallback(this);
         mqttClient.subscribe(TOPIC_PREFIX + manufacturer + "/+/state");
     }
@@ -164,6 +179,7 @@ public class MqttRobotGateway implements RobotGateway, MqttCallback {
     @Override
     public void messageArrived(String topic, MqttMessage message) {
         Vda5050State state = jsonMapper.readValue(message.getPayload(), Vda5050State.class);
+        recordTelemetryAsync(topic, state);
         if (state.orderId() == null) {
             return;
         }
@@ -175,6 +191,35 @@ public class MqttRobotGateway implements RobotGateway, MqttCallback {
         if (future != null) {
             future.complete(state);
         }
+    }
+
+    /**
+     * 29단계: 주문 완료 여부와 관계없이 모든 state 메시지를 하트비트로 기록한다(RobotConnectionService가 연결 감시에 쓴다).
+     * Paho 콜백 스레드가 아니라 별도 스레드에서 처리한다 — {@link #dispatch}가 트랜잭션 안에서 이 로봇의 상태 행을
+     * 잠근 채 완료 state를 기다리는 동안 콜백 스레드가 같은 행의 락을 기다리면, 완료 메시지를 처리하지 못해
+     * 명령이 타임아웃(UNKNOWN)으로 끝난다.
+     */
+    private void recordTelemetryAsync(String topic, Vda5050State state) {
+        String[] parts = topic.split("/");
+        if (parts.length < 5) {
+            return;
+        }
+        String serialNumber = parts[3];
+        Integer batteryPct = state.batteryState() != null && state.batteryState().batteryCharge() != null
+                ? state.batteryState().batteryCharge().intValue()
+                : null;
+        telemetryExecutor.execute(() -> {
+            try {
+                robotConnectionService.receiveTelemetry(serialNumber, batteryPct);
+            } catch (Exception e) {
+                log.warn("MQTT 텔레메트리 기록 실패: robotCode={}", serialNumber, e);
+            }
+        });
+    }
+
+    @PreDestroy
+    void shutdownTelemetryExecutor() {
+        telemetryExecutor.shutdown();
     }
 
     @Override
