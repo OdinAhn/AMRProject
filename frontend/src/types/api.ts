@@ -376,6 +376,19 @@ export interface CreateUserRequest {
 export interface UpdateUserRequest {
   displayName?: string | null;
   status?: UserStatus | null;
+  /** 32단계 */
+  roleCode?: string | null;
+}
+
+/** 32단계: 관리자 비밀번호 초기화 */
+export interface ResetPasswordRequest {
+  newPassword: string;
+}
+
+/** 32단계: 본인 비밀번호 변경 — 응답은 새 토큰이 담긴 LoginResponse */
+export interface ChangePasswordRequest {
+  currentPassword: string;
+  newPassword: string;
 }
 
 export interface CreateStationAssignmentRequest {

@@ -1,7 +1,8 @@
 import { Link, Outlet } from "react-router";
 import { ConnectionStatusBadge } from "../components/events/ConnectionStatusBadge";
-import { useAuth } from "../lib/auth";
-import { EventStreamProvider, useEventStream } from "../lib/eventStream";
+import { useAuth } from "../lib/authContext";
+import { EventStreamProvider } from "../lib/eventStream";
+import { useEventStream } from "../lib/eventStreamContext";
 
 export function WorkerLayout() {
   return (
@@ -23,7 +24,9 @@ function WorkerShell() {
         </Link>
         <div className="flex items-center gap-3 text-sm text-gray-600">
           <ConnectionStatusBadge status={status} />
-          <span className="hidden sm:inline">{user?.displayName}</span>
+          <Link to="/worker/account" className="hover:text-gray-900 hover:underline">
+            {user?.displayName}
+          </Link>
           <button onClick={logout} className="font-medium text-gray-600 hover:text-gray-900">
             로그아웃
           </button>

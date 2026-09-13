@@ -29,6 +29,8 @@ import java.util.Optional;
  * <p>26단계: 서명·만료만 보지 않고 매 요청마다 토큰의 사용자를 DB에서 다시 조회한다 —
  * 비활성화된 사용자는 토큰이 아직 만료 전이어도 인증되지 않고(401), 권한은 토큰에
  * 적힌 role이 아니라 DB의 현재 role로 부여한다(역할 변경이 즉시 반영됨).
+ *
+ * <p>32단계: 비밀번호 변경 시각보다 먼저 발급된 토큰도 인증하지 않는다.
  */
 public class TokenAuthenticationFilter extends OncePerRequestFilter {
 
@@ -59,7 +61,8 @@ public class TokenAuthenticationFilter extends OncePerRequestFilter {
         String token = resolveToken(request);
         if (token != null) {
             accessTokenService.parseToken(token)
-                    .flatMap(payload -> findActiveUser(payload.userId()))
+                    .flatMap(payload -> findActiveUser(payload.userId())
+                            .filter(user -> issuedAfterPasswordChange(payload, user)))
                     .ifPresent(user -> {
                         var authorities = List.of(new SimpleGrantedAuthority("ROLE_" + user.getRole().getCode()));
                         var authentication = new UsernamePasswordAuthenticationToken(user.getUsername(), null, authorities);
@@ -67,6 +70,15 @@ public class TokenAuthenticationFilter extends OncePerRequestFilter {
                     });
         }
         filterChain.doFilter(request, response);
+    }
+
+    /**
+     * 32단계: 비밀번호를 바꾸면 그 전에 발급된 토큰은 모두 무효다(도난당한 토큰을 비밀번호 변경으로 끊을 수 있게).
+     * 초 단위로 비교해, 변경 직후 같은 초에 새로 발급한 토큰은 유효하다.
+     */
+    private static boolean issuedAfterPasswordChange(AccessTokenService.TokenPayload payload, User user) {
+        return user.getPasswordChangedAt() == null
+                || payload.issuedAtEpochSecond() >= user.getPasswordChangedAt().getEpochSecond();
     }
 
     private Optional<User> findActiveUser(Long userId) {

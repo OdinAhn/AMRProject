@@ -1,6 +1,7 @@
 package com.amrproject.repository.user;
 
 import com.amrproject.domain.entity.user.User;
+import com.amrproject.domain.entity.user.UserStatus;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 
@@ -20,4 +21,7 @@ public interface UserRepository extends JpaRepository<User, Long> {
     Optional<User> findWithRoleById(Long id);
 
     boolean existsByRoleCode(String roleCode);
+
+    /** 32단계: 마지막 활성 관리자 보호 — 역할·상태를 바꾸기 전에 남는 활성 관리자 수를 센다. */
+    long countByRoleCodeAndStatus(String roleCode, UserStatus status);
 }

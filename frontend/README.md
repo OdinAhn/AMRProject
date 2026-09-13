@@ -16,6 +16,7 @@ AMRProject 백엔드(Spring Boot)를 위한 관리자·작업자 화면. React 1
 | 25 | 지도 버전 상세를 SVG 캔버스 편집기(`MapCanvasEditor`)로 교체 |
 | 28 | 역할별 라우트 가드·404, 전역 실시간 갱신(SSE), 한글 라벨, 확인창·토스트, 사이드바 알람 배지·모바일 메뉴, 작업자 화면 개선, CI에서 lint·build |
 | 29 | 디스패치 화면 안내 문구(자동 실행 반영) |
+| 32 | 사용자 상세 계정 패널(역할·상태 변경, 비밀번호 초기화), 내 계정 화면(`/account`, `/worker/account` — 본인 비밀번호 변경), lint 경고 0건 |
 | 31 | 작업·알람 목록 페이지네이션(`Pagination`), 사이드바 알람 수를 페이지 응답의 `totalElements`로 계산 |
 | 30 | 관제 대시보드(`/dashboard`, 관리자 첫 화면) — KPI 타일, 로봇 상태표, 활성 지도 위 로봇 위치·이동 애니메이션. 로봇 목록에 연결·배터리 열 |
 
@@ -43,10 +44,12 @@ CI(`.github/workflows/ci.yml`의 `frontend` job, 28단계)가 PR마다 `npm ci` 
 | 경로 | 내용 |
 |---|---|
 | `src/lib/apiClient.ts` | `fetch` 기반 API 클라이언트, 토큰 첨부, 에러 응답 파싱(`ApiError`, `errorMessage`). 403은 전용 메시지로 바꾼다 |
-| `src/lib/auth.tsx` | 로그인 상태 관리, `ProtectedRoute`(28단계: `roles`로 역할 검사), 역할별 기본 경로(`homePathFor`) |
-| `src/lib/eventStream.tsx` | (28단계) `EventStreamProvider`/`useEventStream` — SSE 연결 하나를 레이아웃에서 공유하고, 이벤트 종류별로 TanStack Query 캐시를 무효화한다 |
+| `src/lib/auth.tsx` | `AuthProvider`, `ProtectedRoute`(28단계: `roles`로 역할 검사) |
+| `src/lib/authContext.ts` | (32단계 분리) `useAuth`, `homePathFor`, `AuthContext` — 컴포넌트 파일과 훅·유틸을 나눠 Fast Refresh가 동작하게 한다(`react/only-export-components`) |
+| `src/lib/eventStreamContext.ts` | (32단계 분리) `useEventStream`, `useRobotPositions`와 컨텍스트 |
+| `src/lib/eventStream.tsx` | (28단계) `EventStreamProvider` — SSE 연결 하나를 레이아웃에서 공유하고, 이벤트 종류별로 TanStack Query 캐시를 무효화한다 |
 | `src/lib/labels.ts` | (28단계) 백엔드 enum → 한글 라벨, 작업 상태 배지 색(`taskStatusTone`) |
-| `src/lib/toast.tsx` | (28단계) `ToastProvider`/`useToast` — 버튼 동작의 성공·실패 피드백 |
+| `src/lib/toast.tsx` | (28단계) `ToastProvider` — 버튼 동작의 성공·실패 피드백. 훅 `useToast`는 `src/lib/toastContext.ts`(32단계 분리) |
 | `src/lib/useSites.ts` | 물류센터 목록 조회 훅 |
 | `src/components/dashboard/` | (30단계) `KpiTiles`, `RobotStatusTable`(+`BatteryBar`), `LiveMapView`(활성 지도 + 로봇 마커) |
 | `src/types/api.ts` | 백엔드 응답 타입 (`docs/API.md`와 대응) |
@@ -68,6 +71,7 @@ CI(`.github/workflows/ci.yml`의 `frontend` job, 28단계)가 PR마다 `npm ci` 
 | `src/pages/events/EventsPage.tsx` | 실시간 이벤트 화면 — 레이아웃이 공유하는 SSE 연결의 이벤트를 최신순 피드로 표시 |
 | `src/pages/worker` | 작업자 화면 — 내 작업장 목록, 작업장별 작업 카드(호출·보내기·하역 완료·작업 불가·호출 취소) |
 | `src/pages/NotFoundPage.tsx` | (28단계) 없는 경로 |
+| `src/pages/AccountPage.tsx` | (32단계) 내 계정 — 본인 비밀번호 변경(성공 시 새 토큰으로 세션 교체) |
 | `src/pages/dashboard/DashboardPage.tsx` | (30단계) 관제 대시보드 — 물류센터 선택(브라우저에 기억), `GET /api/admin/sites/{siteId}/overview` |
 
 ## 라우팅
@@ -97,4 +101,6 @@ CI(`.github/workflows/ci.yml`의 `frontend` job, 28단계)가 PR마다 `npm ci` 
 - 되돌릴 수 없는 동작(작업 취소, 최종 실패 처리, 재개, 로봇 운영 상태 변경, 작업자 호출 취소)은 `ConfirmButton`/`ConfirmDialog`로 한 번 더 확인받는다.
 - 성공 피드백은 `useToast().showToast(...)`로 띄운다. 계속 보여야 하는 오류(폼 검증, 요청 실패 사유)는 `ErrorBanner`를 쓴다.
 - enum 값은 화면에 그대로 노출하지 않고 `labels.*`로 바꿔 보여준다. 백엔드에 enum 값이 추가되면 `labels.ts` 매핑도 추가한다(없으면 원래 값이 그대로 보인다).
+- 부모가 저장 성공 후 폼을 비우게 할 때는 `resetToken`을 올리고, 폼은 effect가 아니라 **렌더 중에 이전 토큰과 비교해** 상태를 조정한다(32단계, `react/set-state-in-effect` 경고 방지 — 예: `UserCreateForm`).
+- 컨텍스트 훅·유틸은 `*Context.ts`에, Provider 컴포넌트는 `.tsx`에 둔다(32단계).
 - 저장소 전체 개발 규칙: `../AGENTS.md`

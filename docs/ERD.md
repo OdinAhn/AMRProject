@@ -285,6 +285,8 @@ erDiagram
 
 ### 4.1 사용자 (users, roles, user_station_assignments)
 
+**32단계 구현(V13)**: `users.password_changed_at DATETIME(6) NULL` — 마지막 비밀번호 변경 시각. 이보다 먼저 발급된 접근 토큰은 무효다(API.md §1). 바꾼 적 없으면 NULL.
+
 **roles**
 | 컬럼 | 타입 | 설명 |
 |---|---|---|

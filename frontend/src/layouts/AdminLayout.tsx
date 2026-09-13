@@ -3,8 +3,9 @@ import { useState } from "react";
 import { NavLink, Outlet } from "react-router";
 import { ConnectionStatusBadge } from "../components/events/ConnectionStatusBadge";
 import { api } from "../lib/apiClient";
-import { useAuth } from "../lib/auth";
-import { EventStreamProvider, useEventStream } from "../lib/eventStream";
+import { useAuth } from "../lib/authContext";
+import { EventStreamProvider } from "../lib/eventStream";
+import { useEventStream } from "../lib/eventStreamContext";
 import type { AlarmResponse, PageResponse } from "../types/api";
 
 const NAV_ITEMS = [
@@ -79,7 +80,9 @@ function AdminShell() {
             실시간 <ConnectionStatusBadge status={status} />
           </div>
           <div className="mb-2 text-xs text-gray-500">
-            {user?.displayName} ({user?.roleCode})
+            <NavLink to="/account" className="hover:text-gray-900 hover:underline" onClick={() => setSidebarOpen(false)}>
+              {user?.displayName} ({user?.roleCode}) · 내 계정
+            </NavLink>
           </div>
           <button onClick={logout} className="text-sm font-medium text-gray-600 hover:text-gray-900">
             로그아웃

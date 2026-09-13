@@ -1,4 +1,5 @@
 import { Link } from "react-router";
+import { labels } from "../../lib/labels";
 import { Badge, Card, Table, Td, Th } from "../ui";
 import type { UserResponse } from "../../types/api";
 
@@ -25,14 +26,14 @@ export function UserTable({ users }: UserTableProps) {
               <Td>{user.username}</Td>
               <Td>{user.displayName}</Td>
               <Td>
-                <Badge tone={user.roleCode === "ADMIN" ? "blue" : "gray"}>{user.roleCode}</Badge>
+                <Badge tone={user.roleCode === "ADMIN" ? "blue" : "gray"}>{labels.role(user.roleCode)}</Badge>
               </Td>
               <Td>
-                <Badge tone={user.status === "ACTIVE" ? "green" : "red"}>{user.status}</Badge>
+                <Badge tone={user.status === "ACTIVE" ? "green" : "red"}>{labels.userStatus(user.status)}</Badge>
               </Td>
               <Td>
                 <Link to={`/users/${user.id}`} className="text-indigo-600 hover:underline">
-                  작업장 권한 관리
+                  관리
                 </Link>
               </Td>
             </tr>

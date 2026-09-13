@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { labels, shortTaskNo, taskStatusTone } from "../../lib/labels";
 import { Badge, Button, Card, ConfirmButton, Input } from "../ui";
 import type { TaskResponse } from "../../types/api";
@@ -39,9 +39,13 @@ export function WorkerTaskCard({
   const currentStep = task.steps.find((s) => s.status === "RUNNING");
   const isOrigin = task.originStationId === stationId;
 
-  useEffect(() => {
+  // 32단계: 부모가 reportResetToken을 올리면(저장 성공 등) 입력값을 비운다. effect에서 setState하면 렌더가 한 번 더 돌아서,
+  // 렌더 중에 이전 값과 비교해 바로 조정한다(React 권장 패턴).
+  const [appliedReportResetToken, setAppliedReportResetToken] = useState(reportResetToken);
+  if (appliedReportResetToken !== reportResetToken) {
+    setAppliedReportResetToken(reportResetToken);
     setReason("");
-  }, [reportResetToken]);
+  }
 
   return (
     <Card>

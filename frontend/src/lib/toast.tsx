@@ -1,18 +1,11 @@
-import { createContext, useCallback, useContext, useState, type ReactNode } from "react";
-
-type ToastTone = "success" | "error";
+import { useCallback, useState, type ReactNode } from "react";
+import { ToastContext, type ToastTone } from "./toastContext";
 
 interface Toast {
   id: number;
   message: string;
   tone: ToastTone;
 }
-
-interface ToastContextValue {
-  showToast: (message: string, tone?: ToastTone) => void;
-}
-
-const ToastContext = createContext<ToastContextValue | undefined>(undefined);
 
 const TOAST_DURATION_MS = 3000;
 
@@ -46,12 +39,4 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       </div>
     </ToastContext.Provider>
   );
-}
-
-export function useToast(): ToastContextValue {
-  const context = useContext(ToastContext);
-  if (!context) {
-    throw new Error("useToast는 ToastProvider 안에서만 사용할 수 있습니다.");
-  }
-  return context;
 }

@@ -13,6 +13,8 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 
+import java.time.Instant;
+
 @Entity
 @Table(name = "users")
 public class User extends BaseAuditableEntity {
@@ -38,6 +40,10 @@ public class User extends BaseAuditableEntity {
     @Column(nullable = false, length = 20)
     private UserStatus status;
 
+    /** 32단계: 마지막 비밀번호 변경 시각 — 이보다 먼저 발급된 토큰은 무효. 바꾼 적 없으면 null. */
+    @Column(name = "password_changed_at")
+    private Instant passwordChangedAt;
+
     protected User() {
     }
 
@@ -51,6 +57,16 @@ public class User extends BaseAuditableEntity {
 
     public void changeStatus(UserStatus status) {
         this.status = status;
+    }
+
+    /** 32단계: 비밀번호를 바꾸고 기존 토큰을 무효화할 기준 시각을 남긴다. */
+    public void changePassword(String passwordHash, Instant changedAt) {
+        this.passwordHash = passwordHash;
+        this.passwordChangedAt = changedAt;
+    }
+
+    public void changeRole(Role role) {
+        this.role = role;
     }
 
     public void rename(String displayName) {
@@ -79,5 +95,9 @@ public class User extends BaseAuditableEntity {
 
     public UserStatus getStatus() {
         return status;
+    }
+
+    public Instant getPasswordChangedAt() {
+        return passwordChangedAt;
     }
 }

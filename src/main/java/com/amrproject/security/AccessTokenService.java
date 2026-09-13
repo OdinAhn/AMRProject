@@ -49,11 +49,13 @@ public class AccessTokenService {
     }
 
     public String issueToken(User user) {
-        long expiresAt = Instant.now().getEpochSecond() + expiryMinutes * 60;
+        long issuedAt = Instant.now().getEpochSecond();
+        long expiresAt = issuedAt + expiryMinutes * 60;
         Map<String, Object> payload = Map.of(
                 "sub", user.getId(),
                 "username", user.getUsername(),
                 "role", user.getRole().getCode(),
+                "iat", issuedAt,
                 "exp", expiresAt
         );
         String encodedPayload = ENCODER.encodeToString(jsonMapper.writeValueAsBytes(payload));
@@ -78,10 +80,13 @@ public class AccessTokenService {
             if (Instant.now().getEpochSecond() > expiresAt) {
                 return Optional.empty();
             }
+            // 32단계 이전에 발급된 토큰에는 iat가 없다 — 0으로 보아, 비밀번호를 한 번이라도 바꾼 사용자면 무효가 된다.
+            Object issuedAt = payload.get("iat");
             return Optional.of(new TokenPayload(
                     ((Number) payload.get("sub")).longValue(),
                     (String) payload.get("username"),
-                    (String) payload.get("role")
+                    (String) payload.get("role"),
+                    issuedAt instanceof Number number ? number.longValue() : 0L
             ));
         } catch (Exception e) {
             return Optional.empty();
@@ -98,6 +103,7 @@ public class AccessTokenService {
         }
     }
 
-    public record TokenPayload(Long userId, String username, String role) {
+    /** @param issuedAtEpochSecond 발급 시각(초) — 32단계 비밀번호 변경 후 토큰 무효화에 쓴다 */
+    public record TokenPayload(Long userId, String username, String role, long issuedAtEpochSecond) {
     }
 }

@@ -1,25 +1,13 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Navigate, useLocation } from "react-router";
 import { api, clearToken, getToken, registerUnauthorizedHandler, setToken } from "./apiClient";
+import { AuthContext, homePathFor, useAuth } from "./authContext";
 import type { LoginResponse, UserResponse } from "../types/api";
-
-interface AuthContextValue {
-  user: UserResponse | null;
-  loading: boolean;
-  login: (username: string, password: string) => Promise<UserResponse>;
-  logout: () => void;
-}
-
-const AuthContext = createContext<AuthContextValue | undefined>(undefined);
-
-/** 역할별 로그인 후 랜딩 경로 (12단계: WORKER는 관리자 화면에 접근할 수 없다. 30단계: 관리자는 대시보드). */
-export function homePathFor(user: UserResponse): string {
-  return user.roleCode === "WORKER" ? "/worker/stations" : "/dashboard";
-}
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<UserResponse | null>(null);
-  const [loading, setLoading] = useState(true);
+  // 저장된 토큰이 있을 때만 /me 확인이 끝날 때까지 로딩으로 둔다(32단계: effect 안에서 바로 setState하지 않도록 초기값으로 계산).
+  const [loading, setLoading] = useState(() => !!getToken());
 
   const logout = () => {
     clearToken();
@@ -32,7 +20,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!getToken()) {
-      setLoading(false);
       return;
     }
     api
@@ -49,15 +36,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return result.user;
   };
 
-  return <AuthContext.Provider value={{ user, loading, login, logout }}>{children}</AuthContext.Provider>;
-}
+  const replaceSession = (token: string, nextUser: UserResponse) => {
+    setToken(token);
+    setUser(nextUser);
+  };
 
-export function useAuth(): AuthContextValue {
-  const context = useContext(AuthContext);
-  if (!context) {
-    throw new Error("useAuth는 AuthProvider 안에서만 사용할 수 있습니다.");
-  }
-  return context;
+  return <AuthContext.Provider value={{ user, loading, login, logout, replaceSession }}>{children}</AuthContext.Provider>;
 }
 
 /**
