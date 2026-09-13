@@ -1,6 +1,9 @@
 package com.amrproject.controller;
 
+import com.amrproject.domain.entity.event.OutboxEvent;
 import com.amrproject.domain.entity.site.StationType;
+import com.amrproject.repository.event.OutboxEventRepository;
+import java.util.List;
 import com.amrproject.dto.request.task.AssignRobotRequest;
 import com.amrproject.dto.request.robot.CreateRobotRequest;
 import com.amrproject.dto.request.site.CreateSiteRequest;
@@ -17,6 +20,7 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.test.web.servlet.MockMvc;
 import tools.jackson.databind.json.JsonMapper;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.http.MediaType.APPLICATION_JSON;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -35,6 +39,9 @@ class TransportFlowTest extends AbstractIntegrationTest {
 
     @Autowired
     private JsonMapper objectMapper;
+
+    @Autowired
+    private OutboxEventRepository outboxEventRepository;
 
     @Test
     void 호출부터_하역까지_API만으로_운반을_완료하고_배정이_해제되어_로봇을_재사용할_수_있다() throws Exception {
@@ -80,6 +87,14 @@ class TransportFlowTest extends AbstractIntegrationTest {
                 .andExpect(jsonPath("$.status").value("SUCCEEDED"))
                 .andExpect(jsonPath("$.steps[3].status").value("SUCCEEDED"))
                 .andExpect(jsonPath("$.allowedActions.length()").value(0));
+
+        // 28단계: 작업 상태가 RUNNING 그대로인 단계 진행도 실시간 이벤트(task.step_started)로 발행돼야 화면이 갱신된다.
+        List<String> stepEvents = outboxEventRepository.findAll().stream()
+                .filter(event -> "TASK".equals(event.getAggregateType()) && taskId.equals(event.getAggregateId()))
+                .filter(event -> "task.step_started".equals(event.getEventType()))
+                .map(OutboxEvent::getPayloadJson)
+                .toList();
+        assertThat(stepEvents).containsExactly("MOVE_TO_ORIGIN", "CONFIRM_LOAD", "MOVE_TO_DESTINATION", "CONFIRM_UNLOAD");
 
         // 배정이 COMPLETED로 정리되지 않았다면 같은 로봇의 재배정이 409로 막혀야 한다.
         Long secondTaskId = createTask(originId, destinationId, "idem-flow-2");

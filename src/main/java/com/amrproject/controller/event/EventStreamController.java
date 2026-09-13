@@ -16,6 +16,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import tools.jackson.databind.json.JsonMapper;
 
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 
@@ -49,6 +50,14 @@ public class EventStreamController {
     @GetMapping(path = "/api/events/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter stream(@RequestHeader(value = "Last-Event-ID", required = false) Long lastEventId) {
         SseEmitter emitter = new SseEmitter(0L);
+        // 28단계: 첫 이벤트가 오기 전까지는 응답 헤더가 전송되지 않아 브라우저 EventSource의 onopen이 안 불리고
+        // 화면이 계속 "연결 중"으로 보였다 — 연결 직후 SSE 주석 한 줄을 보내 헤더를 바로 내보낸다(클라이언트는 주석을 무시한다).
+        try {
+            emitter.send(SseEmitter.event().comment("connected"));
+        } catch (IOException e) {
+            emitter.completeWithError(e);
+            return emitter;
+        }
         SseEventRelay relay = new SseEventRelay(
                 (eventId, json) -> emitter.send(SseEmitter.event().id(String.valueOf(eventId)).data(json, MediaType.APPLICATION_JSON)),
                 lastEventId != null

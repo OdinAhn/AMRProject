@@ -50,7 +50,10 @@ public record TaskResponse(
         if (CANCELABLE.contains(task.getStatus())) {
             allowedActions.add("CANCEL");
         }
+        // 28단계: 작업이 RUNNING일 때만 단계 버튼을 준다 — 예전엔 단계만 봐서 RECOVERY_REQUIRED/CANCEL_REQUESTED인
+        // 작업에도 DISPATCH/CONFIRM_UNLOAD가 나갔고, 누르면 상태 전이 검증에서 409가 났다(브라우저 검증 중 발견).
         steps.stream()
+                .filter(step -> task.getStatus() == TaskStatus.RUNNING)
                 .filter(step -> step.getStatus() == TaskStepStatus.RUNNING)
                 .findFirst()
                 .ifPresent(step -> {
