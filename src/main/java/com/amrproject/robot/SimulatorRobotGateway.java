@@ -24,6 +24,7 @@ import org.springframework.stereotype.Component;
 
 import java.time.Instant;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -42,6 +43,8 @@ public class SimulatorRobotGateway implements RobotGateway {
     private final RobotStateSnapshotRepository robotStateSnapshotRepository;
     private final AlarmService alarmService;
     private final Map<Long, SimulatedFault> pendingFaults = new ConcurrentHashMap<>();
+    /** 29단계: COMMUNICATION_LOSS 장애로 끊긴 로봇 — 다음 정상 명령 전까지 시뮬레이터 하트비트가 되살리지 않는다(메모리 전용). */
+    private final Set<Long> communicationLostRobotIds = ConcurrentHashMap.newKeySet();
 
     public SimulatorRobotGateway(
             CommandEventRepository commandEventRepository,
@@ -69,12 +72,14 @@ public class SimulatorRobotGateway implements RobotGateway {
         recordCommandEvent(command, "SENT");
 
         if (fault == SimulatedFault.COMMUNICATION_LOSS) {
+            communicationLostRobotIds.add(robot.getId());
             command.markUnknown();
             recordCommandEvent(command, "TIMEOUT");
             report(robot, state, ConnectionState.OFFLINE, state.getOperationMode(), state.getMotionState(), state.getSafetyState(), localization, loadState, state.getBatteryPct());
             return;
         }
 
+        communicationLostRobotIds.remove(robot.getId());
         command.accept();
         recordCommandEvent(command, "ACCEPTED");
 
@@ -98,6 +103,11 @@ public class SimulatorRobotGateway implements RobotGateway {
     private int targetBatteryPct(Robot robot) {
         RobotConfiguration configuration = robot.getAppliedConfiguration();
         return configuration != null ? configuration.getChargingTargetPct() : 100;
+    }
+
+    /** 29단계: 통신 두절 장애가 적용된 뒤 아직 정상 명령을 받지 못한 로봇 id(시뮬레이터 하트비트 제외 대상). */
+    public Set<Long> communicationLostRobotIds() {
+        return Set.copyOf(communicationLostRobotIds);
     }
 
     /** 다음 dispatch 한 번에 적용될 장애를 예약한다. */

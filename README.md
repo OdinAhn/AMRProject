@@ -45,6 +45,9 @@ SPRING_PROFILES_ACTIVE=local TOKEN_SIGNING_SECRET=<임의의-서명-키> ./gradl
 | `TOKEN_EXPIRY_MINUTES` | `480` | 액세스 토큰 만료 시간(분) |
 | `EXTERNAL_API_KEY` | (운영 필수, local 프로필은 개발용 기본값) | 외부 시스템 API(`/api/external/**`)의 `X-API-Key` 값. 비어 있으면 외부 API는 전부 401 |
 | `BOOTSTRAP_ADMIN_USERNAME` / `BOOTSTRAP_ADMIN_PASSWORD` | (없음) | 둘 다 설정돼 있고 `ADMIN` 사용자가 없을 때만 기동 시 최초 관리자 계정을 만든다 |
+| `AUTO_DISPATCH_ENABLED` / `AUTO_DISPATCH_INTERVAL_MS` | local: `true` / `5000` (기본 프로필은 꺼짐) | 운영 중 물류센터의 디스패치 사이클 자동 실행 여부와 주기 |
+| `ROBOT_CONNECTION_MONITOR_ENABLED` | local: `true` (기본 프로필은 꺼짐) | 하트비트 기반 로봇 연결 감시(끊기면 OFFLINE·알람). 시뮬레이터 모드면 서버가 하트비트도 대신 친다 |
+| `ROBOT_HEARTBEAT_TIMEOUT_SECONDS` | `30` | 마지막 수신 후 이 시간이 지나면 OFFLINE으로 판정 |
 
 처음 실행하는 빈 데이터베이스라면 최초 관리자 계정을 함께 만든다(관리자가 생긴 뒤에는 이 변수가 있어도 아무 일도 하지 않는다):
 
@@ -111,6 +114,7 @@ Flyway 마이그레이션은 `src/main/resources/db/migration`에 있으며, 애
   | 26. 보안 강화 | 외부 API 키 인증, 작업자 작업장 단위 접근 제어, 비활성 사용자 토큰 즉시 무효화, 최초 관리자 부트스트랩 |
   | 27. 이벤트·복구 신뢰성 | Kafka 발행 결과 확인, SSE 재접속 시 이벤트 공백 제거, 작업 복구 필요 알람(`TASK_RECOVERY_REQUIRED`), MQTT 인터럽트 처리 수정 |
   | 28. 프론트 UX 개선 | 역할별 라우트 가드·404, 전역 실시간 갱신(SSE), 한글 라벨, 확인창·토스트, 작업자 화면 개선, 프론트 CI |
+  | 29. 자동 디스패치·연결 감시 | 디스패치 사이클 자동 실행, 하트비트 기반 로봇 연결 감시(끊기면 OFFLINE·알람, MQTT 텔레메트리로 복구) |
 
   각 단계의 완료 기준과 세부 구현 내용은 `docs/DESIGN.md` §11을 참고.
 
@@ -120,7 +124,6 @@ Flyway 마이그레이션은 `src/main/resources/db/migration`에 있으며, 애
 
 | 단계 | 내용 |
 |---|---|
-| 29. 자동 디스패치·연결 감시 | 디스패치 스케줄러, 로봇 하트비트 끊김 감지 |
 | 30. 대시보드·실시간 지도 | 관제 대시보드, 로봇 현재 위치(노드)와 지도 위 표시, 로봇 상태 실시간 이벤트 (원래 24~27 계획의 시뮬레이터 경로 이동·시뮬레이션 화면 포함) |
 | 31. 대용량·동시성 | 목록 페이지네이션, N+1 제거, 오래된 데이터 정리, 배정·예약 비관적 락, 다중 인스턴스 아웃박스 |
 

@@ -30,6 +30,15 @@ app:
       enabled: ${ROBOT_GATEWAY_MQTT_ENABLED:false}
       broker-url: ${MQTT_BROKER_URL:tcp://localhost:1883}
       manufacturer: ${MQTT_MANUFACTURER:AMRProject}
+  # 29단계: 기본값(application.yaml)은 꺼져 있고 local에서만 켠다 — 테스트 스위트는 자동 배정·연결 판정이 끼어들면 안 된다.
+  dispatch:
+    auto:
+      enabled: ${AUTO_DISPATCH_ENABLED:true}
+      interval-ms: ${AUTO_DISPATCH_INTERVAL_MS:5000}
+  robot:
+    connection-monitor:
+      enabled: ${ROBOT_CONNECTION_MONITOR_ENABLED:true}
+    heartbeat-timeout-seconds: ${ROBOT_HEARTBEAT_TIMEOUT_SECONDS:30}
 
 logging:
   level:
