@@ -128,7 +128,7 @@ public class RobotStateReportService {
                         .flatMap(station -> mapRouteService.findStationNodeId(station.getId(), versionId))));
     }
 
-    /** 즉시 동작(비상정지 stopPause·주문 취소 cancelOrder)의 수행 결과로, 전달(ACCEPTED)에서 멈춰 있던 명령을 끝낸다. */
+    /** 즉시 동작(비상정지 startPause·주문 취소 cancelOrder)의 수행 결과로, 전달(ACCEPTED)에서 멈춰 있던 명령을 끝낸다. */
     private void confirmInstantAction(Robot robot, ActionResult result) {
         robotCommandRepository.findIdByCommandNo(result.actionId())
                 .flatMap(robotCommandRepository::findByIdForUpdate)
