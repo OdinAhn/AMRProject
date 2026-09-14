@@ -52,6 +52,8 @@ docker compose -f docker-compose.prod.yml ps        # backend가 (healthy)가 �
 | 종료 | 즉시 | graceful — 새 요청을 막고 진행 중 요청을 최대 20초 기다림 |
 | 프록시 헤더 | - | `X-Forwarded-*` 신뢰(`server.forward-headers-strategy: framework`) |
 
+**클라이언트 IP(36단계)**: 로그인 IP 제한은 백엔드가 받은 `X-Forwarded-For`를 클라이언트 주소로 쓴다. 컨테이너 nginx는 이 헤더를 자기에게 접속한 주소(`$remote_addr`)로 덮어쓴다 — 클라이언트가 보낸 값을 이어 붙이면 조작한 첫 값이 쓰여 제한을 우회할 수 있기 때문이다. nginx 앞에 로드밸런서를 또 두면 모든 요청이 LB 주소 하나로 보여 IP 제한이 전체에 걸리므로, nginx에 `set_real_ip_from <LB 대역>; real_ip_header X-Forwarded-For;`를 추가해야 한다.
+
 DB 접속 URL의 SSL 옵션은 `DB_URL_OPTIONS`(기본 `useSSL=false&allowPublicKeyRetrieval=true`)로 바꾼다. 관리형 MySQL을 쓰면 `sslMode=REQUIRED` 등으로 교체한다.
 
 ## 4. 헬스체크 · 메트릭

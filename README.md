@@ -47,6 +47,8 @@ SPRING_PROFILES_ACTIVE=local TOKEN_SIGNING_SECRET=<임의의-서명-키> ./gradl
 | `BOOTSTRAP_ADMIN_USERNAME` / `BOOTSTRAP_ADMIN_PASSWORD` | (없음) | 둘 다 설정돼 있고 `ADMIN` 사용자가 없을 때만 기동 시 최초 관리자 계정을 만든다 |
 | `AUTO_DISPATCH_ENABLED` / `AUTO_DISPATCH_INTERVAL_MS` | local: `true` / `5000` (기본 프로필은 꺼짐) | 운영 중 물류센터의 디스패치 사이클 자동 실행 여부와 주기 |
 | `ROBOT_CONNECTION_MONITOR_ENABLED` | local: `true` (기본 프로필은 꺼짐) | 하트비트 기반 로봇 연결 감시(끊기면 OFFLINE·알람). 시뮬레이터 모드면 서버가 하트비트도 대신 친다 |
+| `LOGIN_MAX_FAILURES_PER_USERNAME` / `LOGIN_MAX_FAILURES_PER_IP` | `5` / `50` | (36단계) 이 횟수만큼 로그인에 실패하면 아이디·IP를 잠근다 |
+| `LOGIN_FAILURE_WINDOW_SECONDS` / `LOGIN_LOCK_SECONDS` | `900` / `900` | 실패를 세는 기간과 잠금 시간(초) |
 | `ROBOT_HEARTBEAT_TIMEOUT_SECONDS` | `30` | 마지막 수신 후 이 시간이 지나면 OFFLINE으로 판정 |
 | `app.retention.enabled` / `app.retention.days` / `app.retention.cron` | `true` / `30` / `0 30 3 * * *` | 발행 완료 outbox 이벤트·로봇 상태 이력 보관 기간과 삭제 시각(설정 파일 속성) |
 
@@ -132,6 +134,7 @@ Flyway 마이그레이션은 `src/main/resources/db/migration`에 있으며, 애
   | 33. 우선순위·일시정지·비상정지 | 작업 우선순위(호출 시 선택·대기 중 변경), 작업 일시정지·재개, 로봇·물류센터 전체 비상정지(작업 복구 필요·배정 제외·알람), 시뮬레이터 현장 해제 |
   | 34. 운영 통계 | 기간별 처리량·성공률·평균 처리/대기 시간·일별 추이·로봇 가동률·발생 알람(`/statistics` 화면) |
   | 35. 배포 준비 | 백엔드·프론트 Docker 이미지, 전체 스택 운영형 compose, `prod` 프로필(graceful shutdown, 관리 포트), Prometheus 메트릭과 업무 지표 |
+  | 36. 로그인 시도 제한 | 아이디별 5회·IP별 50회 실패 시 15분 잠금(429), 성공·관리자 비밀번호 초기화로 해제, 로그인 화면 오류 메시지 개선 |
 
   각 단계의 완료 기준과 세부 구현 내용은 `docs/DESIGN.md` §11을 참고.
 
@@ -147,7 +150,7 @@ Flyway 마이그레이션은 `src/main/resources/db/migration`에 있으며, 애
 - MQTT(18단계)는 옵트인이며 기본값은 시뮬레이터다. VDA5050 구현은 축소된 하위 집합이고 동기식·3초 타임아웃 방식이라 실제 로봇 벤더 연동 전 검증이 더 필요하다(`docs/DESIGN.md` §11 18단계 참고).
 - Kafka 토픽(`amr.events`)은 발행만 하고 이 애플리케이션 내부에는 컨슈머가 없다 — 재구독이 필요한 외부 시스템이 생기면 별도로 컨슈머를 구현해야 한다.
 - 외부 API 인증(26단계)은 연동 시스템 전체가 공유하는 API 키 하나다. 시스템별 자격증명·키 회전은 실제 WMS/WCS가 정해진 뒤 설계한다.
-- 로드맵 범위 밖으로 남긴 과제: 로봇 명령을 트랜잭션 안에서 동기로 기다리는 구조의 비동기 재설계, 최근접 로봇 선택, 감사 로그, 로그인 시도 제한. (일시정지·긴급정지는 33단계, 통계는 34단계, Dockerfile·메트릭은 35단계에서 구현)
+- 로드맵 범위 밖으로 남긴 과제: 로봇 명령을 트랜잭션 안에서 동기로 기다리는 구조의 비동기 재설계, 최근접 로봇 선택, 감사 로그. (일시정지·긴급정지는 33단계, 통계는 34단계, Dockerfile·메트릭은 35단계, 로그인 시도 제한은 36단계에서 구현)
 - 배포(35단계)는 단일 호스트 compose 기준이다. TLS 종단, Kubernetes 매니페스트, 비밀값 관리 도구, Grafana·경보 규칙, 자동 백업은 없다(`docs/DEPLOYMENT.md` §8).
 - 운영 통계(34단계)는 요청마다 기간 안의 행을 읽어 계산한다(최대 92일). 물류센터당 작업이 하루 수만 건을 넘으면 일별 집계 테이블(배치 적재)로 옮겨야 한다. 로봇 가동률은 "작업이 배정돼 있던 시간"이라 충전·대기 이동을 따로 구분하지 않는다.
 - 비상정지(33단계)의 실제 해제는 현장 조작으로 가정해 원격 해제 API가 없다(시뮬레이터 전용 해제만 있음). MQTT 어댑터는 `stopPause`를 보내기만 하고 로봇의 안전 상태 보고를 파싱하지 않는다.
