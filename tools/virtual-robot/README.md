@@ -79,7 +79,7 @@ SPRING_PROFILES_ACTIVE=local ROBOT_GATEWAY_MQTT_ENABLED=true ./gradlew bootRun
 | 주문 거부 | 비상정지·일시정지·수동 모드면 `orderError`, 갈 길이 없으면 `noRouteError`(스펙 형식 `errors` 객체) |
 
 - 1초(`--state-interval`)마다, 그리고 주문·즉시 동작을 받은 즉시 `state`를 보냅니다. 서버는 이것을 하트비트로도 씁니다.
-- `connection` 토픽에 `ONLINE`(retain)을 보내고, 비정상 종료 시 브로커가 `CONNECTIONBROKEN`(LWT)을 알립니다(서버는 아직 이 토픽을 읽지 않음).
+- `connection` 토픽에 `ONLINE`(retain)을 보내고, 비정상 종료 시 브로커가 `CONNECTIONBROKEN`(LWT)을 알립니다. 서버는 이를 받아 바로 OFFLINE으로 바꿉니다(45단계) — 프로세스를 강제 종료해 확인할 수 있습니다.
 - 배터리는 이동 거리 1당 `--drain-per-unit`(기본 0.05%) 줄어듭니다. 서버 기준(기본 15%) 이하가 되면 서버가 충전 주문을 보냅니다.
 - 시작 위치: `--start-nodes C1,B2,A3` → 없으면 서버가 알고 있는 로봇 현재 노드 → 없으면 지도 노드를 차례로.
 - 지도가 없거나 목적지가 지도에 없는 노드면(`--no-api` 포함) 위치 없이 `--travel-seconds`(기본 5초) 뒤 도착한 것으로 보고합니다.
@@ -94,6 +94,8 @@ SPRING_PROFILES_ACTIVE=local ROBOT_GATEWAY_MQTT_ENABLED=true ./gradlew bootRun
 | `estop R` / `release R` | 현장 비상정지 버튼 / 현장 해제 | 안전 상태 비상정지·`ROBOT_EMERGENCY_STOP` 알람·배정 제외 / 해소 |
 | `manual R` / `auto R` | 현장에서 수동 모드로 전환 / 자동 복귀 | 동작 모드 MANUAL·자동 배정 제외 / AUTO |
 | `obstacle R` | 장애물 감지(보호 필드 침범) 켜기·끄기 | 보호 정지, 이동 멈춤 |
+| `lost R` | 위치 추정 실패 켜기·끄기(`positionInitialized:false`, 주문 거부) | 위치 추정 LOST·`LOCALIZATION_LOST` 알람·배정 제외 / 해소 |
+| `load R` / `unload R` | 짐 싣기·내리기(`loads`) | 적재 상태 LOADED / EMPTY |
 | `silent R` / `unsilent R` | 통신 두절(주문 무시·state 안 보냄) / 복구 | 하트비트 시간(기본 30초) 뒤 OFFLINE·`ROBOT_COMM_LOST`, 진행 중 명령은 `MQTT_COMMAND_TIMEOUT_SECONDS` 뒤 UNKNOWN·복구 필요 / ONLINE·늦은 도착 보고로 자동 재개(40단계) |
 | `fail R` | 다음 주문을 경로 없음으로 거부 | 명령 FAILED·작업 복구 필요 |
 | `battery R 10` | 배터리 급감 | 다음 디스패치에서 가까운 충전소로 충전 주문 |
@@ -113,4 +115,4 @@ CI(`ci.yml`의 `virtual-robot` job)에서도 실행합니다. 실제 브로커·
 - 서버의 VDA 5050 구현은 **축소 버전**입니다. 주문은 목적지 노드 하나(경로·통로 `edges` 없음)라, 실제 로봇이 전체 경로를 받아야 하는 제조사면 서버 쪽 확장이 필요합니다.
 - 서버는 `agvPosition` 좌표를 쓰지 않고 `lastNodeId`로만 위치를 압니다 — 로봇이 보고하는 노드 id가 서버 지도 노드 코드와 같아야 합니다.
 - 비상정지는 표준에 원격 비상정지 동작이 없어 `startPause`(HARD)로 보냅니다. 실제 로봇이 이것을 어떻게 다루는지(유지·자동 해제)는 제조사별로 확인해야 합니다.
-- 로드·위치추정 상태(`loads`, `positionInitialized`)와 `connection` 토픽은 서버가 아직 반영하지 않습니다.
+- 서버는 `loads`는 빈 차/적재 여부만, `agvPosition`은 위치 추정 여부만 봅니다(좌표·짐 종류는 무시).

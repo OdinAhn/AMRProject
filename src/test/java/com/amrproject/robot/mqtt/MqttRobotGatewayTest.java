@@ -3,6 +3,8 @@ package com.amrproject.robot.mqtt;
 import com.amrproject.domain.entity.map.EdgeDirection;
 import com.amrproject.domain.entity.map.NodeType;
 import com.amrproject.domain.entity.robot.ConnectionState;
+import com.amrproject.domain.entity.robot.LoadState;
+import com.amrproject.domain.entity.robot.LocalizationState;
 import com.amrproject.domain.entity.robot.OperationMode;
 import com.amrproject.domain.entity.robot.Robot;
 import com.amrproject.domain.entity.robot.RobotCurrentState;
@@ -405,6 +407,81 @@ class MqttRobotGatewayTest extends AbstractIntegrationTest {
 
         awaitUntil(() -> "FAILED".equals(moveCommandStatus(taskId)));
         awaitUntil(() -> "RECOVERY_REQUIRED".equals(taskStatus(taskId)));
+    }
+
+    /**
+     * 45단계: 로봇 connection 토픽. 비정상 끊김(CONNECTIONBROKEN, 브로커 LWT)은 하트비트 타임아웃(기본 30초)을 기다리지 않고 바로
+     * OFFLINE·통신 두절 알람이 되고, ONLINE이 오면 복구·알람 해소된다.
+     */
+    @Test
+    void connection_토픽의_끊김은_바로_OFFLINE이_되고_ONLINE으로_복구된다() throws Exception {
+        Long siteId = createSite("SITE-MQTT11", "MQTT 물류센터11");
+        Long robotId = createRobot(siteId, "ROBOT-MQTT11", "MQTT로봇11");
+        mockMvc.perform(patch("/api/admin/robots/{robotId}/lifecycle-status", robotId)
+                        .contentType(APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new UpdateRobotLifecycleStatusRequest(RobotLifecycleStatus.IN_SERVICE))))
+                .andExpect(status().isOk());
+        publishRawState("ROBOT-MQTT11", "{\"driving\": false}");
+        awaitUntil(() -> robotCurrentStateRepository.findById(robotId).orElseThrow().getConnectionState() == ConnectionState.ONLINE);
+
+        publishConnection("ROBOT-MQTT11", "CONNECTIONBROKEN");
+        awaitUntil(() -> robotCurrentStateRepository.findById(robotId).orElseThrow().getConnectionState() == ConnectionState.OFFLINE);
+        assertThat(robotAlarmStatus(robotId, "ROBOT_COMM_LOST")).isEqualTo("OPEN");
+
+        publishConnection("ROBOT-MQTT11", "ONLINE");
+        awaitUntil(() -> robotCurrentStateRepository.findById(robotId).orElseThrow().getConnectionState() == ConnectionState.ONLINE);
+        assertThat(robotAlarmStatus(robotId, "ROBOT_COMM_LOST")).isEqualTo("RESOLVED");
+    }
+
+    /** 45단계: state의 loads(짐 유무)와 agvPosition.positionInitialized(위치 추정)를 반영한다. 위치 추정에 실패한 로봇은 알람이 뜨고 배정되지 않는다. */
+    @Test
+    void 적재_상태와_위치_추정_실패를_반영하고_위치를_잃은_로봇은_배정하지_않는다() throws Exception {
+        Long siteId = createSite("SITE-MQTT12", "MQTT 물류센터12");
+        Long originId = createStation(siteId, "ST-MQTT17", "입고", StationType.PICKUP);
+        Long destinationId = createStation(siteId, "ST-MQTT18", "출고", StationType.DROPOFF);
+        Long robotId = createRobot(siteId, "ROBOT-MQTT12", "MQTT로봇12");
+        mockMvc.perform(patch("/api/admin/robots/{robotId}/lifecycle-status", robotId)
+                        .contentType(APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new UpdateRobotLifecycleStatusRequest(RobotLifecycleStatus.IN_SERVICE))))
+                .andExpect(status().isOk());
+
+        publishRawState("ROBOT-MQTT12", "{\"driving\": false, \"loads\": [{\"loadId\": \"PALLET-1\", \"loadType\": \"EPAL\"}],"
+                + " \"agvPosition\": {\"x\": 1.0, \"y\": 2.0, \"theta\": 0.0, \"mapId\": \"m\", \"positionInitialized\": false}}");
+        awaitUntil(() -> {
+            RobotCurrentState state = robotCurrentStateRepository.findById(robotId).orElseThrow();
+            return state.getLoadState() == LoadState.LOADED && state.getLocalizationState() == LocalizationState.LOST;
+        });
+        assertThat(robotAlarmStatus(robotId, "LOCALIZATION_LOST")).isEqualTo("OPEN");
+        createTask(originId, destinationId, "idem-mqtt-12");
+        assertThat(dispatchService.runCycle(siteId).assignments()).isEmpty();
+
+        publishRawState("ROBOT-MQTT12", "{\"loads\": [], \"agvPosition\": {\"x\": 1.0, \"y\": 2.0, \"theta\": 0.0, \"mapId\": \"m\", \"positionInitialized\": true}}");
+        awaitUntil(() -> {
+            RobotCurrentState state = robotCurrentStateRepository.findById(robotId).orElseThrow();
+            return state.getLoadState() == LoadState.EMPTY && state.getLocalizationState() == LocalizationState.LOCALIZED;
+        });
+        assertThat(robotAlarmStatus(robotId, "LOCALIZATION_LOST")).isEqualTo("RESOLVED");
+        assertThat(dispatchService.runCycle(siteId).assignments()).singleElement()
+                .satisfies(assignment -> assertThat(assignment.robotId()).isEqualTo(robotId));
+    }
+
+    private void publishConnection(String robotCode, String connectionState) throws Exception {
+        MqttClient robotClient = new MqttClient(brokerUrl(), MqttClient.generateClientId(), new MemoryPersistence());
+        robotClient.connect();
+        try {
+            String json = "{\"headerId\": 1, \"timestamp\": \"2026-09-14T00:00:00Z\", \"version\": \"2.0.0\", \"manufacturer\": \""
+                    + MANUFACTURER + "\", \"serialNumber\": \"" + robotCode + "\", \"connectionState\": \"" + connectionState + "\"}";
+            robotClient.publish("uagv/v2/" + MANUFACTURER + "/" + robotCode + "/connection", new MqttMessage(json.getBytes(StandardCharsets.UTF_8)));
+        } finally {
+            robotClient.disconnect();
+            robotClient.close();
+        }
+    }
+
+    private String robotAlarmStatus(Long robotId, String alarmType) {
+        return jdbcTemplate.queryForObject(
+                "select status from alarms where alarm_type = ? and source_type = 'ROBOT' and source_id = ? order by id desc limit 1",
+                String.class, alarmType, robotId);
     }
 
     private String robotAlarmStatus(Long robotId) {

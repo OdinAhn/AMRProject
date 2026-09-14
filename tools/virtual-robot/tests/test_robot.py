@@ -146,6 +146,20 @@ class VirtualRobotTest(unittest.TestCase):
         self.assertEqual(state["lastNodeId"], "SOME-STATION")
         self.assertTrue(finished(state))
 
+    def test_position_lost_and_loads_are_reported_and_lost_robot_rejects_orders(self):
+        self.robot.position_lost = True
+        self.robot.loads = [{"loadId": "L1", "loadType": "PALLET"}]
+        state = self.state()
+        self.assertFalse(state["agvPosition"]["positionInitialized"])
+        self.assertEqual(state["loads"], [{"loadId": "L1", "loadType": "PALLET"}])
+        self.robot.handle_order(order("o1", "N3"))
+        self.assertEqual(self.state()["errors"][0]["errorType"], "orderError")
+
+        self.robot.position_lost = False
+        self.robot.handle_order(order("o2", "N2"))
+        self.assertTrue(self.state()["agvPosition"]["positionInitialized"])
+        self.assertEqual(self.state()["errors"], [])
+
     def test_silent_robot_ignores_orders(self):
         self.robot.silent = True
         self.assertFalse(self.robot.handle_order(order("o1", "N3")))

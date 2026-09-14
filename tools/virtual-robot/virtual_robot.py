@@ -153,9 +153,10 @@ def load_map_and_positions(api: ServerApi, codes: list[str]) -> tuple[RouteMap |
 
 
 def console(connections: dict[str, RobotConnection], lock: threading.Lock, stop: threading.Event) -> None:
-    help_text = """명령: status | estop R | release R | manual R | auto R | obstacle R | silent R | unsilent R | fail R | battery R 값 | quit
+    help_text = """명령: status | estop R | release R | manual R | auto R | obstacle R | lost R | load R | unload R | silent R | unsilent R | fail R | battery R 값 | quit
   (R은 로봇 코드 또는 all) estop: 비상정지 버튼, release: 현장 해제(비상정지·일시정지), manual/auto: 동작 모드,
-  obstacle: 장애물 감지 켜기/끄기, silent/unsilent: 통신 두절 흉내, fail: 다음 주문을 경로 없음으로 거부, battery: 배터리(%) 설정"""
+  obstacle: 장애물 감지 켜기/끄기, lost: 위치 추정 실패 켜기/끄기, load/unload: 짐 싣기/내리기,
+  silent/unsilent: 통신 두절 흉내, fail: 다음 주문을 경로 없음으로 거부, battery: 배터리(%) 설정"""
     print(help_text, flush=True)
     for line in sys.stdin:
         parts = line.split()
@@ -190,6 +191,12 @@ def console(connections: dict[str, RobotConnection], lock: threading.Lock, stop:
                     robot.operating_mode = "AUTOMATIC"
                 elif command == "obstacle":
                     robot.field_violation = not robot.field_violation
+                elif command == "lost":
+                    robot.position_lost = not robot.position_lost
+                elif command == "load":
+                    robot.loads = [{"loadId": f"LOAD-{robot.serial}", "loadType": "PALLET"}]
+                elif command == "unload":
+                    robot.loads = []
                 elif command == "silent":
                     robot.silent = True
                 elif command == "unsilent":

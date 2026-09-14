@@ -38,6 +38,6 @@ class Vda5050StateTest {
     private static Vda5050State state(
             Boolean driving, List<Vda5050State.Error> errors, List<Vda5050State.NodeState> nodeStates, List<Vda5050State.ActionState> actionStates
     ) {
-        return new Vda5050State("order-1", driving, errors, null, null, null, null, actionStates, nodeStates, null);
+        return new Vda5050State("order-1", driving, errors, null, null, null, null, actionStates, nodeStates, null, null, null);
     }
 }
