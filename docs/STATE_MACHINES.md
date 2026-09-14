@@ -114,6 +114,7 @@ stateDiagram-v2
 - **39단계 구현**: 시뮬레이터는 요청 트랜잭션 안에서 최종 상태까지 전이한다. MQTT는 요청에서 `SENT`까지만, 커밋 뒤 발행되면 `ACCEPTED`→`RUNNING`, 완료 state가 오면 `SUCCEEDED`/`FAILED`, 보낸 뒤 `MQTT_COMMAND_TIMEOUT_SECONDS` 안에 결과가 없거나 발행에 실패하면 `UNKNOWN`이 된다. 결과가 발행 기록보다 먼저 오면 `SENT`→`ACCEPTED`→`RUNNING`을 채운 뒤 끝낸다. `UNKNOWN` 뒤 늦게 온 결과는 `SUCCEEDED`/`FAILED`로 기록한다. 40단계부터 이동 명령의 늦은 `SUCCEEDED`는 작업을 `RECOVERY_REQUIRED → RUNNING`으로 자동 재개한다(그 뒤 같은 로봇에 비상정지가 없을 때만, API.md §7). 작업 취소·비상정지로 끝낸 진행 중 명령은 `FAILED`(이벤트 `CANCELED`/`EMERGENCY_STOPPED`)이고 늦은 결과는 무시된다.
 - **46단계 구현**: 교통 관리로 피해 갈 길이 없는 이동 명령은 `PENDING`에 머문다(명령 이벤트 `WAITING_FOR_TRAFFIC`). 길이 나면 경로를 담아 `SENT`로 보내고(`TRAFFIC_CLEARED`), 기다리던 작업이 취소·비상정지·복구되거나 더는 최신 명령이 아니면 로봇에 보내지 않은 채 `FAILED`로 끝낸다. 재계획은 작업 행 → 명령 행 순서로 잠근다.
 - **47단계 구현**: 작업과 무관한 비키기 이동 `REPOSITION`(task_step 없음)을 추가했다. 교통 대기와 달리 경로를 예약한 뒤 만들어 바로 `SENT`로 보내며, 전이는 이동 명령과 같다(타임아웃 감시 포함). 끝나도 작업에는 영향이 없고 경로 예약만 반납한다.
+- **48단계 구현**: 할 일 없는 로봇을 대기 구역으로 보내는 이동도 같은 `REPOSITION`이다(명령 이벤트 `PARKING`으로 구분).
 
 ---
 

@@ -849,12 +849,9 @@ public class TaskService {
                 .orElse(false);
     }
 
-    /** 47단계: 비키는 이동이 성공·실패로 끝나면 경로 예약을 푼다(기다리던 명령이 다시 계획된다). 결과 불명이면 로봇이 경로 어딘가에 있을 수 있어 유지한다. */
+    /** 47단계: 비키는 이동(48단계 대기 구역 이동 포함)이 끝나면 경로 예약을 푼다(기다리던 명령이 다시 계획된다). */
     private void finishReposition(RobotCommand command) {
-        if (command.getCommandType() == RobotCommandType.REPOSITION
-                && (command.getStatus() == RobotCommandStatus.SUCCEEDED || command.getStatus() == RobotCommandStatus.FAILED)) {
-            trafficService.releaseNodes(command.getRobot());
-        }
+        trafficService.releaseNodesIfRepositionFinished(command);
     }
 
     private void abandonWaitingCommand(RobotCommand command, String reason) {
@@ -898,7 +895,7 @@ public class TaskService {
     public void applyCommandOutcome(RobotCommand command, RobotCommandStatus previousStatus) {
         TaskStep step = command.getTaskStep();
         if (step == null) {
-            finishReposition(command); // 47단계: 작업과 무관한 비키기 이동
+            finishReposition(command); // 47·48단계: 작업과 무관한 이동(비키기·대기 구역)
             return;
         }
         if (!isFinal(command.getStatus())) {

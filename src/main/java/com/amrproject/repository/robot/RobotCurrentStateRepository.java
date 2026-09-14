@@ -21,6 +21,10 @@ import java.util.Optional;
  */
 public interface RobotCurrentStateRepository extends JpaRepository<RobotCurrentState, Long> {
 
+    /** 48단계: 현재 노드만 값으로 읽는다 — 엔티티를 미리 읽어 두면 뒤의 잠금 조회가 잠그기 전 값을 돌려준다. */
+    @Query("select s.currentNodeId from RobotCurrentState s where s.robotId = :robotId")
+    Optional<Long> findCurrentNodeId(Long robotId);
+
     /** 46단계: 교통 관리 — 로봇들의 최신 위치를 공유 잠금으로 읽는다(상태 행만 잠근다). */
     @Query(value = "select * from robot_current_states where robot_id in (:robotIds) for share", nativeQuery = true)
     List<RobotCurrentState> findByRobotIdInForShare(java.util.Collection<Long> robotIds);

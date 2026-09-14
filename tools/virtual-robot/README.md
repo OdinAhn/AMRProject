@@ -56,7 +56,7 @@ docker compose up -d
 SPRING_PROFILES_ACTIVE=local ROBOT_GATEWAY_MQTT_ENABLED=true ./gradlew bootRun
 
 # 3. 시연 데이터 (한 번만 — 같은 물류센터 코드가 있으면 아무것도 안 함)
-.venv/Scripts/python seed.py                 # SITE-VR, 노드 A1~C3, IN-1/IN-2/OUT-1/OUT-2/CHG-1, 로봇 VR-01~03
+.venv/Scripts/python seed.py                 # SITE-VR, 노드 A1~C3, IN-1/IN-2/OUT-1/OUT-2/CHG-1, 대기 구역 SHELF-W(A2)/SHELF-N(B1)/SHELF-E(C2), 로봇 VR-01~03
 
 # 4. 가상 로봇 실행 (콘솔 명령을 받음, Ctrl+C로 종료)
 .venv/Scripts/python virtual_robot.py --robots VR-01,VR-02,VR-03
@@ -115,6 +115,7 @@ CI(`ci.yml`의 `virtual-robot` job)에서도 실행합니다. 실제 브로커·
 - 서버의 VDA 5050 구현은 **축소 버전**입니다. 46단계부터 주문에 교통 관리로 예약한 경로 전체(`nodes`·`edges`, 모두 `released:true`)를 담지만, 노드 좌표·edge 속성(최대 속도·궤적)·부분 해제는 없습니다. 제조사가 이것들을 요구하면 서버 쪽 확장이 필요합니다(`app.robot-gateway.mqtt.full-route=false`면 목적지 노드 하나).
 - 서버는 경로의 노드 사이를 로봇이 알아서 간다고 가정합니다 — 주문의 연속한 두 노드가 로봇 지도에서도 직접 이어져 있어야 합니다.
 - 47단계부터 서버가 작업 없이 "길 비키기" 주문(경로 전체, 목적지는 마지막 노드)을 보낼 수 있습니다. 가상 로봇에게는 일반 주문과 같습니다. 서버는 로봇이 노드를 지날 때 보내는 `lastNodeId`로 지나간 노드 예약을 풀므로, 실제 로봇도 노드를 지날 때마다 `lastNodeId`를 갱신해 보고해야 뒤따르는 로봇이 덜 기다립니다.
+- 48단계: 할 일 없는 로봇은 마지막 작업이 끝나고 30초(`app.parking.idle-seconds`) 뒤 대기 구역(PARKING)으로 가는 주문을 받습니다(구역마다 고르게). 배터리가 충전 기준 이하면 먼저 충전소로 갑니다 — `--battery 12`로 띄우면 충전 후 대기 구역으로 가는 흐름을 볼 수 있습니다. 48단계 전에 만든 시연 물류센터에는 대기 구역이 없으니 `--site-code`를 바꿔 새로 넣으세요.
 - 서버는 `agvPosition` 좌표를 쓰지 않고 `lastNodeId`로만 위치를 압니다 — 로봇이 보고하는 노드 id가 서버 지도 노드 코드와 같아야 합니다.
 - 비상정지는 표준에 원격 비상정지 동작이 없어 `startPause`(HARD)로 보냅니다. 실제 로봇이 이것을 어떻게 다루는지(유지·자동 해제)는 제조사별로 확인해야 합니다.
 - 서버는 `loads`는 빈 차/적재 여부만, `agvPosition`은 위치 추정 여부만 봅니다(좌표·짐 종류는 무시).

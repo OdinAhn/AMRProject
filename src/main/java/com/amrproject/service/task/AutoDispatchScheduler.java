@@ -53,8 +53,9 @@ public class AutoDispatchScheduler {
         for (Site site : siteService.getActive()) {
             try {
                 DispatchResultResponse result = dispatchService.runCycle(site.getId());
-                if (!result.assignedTaskIds().isEmpty() || !result.chargeTaskIds().isEmpty()) {
-                    log.info("자동 디스패치: siteId={}, 배정={}, 충전={}", site.getId(), result.assignedTaskIds(), result.chargeTaskIds());
+                if (!result.assignedTaskIds().isEmpty() || !result.chargeTaskIds().isEmpty() || !result.parkedRobotIds().isEmpty()) {
+                    log.info("자동 디스패치: siteId={}, 배정={}, 충전={}, 대기 구역={}", site.getId(), result.assignedTaskIds(), result.chargeTaskIds(),
+                            result.parkedRobotIds());
                 }
             } catch (Exception e) {
                 log.warn("자동 디스패치 실패: siteId={} — 다음 주기에 재시도합니다.", site.getId(), e);

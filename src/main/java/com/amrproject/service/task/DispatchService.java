@@ -53,6 +53,7 @@ public class DispatchService {
     private final SiteService siteService;
     private final TaskService taskService;
     private final MapRouteService mapRouteService;
+    private final ParkingService parkingService;
 
     public DispatchService(
             TaskRepository taskRepository,
@@ -62,7 +63,8 @@ public class DispatchService {
             StationRepository stationRepository,
             SiteService siteService,
             TaskService taskService,
-            MapRouteService mapRouteService
+            MapRouteService mapRouteService,
+            ParkingService parkingService
     ) {
         this.taskRepository = taskRepository;
         this.robotRepository = robotRepository;
@@ -72,6 +74,7 @@ public class DispatchService {
         this.siteService = siteService;
         this.taskService = taskService;
         this.mapRouteService = mapRouteService;
+        this.parkingService = parkingService;
     }
 
     /**
@@ -110,6 +113,7 @@ public class DispatchService {
         }
 
         List<Long> chargeTaskIds = new ArrayList<>();
+        Set<Long> chargedRobotIds = new HashSet<>();
         List<Station> chargingStations = stationRepository.findBySiteIdAndStationType(siteId, StationType.CHARGING).stream()
                 .sorted(Comparator.comparing(Station::getId))
                 .toList();
@@ -123,6 +127,7 @@ public class DispatchService {
                 try {
                     Task chargeTask = taskService.createChargeTask(robot, station);
                     chargeTaskIds.add(chargeTask.getId());
+                    chargedRobotIds.add(robot.getId());
                     break;
                 } catch (InvalidStateTransitionException ex) {
                     // 이 충전소가 가득 찼다 — 다음 충전소로.
@@ -130,7 +135,17 @@ public class DispatchService {
             }
         }
 
-        return new DispatchResultResponse(assignedTaskIds, chargeTaskIds, assignments);
+        // 48단계: 일도 충전도 필요 없는 로봇은 대기 구역으로(배터리가 충전 기준 이하면 ParkingService가 보내지 않는다)
+        List<Long> parkedRobotIds = new ArrayList<>();
+        for (Robot robot : robots) {
+            // 배정 가능한 상태(작업 없음·자동·정상·연결·위치·배터리)인지 먼저 가볍게 거른다 — 잠금은 ParkingService가 다시 확인하며 건다
+            if (!assignedThisCycle.contains(robot.getId()) && !chargedRobotIds.contains(robot.getId()) && eligibleState(robot).isPresent()
+                    && parkingService.parkIfIdle(robot.getId(), lowBatteryThreshold(robot))) {
+                parkedRobotIds.add(robot.getId());
+            }
+        }
+
+        return new DispatchResultResponse(assignedTaskIds, chargeTaskIds, assignments, parkedRobotIds);
     }
 
     /**
