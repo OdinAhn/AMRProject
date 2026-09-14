@@ -22,6 +22,10 @@ public interface TaskAssignmentRepository extends JpaRepository<TaskAssignment, 
 
     Optional<TaskAssignment> findByRobotIdAndStatus(Long robotId, TaskAssignmentStatus status);
 
+    /** 48단계: 로봇의 마지막 작업이 끝난(완료·해제) 시각 — 막 일을 마친 로봇을 바로 대기 구역으로 보내지 않기 위해. 없으면 빈 값. */
+    @Query("select max(a.releasedAt) from TaskAssignment a where a.robot.id = :robotId")
+    Optional<Instant> findLastReleasedAt(Long robotId);
+
     /**
      * 31단계: 배정 직전 "이 로봇에 이미 진행 중인 배정이 있는가"를 잠금 조회로 확인한다. MySQL 기본 격리수준(REPEATABLE READ)에서
      * 일반 SELECT는 트랜잭션의 첫 조회 시점 스냅샷을 읽어, 로봇 행 잠금을 기다리는 동안 다른 트랜잭션이 커밋한 배정을 못 본다 —

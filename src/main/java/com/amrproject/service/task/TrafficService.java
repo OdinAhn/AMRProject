@@ -1,11 +1,16 @@
 package com.amrproject.service.task;
 
 import com.amrproject.domain.entity.map.Node;
+import com.amrproject.domain.entity.map.Zone;
+import com.amrproject.domain.entity.map.ZoneType;
 import com.amrproject.domain.entity.robot.ConnectionState;
 import com.amrproject.domain.entity.robot.LocalizationState;
 import com.amrproject.domain.entity.robot.MotionState;
 import com.amrproject.domain.entity.robot.OperationMode;
 import com.amrproject.domain.entity.robot.Robot;
+import com.amrproject.domain.entity.robot.RobotCommand;
+import com.amrproject.domain.entity.robot.RobotCommandStatus;
+import com.amrproject.domain.entity.robot.RobotCommandType;
 import com.amrproject.domain.entity.robot.RobotCurrentState;
 import com.amrproject.domain.entity.robot.SafetyState;
 import com.amrproject.domain.entity.site.Station;
@@ -16,6 +21,7 @@ import com.amrproject.domain.entity.task.ResourceReservationStatus;
 import com.amrproject.domain.entity.task.ResourceType;
 import com.amrproject.domain.entity.task.TaskStep;
 import com.amrproject.repository.map.NodeRepository;
+import com.amrproject.repository.map.ZoneRepository;
 import com.amrproject.repository.robot.RobotCurrentStateRepository;
 import com.amrproject.repository.robot.RobotRepository;
 import com.amrproject.repository.site.SiteRepository;
@@ -77,6 +83,7 @@ public class TrafficService {
     private final ResourceReservationRepository resourceReservationRepository;
     private final NodeRepository nodeRepository;
     private final StationMapBindingRepository stationMapBindingRepository;
+    private final ZoneRepository zoneRepository;
     private final JsonMapper jsonMapper;
     private final ApplicationEventPublisher eventPublisher;
 
@@ -90,6 +97,7 @@ public class TrafficService {
             ResourceReservationRepository resourceReservationRepository,
             NodeRepository nodeRepository,
             StationMapBindingRepository stationMapBindingRepository,
+            ZoneRepository zoneRepository,
             JsonMapper jsonMapper,
             ApplicationEventPublisher eventPublisher
     ) {
@@ -102,6 +110,7 @@ public class TrafficService {
         this.resourceReservationRepository = resourceReservationRepository;
         this.nodeRepository = nodeRepository;
         this.stationMapBindingRepository = stationMapBindingRepository;
+        this.zoneRepository = zoneRepository;
         this.jsonMapper = jsonMapper;
         this.eventPublisher = eventPublisher;
     }
@@ -245,6 +254,9 @@ public class TrafficService {
             int rank = binding.getStation().getStationType() == StationType.WAITING ? 0 : 2;
             stationNodeRank.merge(binding.getNode().getId(), rank, Math::min);
         }
+        // 48단계: 대기 구역(PARKING) 노드도 대기 작업장 노드와 같은 1순위
+        zoneRepository.findWithNodesByMapVersionIdAndZoneType(versionId.get(), ZoneType.PARKING)
+                .forEach(zone -> zone.getNodes().forEach(node -> stationNodeRank.merge(node.getId(), 0, Math::min)));
         Optional<Long> destination = reachable.entrySet().stream()
                 .filter(entry -> !entry.getKey().equals(moving.getCurrentNodeId()) && !neededNodeIds.contains(entry.getKey()) && !avoid.contains(entry.getKey()))
                 .sorted(Comparator.comparing((Map.Entry<Long, Double> entry) -> stationNodeRank.getOrDefault(entry.getKey(), 1))
@@ -256,6 +268,83 @@ public class TrafficService {
         }
         List<Waypoint> path = graph.shortestPathAvoiding(moving.getCurrentNodeId(), destination.get(), avoid);
         return reserve(blocker, null, path);
+    }
+
+    /**
+     * 48단계: 할 일 없는 로봇을 대기 구역(PARKING)의 빈 노드로 보낼 경로를 계획한다. CLEAR면 작업 단계 없이 경로 노드를 예약한 뒤다.
+     *
+     * <p>구역을 고르게 채운다: 구역마다 쓰는 중인 노드(다른 로봇이 서 있거나 예약한 노드) 수 ÷ 수용량(max_capacity, 없으면 노드 수)이
+     * 가장 낮은 구역, 같으면 가장 가까운 빈 노드가 있는 구역의 그 노드다. 가득 찬 구역과 갈 수 없는(다른 로봇에 막힌) 노드는 뺀다.
+     *
+     * <p>보내지 않는 경우(UNMANAGED): 교통 관리·대기 구역 없음, 이미 대기 구역에 있음, 위치 모름·움직일 수 없는 상태, 배터리가
+     * lowBatteryPct 이하(충전 대상), 이미 경로를 예약함(이동·비키는 중), 갈 곳 없음.
+     */
+    public Plan planParking(Robot robot, int lowBatteryPct) {
+        if (!enabled) {
+            return Plan.UNMANAGED;
+        }
+        Long siteId = robot.getSite().getId();
+        Optional<Long> versionId = mapRouteService.findActiveVersionId(siteId);
+        List<Zone> zones = versionId.map(id -> zoneRepository.findWithNodesByMapVersionIdAndZoneType(id, ZoneType.PARKING)).orElse(List.of());
+        Map<Long, Zone> zoneByNode = new HashMap<>();
+        zones.forEach(zone -> zone.getNodes().forEach(node -> zoneByNode.putIfAbsent(node.getId(), zone)));
+        Optional<Long> standingOn = robotCurrentStateRepository.findCurrentNodeId(robot.getId());
+        if (zoneByNode.isEmpty() || standingOn.isEmpty() || zoneByNode.containsKey(standingOn.get())) {
+            return Plan.UNMANAGED; // 잠그기 전 가벼운 확인 — 대부분의 사이클은 여기서 끝난다
+        }
+
+        siteRepository.findByIdForUpdate(siteId);
+        List<Long> siteRobotIds = robotRepository.findIdsBySiteId(siteId);
+        Map<Long, RobotCurrentState> states = robotCurrentStateRepository.findByRobotIdInForShare(siteRobotIds).stream()
+                .collect(Collectors.toMap(RobotCurrentState::getRobotId, Function.identity()));
+        RobotCurrentState own = states.get(robot.getId());
+        if (own == null || own.getCurrentNodeId() == null || zoneByNode.containsKey(own.getCurrentNodeId()) || !canMove(own)
+                || own.getBatteryPct() <= lowBatteryPct) {
+            return Plan.UNMANAGED;
+        }
+        List<ResourceReservation> heldNodes = resourceReservationRepository.findHeldNodeReservationsOfRobotsForShare(siteRobotIds);
+        if (heldNodes.stream().anyMatch(held -> held.getRobot().getId().equals(robot.getId()))) {
+            return Plan.UNMANAGED;
+        }
+
+        Set<Long> occupied = occupiedNodes(states, heldNodes, robot.getId(), own.getCurrentNodeId()).keySet();
+        MapRouteService.RouteGraph graph = mapRouteService.loadGraph(versionId.get());
+        Map<Long, Double> reachable = graph.distancesFromAvoiding(own.getCurrentNodeId(), occupied);
+        Long bestNode = null;
+        double bestLoad = Double.MAX_VALUE;
+        double bestDistance = Double.MAX_VALUE;
+        for (Zone zone : zones) {
+            int capacity = zone.getMaxCapacity() != null ? Math.min(zone.getMaxCapacity(), zone.getNodes().size()) : zone.getNodes().size();
+            long used = zone.getNodes().stream().filter(node -> occupied.contains(node.getId())).count();
+            if (capacity == 0 || used >= capacity) {
+                continue;
+            }
+            double load = (double) used / capacity;
+            Optional<Map.Entry<Long, Double>> nearestFree = zone.getNodes().stream()
+                    .filter(node -> !occupied.contains(node.getId()) && reachable.containsKey(node.getId()))
+                    .map(node -> Map.entry(node.getId(), reachable.get(node.getId())))
+                    .min(Map.Entry.comparingByValue());
+            if (nearestFree.isEmpty()) {
+                continue;
+            }
+            if (load < bestLoad || (load == bestLoad && nearestFree.get().getValue() < bestDistance)) {
+                bestNode = nearestFree.get().getKey();
+                bestLoad = load;
+                bestDistance = nearestFree.get().getValue();
+            }
+        }
+        if (bestNode == null) {
+            return Plan.UNMANAGED;
+        }
+        return reserve(robot, null, graph.shortestPathAvoiding(own.getCurrentNodeId(), bestNode, occupied));
+    }
+
+    /** 47·48단계: 작업 없는 이동(비키기·대기 구역)이 성공·실패로 끝났으면 경로 예약을 푼다. 결과 불명이면 로봇이 경로 어딘가에 있을 수 있어 유지한다. */
+    public void releaseNodesIfRepositionFinished(RobotCommand command) {
+        if (command.getCommandType() == RobotCommandType.REPOSITION
+                && (command.getStatus() == RobotCommandStatus.SUCCEEDED || command.getStatus() == RobotCommandStatus.FAILED)) {
+            releaseNodes(command.getRobot());
+        }
     }
 
     /**

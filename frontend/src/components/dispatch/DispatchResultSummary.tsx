@@ -43,6 +43,16 @@ export function DispatchResultSummary({ result }: DispatchResultSummaryProps) {
               </Link>
             ))}
       </div>
+      <div>
+        <span className="font-medium text-gray-700">대기 구역으로 보낸 로봇:</span>{" "}
+        {result.parkedRobotIds.length === 0
+          ? "없음"
+          : result.parkedRobotIds.map((id) => (
+              <Link key={id} to={`/robots/${id}`} className="mr-2 text-indigo-600 hover:underline">
+                #{id}
+              </Link>
+            ))}
+      </div>
     </div>
   );
 }

@@ -3,6 +3,7 @@
 만드는 것(물류센터 코드 --site-code, 기본 SITE-VR):
 - 3×3 격자 지도(노드 A1~C3, 이웃 노드끼리 양방향 통로) — 검증·활성화까지
 - 작업장: 입고 IN-1(A1), IN-2(A3), 출고 OUT-1(C3), OUT-2(B3), 충전 CHG-1(C1) — 지도 노드에 연결
+- 대기 구역(PARKING, 선반 아래 쉬는 곳 — 48단계): SHELF-W(A2), SHELF-N(B1), SHELF-E(C2)
 - 로봇 VR-01..(--robots개), 운영 중(IN_SERVICE)
 
 같은 코드의 물류센터가 이미 있으면 아무것도 바꾸지 않고 끝낸다. 관리자 계정은 AMR_API_USERNAME/AMR_API_PASSWORD(또는 AMR_API_TOKEN).
@@ -26,6 +27,7 @@ STATIONS = [
     ("CHG-1", "충전소", "CHARGING", "C1"),
 ]
 NODE_TYPES = {"A1": "STATION", "A3": "STATION", "C3": "STATION", "B3": "STATION", "C1": "CHARGING"}
+PARKING_ZONES = [("SHELF-W", ["A2"]), ("SHELF-N", ["B1"]), ("SHELF-E", ["C2"])]
 
 
 def seed(api: ServerApi, site_code: str, robot_count: int, robot_prefix: str) -> None:
@@ -52,6 +54,9 @@ def seed(api: ServerApi, site_code: str, robot_count: int, robot_prefix: str) ->
                 connect(api, version_id, node_ids[column + row], node_ids[columns[ci + 1] + row])
             if ri + 1 < len(rows):
                 connect(api, version_id, node_ids[column + row], node_ids[column + rows[ri + 1]])
+    for zone_code, zone_nodes in PARKING_ZONES:
+        api.post(f"/api/admin/map-versions/{version_id}/zones",
+                 {"code": zone_code, "zoneType": "PARKING", "maxCapacity": None, "nodeIds": [node_ids[code] for code in zone_nodes]})
     api.post(f"/api/admin/map-versions/{version_id}/validate")
     api.post(f"/api/admin/map-versions/{version_id}/activate")
 
@@ -67,7 +72,7 @@ def seed(api: ServerApi, site_code: str, robot_count: int, robot_prefix: str) ->
         api.patch(f"/api/admin/robots/{robot['id']}/lifecycle-status", {"lifecycleStatus": "IN_SERVICE"})
         robot_codes.append(code)
 
-    print(f"물류센터 {site_code}(id={site_id}), 지도 버전 {version_id}(노드 9·통로 12), 작업장 {len(STATIONS)}개, 로봇 {', '.join(robot_codes)}를 만들었습니다.")
+    print(f"물류센터 {site_code}(id={site_id}), 지도 버전 {version_id}(노드 9·통로 12), 작업장 {len(STATIONS)}개, 대기 구역 {len(PARKING_ZONES)}개, 로봇 {', '.join(robot_codes)}를 만들었습니다.")
     print("다음: 서버를 MQTT 모드(ROBOT_GATEWAY_MQTT_ENABLED=true)로 띄운 뒤")
     print(f"  python virtual_robot.py --robots {','.join(robot_codes)}")
 

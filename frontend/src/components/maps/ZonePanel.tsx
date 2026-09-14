@@ -2,7 +2,14 @@ import { useState, type FormEvent } from "react";
 import { Button, Card, Input, Select, Table, Td, Th } from "../ui";
 import type { CreateZoneRequest, NodeResponse, ZoneResponse, ZoneType } from "../../types/api";
 
-const ZONE_TYPES: ZoneType[] = ["MUTEX_ZONE", "SAFETY_ZONE"];
+const ZONE_TYPES: ZoneType[] = ["MUTEX_ZONE", "SAFETY_ZONE", "PARKING"];
+
+// 48단계: PARKING은 할 일 없는 로봇이 쉬는 대기 구역(예: 선반이 모여 있는 곳 아래) — 구역마다 고르게 채운다
+const ZONE_TYPE_LABELS: Record<ZoneType, string> = {
+  MUTEX_ZONE: "MUTEX_ZONE",
+  SAFETY_ZONE: "SAFETY_ZONE",
+  PARKING: "PARKING (대기 구역)",
+};
 
 interface ZonePanelProps {
   nodes: NodeResponse[];
@@ -40,7 +47,7 @@ export function ZonePanel({ nodes, zones, isDraft, onAddZone, isPending, resetTo
           <Select value={zoneForm.zoneType} onChange={(e) => setZoneForm({ ...zoneForm, zoneType: e.target.value as ZoneType })}>
             {ZONE_TYPES.map((t) => (
               <option key={t} value={t}>
-                {t}
+                {ZONE_TYPE_LABELS[t]}
               </option>
             ))}
           </Select>

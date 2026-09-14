@@ -381,7 +381,7 @@ erDiagram
 | id | BIGINT PK | |
 | map_version_id | BIGINT FK → map_versions | |
 | code | VARCHAR | |
-| zone_type | VARCHAR | `MUTEX_ZONE`, `SAFETY_ZONE` 등 |
+| zone_type | VARCHAR | `MUTEX_ZONE`, `SAFETY_ZONE`, `PARKING`(48단계 — 할 일 없는 로봇 대기 구역) |
 | max_capacity | INT | |
 
 **zone_nodes** (추가 제안 테이블, §5 참고)

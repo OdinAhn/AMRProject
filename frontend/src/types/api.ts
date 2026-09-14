@@ -7,7 +7,7 @@ export type StationType = "PICKUP" | "DROPOFF" | "WAITING" | "CHARGING" | "GENER
 export type RobotLifecycleStatus = "REGISTERED" | "IN_SERVICE" | "MAINTENANCE" | "DECOMMISSIONED";
 export type NodeType = "WAYPOINT" | "STATION" | "CHARGING";
 export type EdgeDirection = "ONE_WAY" | "TWO_WAY";
-export type ZoneType = "MUTEX_ZONE" | "SAFETY_ZONE";
+export type ZoneType = "MUTEX_ZONE" | "SAFETY_ZONE" | "PARKING";
 export type MapVersionStatus = "DRAFT" | "VALIDATED" | "ACTIVE" | "ARCHIVED";
 export type TaskType = "TRANSPORT" | "CHARGE";
 export type TaskStatus =
@@ -246,6 +246,8 @@ export interface DispatchResultResponse {
   chargeTaskIds: number[];
   /** 38단계: 배정마다 고른 로봇과 출발 작업장까지 통로 거리(지도 좌표 단위, 위치·경로를 모르면 null) */
   assignments: DispatchAssignment[];
+  /** 48단계: 대기 구역으로 보낸 로봇 id */
+  parkedRobotIds: number[];
 }
 
 export interface DispatchAssignment {

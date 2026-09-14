@@ -102,7 +102,7 @@
 | GET | `/api/admin/map-versions/{versionId}/nodes` | 노드 목록 |
 | POST | `/api/admin/map-versions/{versionId}/edges` | 통로 생성 (`DRAFT`에서만 허용) |
 | GET | `/api/admin/map-versions/{versionId}/edges` | 통로 목록 |
-| POST | `/api/admin/map-versions/{versionId}/zones` | 구역 생성 (`DRAFT`에서만 허용, `nodeIds` 포함) |
+| POST | `/api/admin/map-versions/{versionId}/zones` | 구역 생성 (`DRAFT`에서만 허용, `nodeIds` 포함). `zoneType`: `MUTEX_ZONE`, `SAFETY_ZONE`, `PARKING`(48단계 — 할 일 없는 로봇이 쉬는 대기 구역, `maxCapacity`는 대기 로봇 수 상한) |
 | GET | `/api/admin/map-versions/{versionId}/zones` | 구역 목록 |
 | POST | `/api/admin/map-versions/{versionId}/obstacles` | (24단계) 장애물(통행 불가 사각 영역: `x`/`y`/`width`/`height`) 생성 (`DRAFT`에서만 허용) |
 | GET | `/api/admin/map-versions/{versionId}/obstacles` | (24단계) 장애물 목록 |
@@ -177,6 +177,7 @@
 - 작업마다 차례로 고르는 욕심쟁이(greedy) 방식이라 우선순위 높은 작업이 가까운 로봇을 먼저 가져간다. 사이클 전체 이동 거리 합의 최솟값은 보장하지 않는다.
 - 배정 시도가 409(작업장 수용량 등)면 다음으로 가까운 로봇을 시도한다(기존 동작).
 - 응답 `assignments`: `[{taskId, robotId, robotCode, distanceToOrigin}]` — 거리는 지도 좌표 단위(소수 첫째 자리), 모르면 null. `assignedTaskIds`/`chargeTaskIds`는 그대로다.
+- (48단계) 응답 `parkedRobotIds`: 이번 사이클에 대기 구역으로 보낸 로봇 id. 배정·충전 다음에, 일도 충전도 필요 없는 로봇을 지도의 `PARKING` 구역으로 보낸다(§7 48단계).
 - (42단계) 자동 충전도 로봇 현재 위치에서 **통로 거리가 가까운 충전소**부터 시도하고, 가득 차 있으면(409 `STATION_AT_CAPACITY`) 다음으로 가까운 충전소로 넘어간다. 위치를 모르거나 지도에 연결되지 않은 충전소는 뒤로, 동률·지도 없음은 id 순서다. 예전엔 첫 번째 충전소만 시도해 그곳이 차 있으면 다음 사이클까지 기다렸다.
 
 **37단계 — 감사 로그** `GET /api/admin/audit-logs`: 누가 언제 무엇을 바꿨는지 추적한다(`ADMIN`만 조회).
@@ -494,6 +495,11 @@ DESIGN.md §1/§4는 "로봇 없는 개발: 실제 통신 계약을 모사하는
   - 예약은 이동 명령이 **성공·실패로 끝나면** 반납한다. 결과 불명(`UNKNOWN`)이면 로봇이 어디 있는지 모르므로 유지한다(복구 결정 뒤 다음 이동 계획에서 새로 잡거나 반납). 기다리던 중 작업 취소·비상정지·복구로 끝나면 명령만 `FAILED`(로봇에 보낸 적이 없으므로 `cancelOrder`도 보내지 않음).
   - 관리하지 않는 경우(예전처럼 바로 보냄): 현재 노드를 모르는 로봇, 활성 지도가 없거나 목적지 작업장이 지도에 연결되지 않음, 지도상 갈 길 자체가 없음, 충전 이동.
   - **MQTT 전체 경로 주문**(`app.robot-gateway.mqtt.full-route`, 기본 `true`): 경로가 있으면 `nodes`에 경로 노드 전부(`sequenceId` 0, 2, 4…), `edges`에 이웃 노드 쌍(`edgeId` = `시작코드-끝코드`, `sequenceId` 1, 3…)을 모두 `released:true`로 담고, 동작(예: `startCharging`)은 마지막 노드에 붙인다. 경로가 없는 명령은 예전처럼 목적지 노드 하나다.
+- **48단계 — 할 일 없는 로봇 대기 구역 배치** (시뮬레이터·MQTT 공통, `app.parking.enabled` 기본 `true`):
+  - 디스패치 사이클(자동·수동)이 작업 배정·자동 충전 다음에, 운영 중이면서 진행 중 작업이 없고, 마지막 작업이 끝난 지 `app.parking.idle-seconds`(기본 30초)가 지났고, **배터리가 충전 기준(로봇 설정 `chargingLowThresholdPct`, 기본 15%)보다 높고**, 자동·연결·안전 정상·위치 앎·정지 상태이며 아직 `PARKING` 구역 노드에 있지 않은 로봇을 대기 구역으로 보낸다. 배터리가 기준 이하면 기존처럼 가까운 충전소로 가고, 충전을 마치면(작업 종료) 대기 구역으로 온다.
+  - **고르게 분포**: 구역마다 "다른 로봇이 서 있거나 예약한 노드 수 ÷ 수용량(`maxCapacity`, 없으면 노드 수)"이 가장 낮은 구역을 고르고, 같으면 가장 가까운 빈 노드가 있는 구역, 그 구역의 가장 가까운 빈 노드로 간다. 가득 찬 구역과 다른 로봇에 막혀 갈 수 없는 노드는 뺀다.
+  - 이동은 비키기와 같은 작업 없는 `REPOSITION` 명령(명령 이벤트 `PARKING`)이다 — 경로 예약·전체 경로 주문·결과·타임아웃·지나간 노드 반납이 같다. 대기 구역 로봇도 길을 막으면 비킨다(비키기 목적지는 대기 구역 노드가 1순위).
+  - 대기 구역 노드는 일반 노드처럼 경로 계획에 쓰인다(다른 로봇이 선반 아래를 지나갈 수 있는지는 지도에서 통로로 표현한다).
 - **47단계 — 교통 관리 고도화**:
   - **지나간 노드 반납**: 로봇이 state의 `lastNodeId`로 예약 경로의 다음 노드에 왔다고 보고하면 그보다 앞의 노드 예약을 푼다(현재 노드는 로봇이 서 있어 계속 막는다). 예전엔 도착할 때까지 경로 전체를 쥐고 있었다.
   - **비키기**: 교통 대기가 계속되면 재시도 스케줄러가 대기 명령의 원래 최단 경로 위에 서 있는 로봇을 길 밖으로 보낸다(`app.traffic.yield-enabled`, 기본 `true`). 대상은 운영 중(`IN_SERVICE`)·연결·자동 모드·안전 정상·위치 앎·정지 상태이면서 **진행 중 작업이 없거나, 그 작업도 교통 대기 중이고 더 늦게 기다리기 시작한** 로봇이다 — 서로의 자리를 기다리는 교착은 늦게 기다린 쪽이 비켜 풀리고, 먼저 기다린 쪽은 비키지 않는다.
