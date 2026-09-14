@@ -515,3 +515,19 @@ export interface RobotUtilization {
   busySeconds: number;
   utilizationPct: number | null;
 }
+
+/** 37단계: GET /api/admin/audit-logs 항목 */
+export interface AuditLogResponse {
+  id: number;
+  createdAt: string;
+  actorUserId: number | null;
+  actorUsername: string | null;
+  /** "POST /api/admin/tasks/{taskId}/cancel" 같은 메서드 + 경로 패턴, 로그인은 AUTH_LOGIN_* */
+  action: string;
+  targetType: string | null;
+  targetId: number | null;
+  httpStatus: number | null;
+  /** 경로 변수·쿼리·createdId 등 JSON 문자열(요청 본문은 없음) */
+  payload: string | null;
+  ipAddress: string | null;
+}

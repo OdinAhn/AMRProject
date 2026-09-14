@@ -169,6 +169,24 @@
 | GET | `/api/admin/alarms/{alarmId}` | 상세 |
 | POST | `/api/admin/alarms/{alarmId}/acknowledge` | 확인 처리 (`OPEN`→`ACKNOWLEDGED`. 이미 `ACKNOWLEDGED`면 200으로 현재 상태 반환, `RESOLVED`면 409) |
 | POST | `/api/admin/alarms/{alarmId}/resolve` | 해제 처리 (`OPEN`/`ACKNOWLEDGED`→`RESOLVED`. 이미 `RESOLVED`면 200으로 현재 상태 반환) |
+| GET | `/api/admin/audit-logs` | (37단계) 감사 로그 — 필터 `actorUsername`, `targetType`, `targetId`, `page`, `size`. 최신순 페이지 응답. 아래 참고 |
+
+**37단계 — 감사 로그** `GET /api/admin/audit-logs`: 누가 언제 무엇을 바꿨는지 추적한다(`ADMIN`만 조회).
+
+```json
+{ "id": 812, "createdAt": "2026-09-14T01:46:48Z", "actorUserId": 1, "actorUsername": "admin",
+  "action": "POST /api/admin/robots/{robotId}/emergency-stop", "targetType": "ROBOT", "targetId": 1,
+  "httpStatus": 200, "payload": "{\"pathVariables\":{\"robotId\":\"1\"}}", "ipAddress": "10.0.0.5" }
+```
+
+- **무엇이 남나**: 컨트롤러까지 도달한 **상태를 바꾸는 모든 요청**(POST/PUT/PATCH/DELETE, `/api/admin`·`/api/worker`·`/api/external`·`/api/auth`)이 자동으로 남는다(`AuditLogInterceptor`). 엔드포인트마다 표시하지 않으므로 새 API도 빠지지 않는다. 409·400 같은 실패도 응답 상태와 함께 남는다. 인증(401)·역할(403)에서 보안 필터가 먼저 거절한 요청과 조회(GET)는 남지 않는다.
+- **로그인**: 요청만으로 행위자를 알 수 없어 `AuthService`가 직접 남긴다. `AUTH_LOGIN_SUCCEEDED`, `AUTH_LOGIN_FAILED`(payload `reason`: `UNKNOWN_USERNAME`/`USER_NOT_ACTIVE`/`WRONG_PASSWORD`), `AUTH_LOGIN_RATE_LIMITED`(36단계). 응답은 실패 사유를 숨기지만 감사 로그에는 적는다.
+- `action`: 메서드 + **경로 패턴**(값이 아닌 템플릿)이라 같은 동작끼리 모아 볼 수 있다. 화면은 한글 이름으로 바꿔 보여주고, 모르는 값은 그대로 보여준다.
+- `targetType`/`targetId`: 첫 번째 경로 변수(`taskId`→`TASK`, `robotId`→`ROBOT`, `versionId`→`MAP_VERSION` 등). 하위 리소스 생성(`POST /api/admin/sites/{siteId}/stations`)은 상위 리소스가 대상이다. 경로에 대상이 없는 생성 API는 대상이 비고, 201이면 만든 리소스 id를 `payload.createdId`로 남긴다.
+- `payload`: 경로 변수·쿼리 파라미터·`createdId`(로그인은 사유). **요청 본문은 저장하지 않는다** — 비밀번호가 들어갈 수 있기 때문이다. 그래서 "무엇으로 바꿨는지"(예: 새 우선순위 값)는 감사 로그에 없고, 결과는 해당 리소스와 기존 이력(`task_events`, `robot_configurations` 등)으로 확인한다.
+- `actorUserId`/`actorUsername`: 외부 시스템(API 키)은 `external-system`, 없는 아이디로 로그인 실패하면 id 없이 입력한 아이디만 남는다.
+- 기록은 원래 작업과 **별도 트랜잭션**이고, 기록에 실패해도 원래 요청은 실패시키지 않는다(오류 로그만). 감사 로그 저장소 문제로 비상정지 같은 운영 동작이 막히면 안 된다고 봤다. 대신 드물게 기록이 빠질 수 있다.
+- 보관: 지우지 않는다(`task_events`와 같은 감사 추적 성격). 보관 기간·아카이빙은 남은 과제다.
 
 **14단계 구현**: `alarms`/`alarm_events` 테이블과 위 4개 엔드포인트를 실제로 구현했다. 자동 발생 4종(`ROBOT_COMM_LOST`/`LOCALIZATION_LOST`/`LOAD_EXCEPTION`/`TASK_FAILED`) 중 로봇 관련 3종은 `SimulatorRobotGateway`가 연결/위치추정/적재 센서 상태를 보고할 때 이상→정상 전이를 감지해 자동 발생·자동 해소한다(정상 dispatch 한 번이면 해소). `TASK_FAILED`는 `TaskService.failRecovery()`(위 `recover`의 `FAIL`)에서 발생하며, 종료 상태라 자동 해소가 없어 관리자가 `acknowledge`/`resolve`로 직접 처리해야 한다. 같은 (알람 종류, 대상 종류, 대상 ID) 조합의 열린 알람은 항상 최대 1개다. `alarm_events`는 API로 노출하지 않는 내부 감사 로그다.
 

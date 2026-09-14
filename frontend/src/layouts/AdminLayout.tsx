@@ -19,6 +19,7 @@ const NAV_ITEMS = [
   { to: "/users", label: "사용자" },
   { to: "/alarms", label: "알람", showOpenAlarmCount: true },
   { to: "/events", label: "실시간 이벤트" },
+  { to: "/audit-logs", label: "감사 로그" },
   { to: "/worker/stations", label: "작업자 화면" },
 ];
 

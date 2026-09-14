@@ -66,6 +66,8 @@ public class TokenAuthenticationFilter extends OncePerRequestFilter {
                     .ifPresent(user -> {
                         var authorities = List.of(new SimpleGrantedAuthority("ROLE_" + user.getRole().getCode()));
                         var authentication = new UsernamePasswordAuthenticationToken(user.getUsername(), null, authorities);
+                        // 37단계: 감사 로그가 행위자 id를 추가 조회 없이 쓰도록 사용자 id를 담아 둔다(AuditLogInterceptor)
+                        authentication.setDetails(user.getId());
                         SecurityContextHolder.getContext().setAuthentication(authentication);
                     });
         }

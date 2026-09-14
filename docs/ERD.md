@@ -600,7 +600,7 @@ erDiagram
 
 ### 4.10 운영 (alarms, alarm_events, audit_logs)
 
-`alarms`/`alarm_events`는 14단계에서 구현했다 (`docs/API.md` §3, `docs/STATE_MACHINES.md` §7 참고). `audit_logs`는 여전히 마이그레이션·엔티티가 없는 미구현 상태다.
+`alarms`/`alarm_events`는 14단계, `audit_logs`는 37단계에서 구현했다 (`docs/API.md` §3, `docs/STATE_MACHINES.md` §7 참고).
 
 **alarms** (14단계 구현)
 | 컬럼 | 타입 | 설명 |
@@ -628,15 +628,20 @@ erDiagram
 | created_by | BIGINT FK → users | nullable(시스템 자동 발생/해소는 null) |
 | created_at | DATETIME | API로 노출하지 않는 내부 감사 로그 |
 
-**audit_logs**
+**audit_logs** (37단계 구현, V15, append-only)
 | 컬럼 | 타입 | 설명 |
 |---|---|---|
 | id | BIGINT PK | |
-| actor_user_id | BIGINT FK → users | nullable (시스템 동작은 null) |
-| action | VARCHAR | 예: `ROBOT_CONFIG_UPDATED`, `TASK_CANCELED` |
-| target_type / target_id | VARCHAR / BIGINT | |
-| payload_json | JSON | before/after |
-| ip_address | VARCHAR | |
+| actor_user_id | BIGINT FK → users | nullable — 외부 시스템(API 키), 없는 아이디 로그인 실패 |
+| actor_username | VARCHAR(100) | (초안에서 추가) 사용자 행이 없는 행위자도 이름을 남기려고 둔다. 외부 시스템은 `external-system` |
+| action | VARCHAR(150) | 초안의 `TASK_CANCELED` 같은 이름 대신 **메서드 + 경로 패턴**(`POST /api/admin/tasks/{taskId}/cancel`)을 쓴다 — 엔드포인트마다 이름을 붙이지 않아도 자동으로 빠짐없이 남기기 위해서다. 로그인은 `AUTH_LOGIN_SUCCEEDED`/`AUTH_LOGIN_FAILED`/`AUTH_LOGIN_RATE_LIMITED` |
+| target_type / target_id | VARCHAR(30) / BIGINT | 첫 번째 경로 변수 기준(`TASK`, `ROBOT`, `USER`, `SITE`, `STATION`, `MAP`, `MAP_VERSION`, `ALARM`) |
+| http_status | INT | (초안에서 추가) 처리 결과 — 409 등 실패도 남긴다 |
+| payload_json | TEXT | 초안의 before/after 대신 경로 변수·쿼리·`createdId`(로그인은 실패 사유). **요청 본문은 비밀번호가 들어갈 수 있어 저장하지 않는다** |
+| ip_address | VARCHAR(45) | IPv6 포함 |
+| created_at | DATETIME(6) | |
+
+인덱스: `(created_at)`, `(actor_username, created_at)`, `(target_type, target_id, created_at)`. 보관 정책 삭제 대상이 아니다(`task_events`와 같은 감사 추적).
 
 ---
 
