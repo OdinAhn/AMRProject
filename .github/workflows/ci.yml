@@ -23,6 +23,18 @@ jobs:
       - name: Build and test
         run: ./gradlew build
 
+  # 35단계: 배포 이미지가 PR마다 실제로 빌드되는지 확인한다(푸시는 하지 않음). 테스트는 build job이 이미 돌린다.
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build backend image
+        run: docker build -t amr-backend:ci .
+
+      - name: Build frontend image
+        run: docker build -t amr-frontend:ci frontend
+
   # 28단계: 프론트엔드도 PR마다 타입 검사(tsc -b)·빌드·lint를 돌린다. 자동화된 화면 테스트는 없다(AGENTS.md 참고).
   frontend:
     runs-on: ubuntu-latest

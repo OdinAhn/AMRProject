@@ -51,6 +51,9 @@ public interface AlarmRepository extends JpaRepository<Alarm, Long> {
             """)
     List<TypeCount> countRaisedBySite(Long siteId, Instant from, Instant to);
 
+    /** 35단계 메트릭: 상태별 알람 수. */
+    long countByStatus(AlarmStatus status);
+
     Optional<Alarm> findFirstByAlarmTypeAndSourceTypeAndSourceIdAndStatusIn(
             AlarmType alarmType, AlarmSourceType sourceType, Long sourceId, List<AlarmStatus> statuses
     );
