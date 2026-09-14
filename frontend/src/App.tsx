@@ -16,6 +16,7 @@ import { RobotDetailPage } from "./pages/robots/RobotDetailPage";
 import { RobotsPage } from "./pages/robots/RobotsPage";
 import { SiteDetailPage } from "./pages/sites/SiteDetailPage";
 import { SitesPage } from "./pages/sites/SitesPage";
+import { StatisticsPage } from "./pages/statistics/StatisticsPage";
 import { TaskDetailPage } from "./pages/tasks/TaskDetailPage";
 import { TasksPage } from "./pages/tasks/TasksPage";
 import { UserDetailPage } from "./pages/users/UserDetailPage";
@@ -37,6 +38,7 @@ function App() {
       >
         <Route index element={<Navigate to="/dashboard" replace />} />
         <Route path="dashboard" element={<DashboardPage />} />
+        <Route path="statistics" element={<StatisticsPage />} />
         <Route path="sites" element={<SitesPage />} />
         <Route path="sites/:siteId" element={<SiteDetailPage />} />
         <Route path="robots" element={<RobotsPage />} />

@@ -16,6 +16,7 @@ AMRProject 백엔드(Spring Boot)를 위한 관리자·작업자 화면. React 1
 | 25 | 지도 버전 상세를 SVG 캔버스 편집기(`MapCanvasEditor`)로 교체 |
 | 28 | 역할별 라우트 가드·404, 전역 실시간 갱신(SSE), 한글 라벨, 확인창·토스트, 사이드바 알람 배지·모바일 메뉴, 작업자 화면 개선, CI에서 lint·build |
 | 29 | 디스패치 화면 안내 문구(자동 실행 반영) |
+| 34 | 운영 통계(`/statistics`) — 기간 프리셋(오늘·7일·30일)·날짜 선택, KPI 타일, 일별 처리량 막대 차트(`DailyThroughputChart`), 로봇 가동률 표(`RobotUtilizationTable`), 발생 알람 표 |
 | 33 | 로봇 호출 우선순위, 작업 목록 우선순위 열, 작업 상세 일시정지·해제·우선순위 변경, 로봇 상세 비상정지 패널(`EmergencyStopPanel`, 시뮬레이터 현장 해제), 대시보드 전체 비상정지·로봇 안전 상태 배지 |
 | 32 | 사용자 상세 계정 패널(역할·상태 변경, 비밀번호 초기화), 내 계정 화면(`/account`, `/worker/account` — 본인 비밀번호 변경), lint 경고 0건 |
 | 31 | 작업·알람 목록 페이지네이션(`Pagination`), 사이드바 알람 수를 페이지 응답의 `totalElements`로 계산 |
@@ -53,6 +54,7 @@ CI(`.github/workflows/ci.yml`의 `frontend` job, 28단계)가 PR마다 `npm ci` 
 | `src/lib/toast.tsx` | (28단계) `ToastProvider` — 버튼 동작의 성공·실패 피드백. 훅 `useToast`는 `src/lib/toastContext.ts`(32단계 분리) |
 | `src/lib/useSites.ts` | 물류센터 목록 조회 훅 |
 | `src/components/dashboard/` | (30단계) `KpiTiles`, `RobotStatusTable`(+`BatteryBar`), `LiveMapView`(활성 지도 + 로봇 마커) |
+| `src/components/statistics/` | (34단계) `DailyThroughputChart`(차트 라이브러리 없이 CSS 막대), `RobotUtilizationTable` |
 | `src/types/api.ts` | 백엔드 응답 타입 (`docs/API.md`와 대응) |
 | `src/components/ui.tsx` | 공용 UI 프리미티브 (버튼, 카드, 뱃지, 폼 요소, 테이블, 28단계 `ConfirmDialog`/`ConfirmButton`) |
 | `src/components/auth/` | `LoginForm` |
@@ -74,11 +76,12 @@ CI(`.github/workflows/ci.yml`의 `frontend` job, 28단계)가 PR마다 `npm ci` 
 | `src/pages/NotFoundPage.tsx` | (28단계) 없는 경로 |
 | `src/pages/AccountPage.tsx` | (32단계) 내 계정 — 본인 비밀번호 변경(성공 시 새 토큰으로 세션 교체) |
 | `src/pages/dashboard/DashboardPage.tsx` | (30단계) 관제 대시보드 — 물류센터 선택(브라우저에 기억), `GET /api/admin/sites/{siteId}/overview` |
+| `src/pages/statistics/StatisticsPage.tsx` | (34단계) 운영 통계 — `GET /api/admin/sites/{siteId}/statistics`에 브라우저 시간대(`Intl`)를 `zone`으로 넘긴다. 실시간 이벤트로 재집계하지 않고 새로고침 버튼으로 다시 조회 |
 
 ## 라우팅
 
 - `/login` — 로그인
-- `/` 이하 (`AdminLayout`) — **`ADMIN`만**: `/dashboard`(30단계, `/`의 기본 이동 경로), `/sites`, `/robots`, `/maps`, `/tasks`, `/dispatch`, `/users`, `/alarms`, `/events`
+- `/` 이하 (`AdminLayout`) — **`ADMIN`만**: `/dashboard`(30단계, `/`의 기본 이동 경로), `/statistics`(34단계), `/sites`, `/robots`, `/maps`, `/tasks`, `/dispatch`, `/users`, `/alarms`, `/events`
 - `/worker` 이하 (`WorkerLayout`) — `WORKER`와 `ADMIN`: `/worker/stations`, `/worker/stations/:stationId/tasks`
 - 그 밖의 경로 — 404 화면
 

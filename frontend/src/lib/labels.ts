@@ -209,6 +209,16 @@ export function taskStatusTone(status: TaskStatus) {
   return "blue" as const;
 }
 
+/** 34단계: 초 단위 시간을 "1시간 5분", "3분 20초", "45초"처럼 표시한다. */
+export function formatDuration(seconds: number): string {
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const rest = seconds % 60;
+  if (hours > 0) return minutes > 0 ? `${hours}시간 ${minutes}분` : `${hours}시간`;
+  if (minutes > 0) return rest > 0 ? `${minutes}분 ${rest}초` : `${minutes}분`;
+  return `${rest}초`;
+}
+
 /** 목록에 보여줄 짧은 작업 번호(UUID 앞 8자리). */
 export function shortTaskNo(taskNo: string) {
   return taskNo.slice(0, 8);
