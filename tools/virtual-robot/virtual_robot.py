@@ -38,7 +38,7 @@ def now_iso() -> str:
 class RobotConnection:
     """가상 로봇 한 대 + MQTT 연결."""
 
-    def __init__(self, robot: VirtualRobot, broker_host: str, broker_port: int, lock: threading.Lock):
+    def __init__(self, robot: VirtualRobot, broker: "BrokerSettings", lock: threading.Lock):
         self.robot = robot
         self.lock = lock
         self.header_id = 0
@@ -46,10 +46,16 @@ class RobotConnection:
         self.topic_order, self.topic_instant = f"{base}/order", f"{base}/instantActions"
         self.topic_state, self.topic_connection = f"{base}/state", f"{base}/connection"
         self.client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id=f"virtual-{robot.serial}")
+        # 44단계: 운영 브로커는 로봇마다 계정(이름 = 시리얼번호)과 TLS를 요구한다
+        password = broker.password_for(robot.serial)
+        if password is not None:
+            self.client.username_pw_set(robot.serial if broker.username is None else broker.username, password)
+        if broker.tls:
+            self.client.tls_set(ca_certs=broker.ca_file)
         self.client.will_set(self.topic_connection, json.dumps(self._connection("CONNECTIONBROKEN")), qos=1, retain=True)
         self.client.on_connect = self._on_connect
         self.client.on_message = self._on_message
-        self.client.connect(broker_host, broker_port, keepalive=30)
+        self.client.connect(broker.host, broker.port, keepalive=30)
 
     def start(self) -> None:
         self.client.loop_start()
@@ -94,6 +100,31 @@ class RobotConnection:
         self.header_id += 1
         return {"headerId": self.header_id, "timestamp": now_iso(), "version": "2.0.0",
                 "manufacturer": self.robot.manufacturer, "serialNumber": self.robot.serial, "connectionState": state}
+
+
+class BrokerSettings:
+    """브로커 주소·계정·TLS. ssl:// 또는 mqtts:// 주소면 TLS(--tls-ca로 신뢰할 CA, 없으면 시스템 신뢰 저장소)."""
+
+    def __init__(self, url: str, username: str | None, password: str | None, credentials_file: str | None, ca_file: str | None):
+        parsed = urlparse(url)
+        self.tls = parsed.scheme in ("ssl", "mqtts", "tls")
+        self.host = parsed.hostname or "localhost"
+        self.port = parsed.port or (8883 if self.tls else 1883)
+        self.username = username
+        self.password = password
+        self.ca_file = ca_file
+        self.credentials: dict[str, str] = {}
+        if credentials_file:
+            with open(credentials_file, encoding="utf-8") as file:
+                for line in file:
+                    line = line.strip()
+                    if line and not line.startswith("#") and ":" in line:
+                        serial, secret = line.split(":", 1)
+                        self.credentials[serial.strip()] = secret.strip()
+
+    def password_for(self, serial: str) -> str | None:
+        """로봇별 계정 파일(시리얼번호:비밀번호)이 우선, 없으면 공통 --password. 둘 다 없으면 익명(개발용 브로커)."""
+        return self.credentials.get(serial, self.password)
 
 
 def load_map_and_positions(api: ServerApi, codes: list[str]) -> tuple[RouteMap | None, dict[str, str]]:
@@ -177,7 +208,11 @@ def console(connections: dict[str, RobotConnection], lock: threading.Lock, stop:
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="VDA 5050 가상 로봇 무리")
-    parser.add_argument("--broker", default=os.environ.get("MQTT_BROKER_URL", "tcp://localhost:1883"), help="MQTT 브로커 (tcp://host:port)")
+    parser.add_argument("--broker", default=os.environ.get("MQTT_BROKER_URL", "tcp://localhost:1883"), help="MQTT 브로커 (tcp://host:port, TLS는 ssl://host:8883)")
+    parser.add_argument("--credentials", default=os.environ.get("MQTT_ROBOT_CREDENTIALS"), help="로봇 계정 파일(시리얼번호:비밀번호, 브로커의 robot-credentials와 같은 형식)")
+    parser.add_argument("--username", default=None, help="모든 로봇이 같은 계정을 쓸 때만(기본은 로봇 코드가 계정 이름)")
+    parser.add_argument("--password", default=os.environ.get("MQTT_ROBOT_PASSWORD"), help="모든 로봇 공통 비밀번호(로봇별 파일이 우선)")
+    parser.add_argument("--tls-ca", default=os.environ.get("MQTT_TLS_CA_FILE"), help="TLS 서버 인증서를 검증할 CA(PEM)")
     parser.add_argument("--manufacturer", default=os.environ.get("MQTT_MANUFACTURER", "AMRProject"))
     parser.add_argument("--robots", default="VR-01,VR-02,VR-03", help="로봇 코드 목록(쉼표) — 서버에 등록된 코드와 같아야 한다")
     parser.add_argument("--api-url", default=os.environ.get("AMR_API_URL", "http://localhost:8080"), help="활성 지도를 읽을 서버 주소")
@@ -198,7 +233,7 @@ def main(argv: list[str]) -> int:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s", datefmt="%H:%M:%S")
     args = parse_args(argv)
     codes = [code.strip() for code in args.robots.split(",") if code.strip()]
-    broker = urlparse(args.broker)
+    broker = BrokerSettings(args.broker, args.username, args.password, args.credentials, args.tls_ca)
 
     route_map, known_positions = None, {}
     if not args.no_api:
@@ -225,7 +260,7 @@ def main(argv: list[str]) -> int:
         start = (start_nodes[index] if index < len(start_nodes)
                  else known_positions.get(code) or (fallback_nodes[index % len(fallback_nodes)] if fallback_nodes else None))
         robot = VirtualRobot(code, args.manufacturer, route_map, start, args.battery, config)
-        connections[code] = RobotConnection(robot, broker.hostname or "localhost", broker.port or 1883, lock)
+        connections[code] = RobotConnection(robot, broker, lock)
         log.info("%s 시작 위치 %s, 배터리 %.0f%%", code, start or "모름", args.battery)
     for connection in connections.values():
         connection.start()

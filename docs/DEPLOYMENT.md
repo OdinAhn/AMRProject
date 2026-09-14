@@ -78,6 +78,25 @@ scrape_configs:
       - targets: ["backend:8081"]
 ```
 
+## 4-1. MQTT 브로커 보안 (44단계)
+
+로봇 통신용 브로커(`mosquitto`, eclipse-mosquitto 2)가 운영 compose에 포함된다. 설정은 컨테이너 기동 시 `infra/mosquitto/amr-entrypoint.sh`가 환경 변수·파일로 만든다.
+
+| 항목 | 내용 |
+|---|---|
+| 익명 접속 | 금지(`allow_anonymous false`) |
+| 관제 서버 계정 | `.env`의 `MQTT_USERNAME`/`MQTT_PASSWORD` — manufacturer 아래 모든 로봇 토픽 읽기·쓰기. backend도 같은 값으로 접속 |
+| 로봇 계정 | `infra/mosquitto/robot-credentials`(예시 `robot-credentials.example`, 커밋 금지) 한 줄에 `시리얼번호:비밀번호`. 계정 이름은 VDA 5050 `serialNumber` = 서버에 등록한 로봇 코드 |
+| 토픽 권한(ACL) | 로봇은 **자기 시리얼번호 토픽만**: `order`·`instantActions` 읽기, `state`·`connection`·`visualization`·`factsheet` 쓰기. 다른 로봇 주문을 엿보거나 다른 로봇 이름으로 상태를 보낼 수 없다 |
+| 리스너 | `1883` 평문 — 같은 도커 네트워크의 backend 전용, 호스트에 열지 않음. `8883` TLS — 로봇 접속용(호스트 포트 `MQTT_TLS_PORT`), `infra/mosquitto/certs/server.crt`·`server.key`가 있을 때만 열림 |
+| 비밀번호 저장 | 기동할 때마다 해시 파일로 새로 만든다(컨테이너 내부 0600). 로봇 계정을 바꾸면 `docker compose -f docker-compose.prod.yml restart mosquitto` |
+
+인증서:
+- 시험·사내망: `sh infra/mosquitto/gen-dev-certs.sh <로봇이 접속할 호스트 이름 또는 IP>` → `infra/mosquitto/certs/`에 `ca.crt`(로봇·서버가 신뢰), `server.crt`, `server.key`(커밋 금지). SAN에 로봇이 쓰는 주소가 들어가야 호스트 이름 검증을 통과한다.
+- 운영: 조직 CA나 공인 인증서를 같은 이름으로 둔다.
+
+backend를 브로커 밖(다른 호스트)에서 TLS로 붙일 때는 `MQTT_BROKER_URL=ssl://<호스트>:8883`과 `MQTT_TLS_CA_FILE=<ca.crt 경로>`를 준다(비우면 JVM 기본 신뢰 저장소). 개발용 `docker-compose.yml`의 브로커(mosquitto 1.6)는 여전히 **인증 없는 로컬 개발 전용**이다 — 실제 로봇은 운영 구성에 붙인다.
+
 ## 5. 업데이트 · 종료
 
 ```bash
@@ -119,4 +138,4 @@ Kafka 토픽(`amr.events`)은 이벤트 로그 사본이라 백업 대상이 아
 - Kubernetes 매니페스트·Helm 차트, 비밀값 관리(Vault/Secrets Manager).
 - Grafana 대시보드·경보 규칙 파일, 로그 수집(현재는 컨테이너 표준 출력).
 - 자동 백업·복원 리허설, MySQL/Kafka/Redis 이중화.
-- MQTT 실제 로봇 연동 시 Mosquitto(또는 운영 브로커)를 스택에 추가해야 한다. 이 compose에는 브로커가 없다(기본은 시뮬레이터).
+- ~~MQTT 브로커가 compose에 없음~~ → 44단계에서 인증·ACL·TLS를 갖춘 브로커를 추가했다(§4-1). 클라이언트 인증서(mTLS) 인증, 브로커 이중화는 없다.

@@ -45,9 +45,27 @@ services:
       - amr_prod_kafka_data:/var/lib/kafka/data
     restart: unless-stopped
 
+  # 44단계: 로봇 통신용 MQTT 브로커(mosquitto 2). 익명 접속 금지, 로봇은 자기 토픽만(ACL), 로봇 접속은 TLS(8883).
+  # 평문 1883은 같은 네트워크의 backend 전용이라 호스트에 열지 않는다. 설정은 infra/mosquitto/amr-entrypoint.sh가 기동 시 만든다.
+  mosquitto:
+    image: eclipse-mosquitto:2.0.20
+    command: ["sh", "/amr/amr-entrypoint.sh"]
+    environment:
+      MQTT_SERVER_USERNAME: ${MQTT_USERNAME:?MQTT_USERNAME을 .env에 설정하세요}
+      MQTT_SERVER_PASSWORD: ${MQTT_PASSWORD:?MQTT_PASSWORD를 .env에 설정하세요}
+      MQTT_MANUFACTURER: ${MQTT_MANUFACTURER:-AMRProject}
+    volumes:
+      - ./infra/mosquitto:/amr:ro
+      - amr_prod_mosquitto_data:/mosquitto/data
+    ports:
+      - "${MQTT_TLS_PORT:-8883}:8883"
+    restart: unless-stopped
+
   backend:
     build: .
     depends_on:
+      mosquitto:
+        condition: service_started
       mysql:
         condition: service_healthy
       redis:
@@ -66,6 +84,9 @@ services:
       BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD:-}
       ROBOT_GATEWAY_MQTT_ENABLED: ${ROBOT_GATEWAY_MQTT_ENABLED:-false}
       MQTT_BROKER_URL: ${MQTT_BROKER_URL:-tcp://mosquitto:1883}
+      MQTT_USERNAME: ${MQTT_USERNAME}
+      MQTT_PASSWORD: ${MQTT_PASSWORD}
+      MQTT_MANUFACTURER: ${MQTT_MANUFACTURER:-AMRProject}
       MQTT_COMMAND_TIMEOUT_SECONDS: ${MQTT_COMMAND_TIMEOUT_SECONDS:-300}
     # 관리 포트(8081)는 호스트에 열지 않는다 — 같은 네트워크의 Prometheus만 수집한다.
     # 로컬에서 메트릭을 직접 보려면 아래 주석을 풀어 127.0.0.1에만 연다.
@@ -86,5 +107,6 @@ services:
     restart: unless-stopped
 
 volumes:
+  amr_prod_mosquitto_data:
   amr_prod_mysql_data:
   amr_prod_kafka_data:

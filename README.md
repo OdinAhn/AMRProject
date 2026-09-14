@@ -42,6 +42,8 @@ SPRING_PROFILES_ACTIVE=local TOKEN_SIGNING_SECRET=<임의의-서명-키> ./gradl
 | `ROBOT_GATEWAY_MQTT_ENABLED` | `false` | `true`면 로봇 통신을 MQTT/VDA5050 어댑터로 전환(기본은 시뮬레이터) |
 | `MQTT_BROKER_URL` | `tcp://localhost:1883` | MQTT 브로커 접속 정보 (`ROBOT_GATEWAY_MQTT_ENABLED=true`일 때만 사용) |
 | `MQTT_COMMAND_TIMEOUT_SECONDS` | `300` | (39단계) MQTT 로봇 명령을 보낸 뒤 결과가 없으면 UNKNOWN·작업 복구 필요로 보는 시간(초) |
+| `MQTT_USERNAME` / `MQTT_PASSWORD` | (없음) | (44단계) 브로커 계정. 운영 compose에서는 필수(브로커의 관제 서버 계정과 같음) |
+| `MQTT_TLS_CA_FILE` | (없음) | (44단계) `ssl://` 브로커의 인증서를 검증할 CA(PEM). 비우면 JVM 기본 신뢰 저장소 |
 | `TOKEN_SIGNING_SECRET` | (필수, 기본값 없음) | 액세스 토큰 서명용 비밀키 |
 | `TOKEN_EXPIRY_MINUTES` | `480` | 액세스 토큰 만료 시간(분) |
 | `EXTERNAL_API_KEY` | (운영 필수, local 프로필은 개발용 기본값) | 외부 시스템 API(`/api/external/**`)의 `X-API-Key` 값. 비어 있으면 외부 API는 전부 401 |
@@ -148,6 +150,7 @@ Flyway 마이그레이션은 `src/main/resources/db/migration`에 있으며, 애
   | 41. MQTT state 해석 | 실제 로봇이 보고한 동작 모드·안전 상태(비상정지 알람)·현재 위치·즉시 동작 결과 반영 — MQTT 로봇도 자동 배정·가까운 로봇 선택 대상 |
   | 42. 가까운 충전소·감사 로그 보관 | 자동 충전을 가까운 충전소로(가득 차면 다음 충전소), 감사 로그 보관 기간(기본 365일) |
   | 43. Python 가상 로봇 | 실제 로봇 없이 MQTT/VDA 5050 모드를 끝까지 돌리는 가상 로봇 무리·시연 데이터·작업 진행 도구(`tools/virtual-robot/`), 검증 중 발견한 VDA 5050 호환 문제 수정 |
+  | 44. MQTT 브로커 보안 | 운영 compose에 브로커 추가 — 익명 금지, 서버·로봇 계정, 로봇별 토픽 권한(ACL), 로봇용 TLS(8883), 서버·가상 로봇의 계정·TLS 지원 |
 
   각 단계의 완료 기준과 세부 구현 내용은 `docs/DESIGN.md` §11을 참고.
 

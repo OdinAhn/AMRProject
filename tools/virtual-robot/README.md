@@ -31,6 +31,21 @@ export AMR_API_URL=http://localhost:8080          # 기본값
 export AMR_API_USERNAME=admin AMR_API_PASSWORD=...  # 또는 AMR_API_TOKEN=...
 ```
 
+## 운영 브로커(인증·TLS)에 붙이기 (44단계)
+
+운영 compose의 브로커는 익명 접속을 막고 로봇마다 계정(이름 = 로봇 코드)을 요구하며, 로봇은 TLS(8883)로 접속합니다(docs/DEPLOYMENT.md §4-1).
+
+```bash
+.venv/Scripts/python virtual_robot.py --robots VR-01,VR-02,VR-03 \
+  --broker ssl://<브로커 호스트>:8883 \
+  --credentials ../../infra/mosquitto/robot-credentials \
+  --tls-ca ../../infra/mosquitto/certs/ca.crt
+```
+
+- `--credentials`: 브로커와 같은 `시리얼번호:비밀번호` 파일(로봇별 계정). 모든 로봇이 같은 비밀번호면 `--password`만 줘도 됩니다(계정 이름은 로봇 코드).
+- `--tls-ca`: 브로커 인증서를 검증할 CA. `ssl://` 주소면 TLS로 접속합니다.
+- 개발용 브로커(`docker-compose.yml`, 인증 없음)에는 이 옵션 없이 `tcp://localhost:1883`으로 붙습니다.
+
 ## 처음부터 끝까지
 
 ```bash
