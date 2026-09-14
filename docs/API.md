@@ -156,7 +156,7 @@
 | POST | `/api/admin/tasks/{taskId}/assign` | 로봇 지정 배정 (`robotId`) → `ASSIGNED` 후 즉시 첫 단계 시작 |
 | POST | `/api/admin/tasks/{taskId}/cancel` | 취소 요청 → 적재 전/하역 후면 즉시 `CANCELED`, 적재 중이면 `RECOVERY_REQUIRED`(8단계, 아래 참고) |
 | POST | `/api/admin/tasks/{taskId}/recover` | `RECOVERY_REQUIRED` 상태 개입: 재개 또는 최종 실패 처리 |
-| POST | `/api/admin/tasks/{taskId}/pause` | (33단계) 작업 흐름 일시정지 `RUNNING → PAUSED`. 이미 PAUSED면 200 그대로. 로봇을 물리적으로 세우지는 않는다 |
+| POST | `/api/admin/tasks/{taskId}/pause` | (33단계) 작업 흐름 일시정지 `RUNNING → PAUSED`. 이미 PAUSED면 200 그대로. 로봇을 물리적으로 세우지는 않는다. (39단계) 로봇이 이동·충전 중인 단계면 409 `TASK_COMMAND_IN_PROGRESS` |
 | POST | `/api/admin/tasks/{taskId}/resume` | (33단계) 일시정지 해제 `PAUSED → RUNNING`. 이미 RUNNING이면 200 그대로 |
 | PATCH | `/api/admin/tasks/{taskId}/priority` | (33단계) 우선순위 변경 `{priority: 0~9}` — `QUEUED`에서만, 배정 뒤에는 409 `TASK_CHANGE_PRIORITY_NOT_ALLOWED` |
 | POST | `/api/admin/robots/{robotId}/emergency-stop` | (33단계) 로봇 비상정지 — 아래 참고 |
@@ -338,7 +338,7 @@ Idempotency-Key: 8e2f1c...
 | `DISPATCH` | 작업이 `RUNNING`이고 진행 중 단계가 `CONFIRM_LOAD` | 로봇 보내기 |
 | `CONFIRM_UNLOAD` | 작업이 `RUNNING`이고 진행 중 단계가 `CONFIRM_UNLOAD` | 하역 완료 |
 | `REPORT_UNAVAILABLE` | (28단계) 상태가 `QUEUED`/`ASSIGNED`/`RUNNING`/`PAUSED` — `report-unavailable`이 받는 상태와 같음 | 작업 불가 |
-| `PAUSE` / `RESUME` | (33단계) `RUNNING` / `PAUSED` — 관리자 화면 | 일시정지 / 일시정지 해제 |
+| `PAUSE` / `RESUME` | (33단계) `RUNNING` / `PAUSED` — 관리자 화면. (39단계) `PAUSE`는 로봇이 이동·충전 명령을 수행 중인 단계에서는 빠진다 | 일시정지 / 일시정지 해제 |
 | `CHANGE_PRIORITY` | (33단계) `QUEUED` — 관리자 화면 | 우선순위 선택 |
 
 배열 순서는 위 표 순서를 따른다(예: 적재 대기 중이면 `["CANCEL", "DISPATCH", "REPORT_UNAVAILABLE"]`).
@@ -479,9 +479,18 @@ DESIGN.md §1/§4는 "로봇 없는 개발: 실제 통신 계약을 모사하는
 
 - **토픽**: 로봇당 `uagv/v2/{manufacturer}/{serialNumber}/order`(발행)와 `.../state`(구독) 두 개만 쓴다. `connection` 토픽(LWT 기반 온라인·오프라인 알림)은 이번 범위에 없다.
 - **VDA5050 축소 구현**: `order`는 목적지 station 하나짜리 단일 노드(`nodes: [{nodeId, sequenceId, released}]`)만 담는다 — edges/actions 등 전체 스펙의 나머지는 구현하지 않았다. `state`는 `orderId`/`driving`/`errors`/`batteryState.batteryCharge`만 본다. `driving:false`(또는 `errors` 존재)인 state가 오면 주문이 끝난 것으로 판단한다.
-- **동기식-타임아웃 한계**: `RobotGateway.dispatch()`는 계약상 동기식이지만 실제 MQTT 통신은 비동기다. 이 어댑터는 주문을 발행한 뒤 일치하는 `orderId`의 state를 **3초** 동안 기다렸다가 결과를 반환한다 — 3초 안에 못 받으면 `UNKNOWN`(로봇 상태는 OFFLINE으로 보고돼 14단계 `ROBOT_COMM_LOST` 알람과 그대로 연동된다). **실제 로봇은 응답이 이보다 훨씬 늦을 수 있어 이 방식은 프로덕션에 적합하지 않다** — 진짜 비동기 처리로 전환하려면 `TaskService`의 명령 완료 처리 흐름 자체를 재설계해야 한다(이번 범위 밖).
+- ~~**동기식-타임아웃 한계**~~ (18~38단계): 주문을 발행한 뒤 요청 트랜잭션 안에서(작업·로봇·작업장 행 잠금을 쥔 채) 결과 state를 **3초** 기다렸다. 실제 로봇 이동은 훨씬 오래 걸리고, 기다리는 동안 같은 작업·로봇·작업장을 건드리는 다른 요청이 막혔다.
+- **39단계 — 비동기 명령**:
+  1. 이동·충전 단계를 시작하는 요청은 명령을 `SENT`로 기록하고 **바로 끝난다**. 응답의 단계는 `RUNNING`(로봇 이동 중)이다.
+  2. 트랜잭션이 **커밋된 뒤** order를 발행한다(롤백된 명령으로 로봇이 움직이지 않도록). 발행되면 `ACCEPTED`→`RUNNING`, 로봇 상태 `MOVING`을 기록하고, 발행에 실패하면 `UNKNOWN` → 작업 복구 필요.
+  3. 완료 state(`driving:false` 또는 `errors`)가 오면 명령 `SUCCEEDED`/`FAILED`, 로봇 상태(`IDLE`·배터리), 작업 진행(다음 단계 또는 복구 필요)을 **한 트랜잭션**으로 반영한다(`RobotCommandCompletionService`, 작업 행 → 명령 행 → 로봇 상태 행 순서로 잠금). 화면은 기존 실시간 이벤트(`task.step_started` 등)로 갱신된다.
+  4. `MQTT_COMMAND_TIMEOUT_SECONDS`(기본 300초) 안에 결과가 없으면 감시 스케줄러가 `UNKNOWN`으로 두고 작업을 복구 필요로 보낸다(로봇 상태 OFFLINE → `ROBOT_COMM_LOST` 알람).
+  5. **늦게 온 결과**(타임아웃·취소·비상정지 뒤, 또는 복구 재개로 같은 단계에 새 명령이 나간 뒤)는 명령 기록만 바꾸고 작업은 건드리지 않는다 — 운영자가 recover로 결정한다.
+  - **일시정지**: 로봇이 명령을 수행 중인 단계(이동·충전)에서는 409 `TASK_COMMAND_IN_PROGRESS`이고 `allowedActions`에 `PAUSE`가 없다. 도착해 작업자 확인 단계가 되면 멈출 수 있다.
+  - **남은 한계**: 이동 중 취소하면 작업은 규칙대로 취소되지만 로봇에 주문 취소(VDA 5050 `cancelOrder`)를 보내지 않아 로봇은 목적지까지 간다. 늦게 온 결과로 `UNKNOWN` 작업을 자동 재개하지 않는다.
+  - 시뮬레이터는 메모리에서 즉시 끝나 잠금을 쥐고 기다리지 않으므로 기존처럼 요청 안에서 동기로 끝난다(응답의 이동 단계가 이미 `SUCCEEDED`).
 - **설정 적용은 미구현**: `applyConfiguration()`은 시뮬레이터와 동일하게 즉시 성공 처리만 한다 — 실제 로봇에 설정을 적용하는 프로토콜은 정해지지 않았다.
-- 관련 환경 변수: `ROBOT_GATEWAY_MQTT_ENABLED`, `MQTT_BROKER_URL`(기본 `tcp://localhost:1883`), `MQTT_MANUFACTURER`(기본 `AMRProject`).
+- 관련 환경 변수: `ROBOT_GATEWAY_MQTT_ENABLED`, `MQTT_BROKER_URL`(기본 `tcp://localhost:1883`), `MQTT_MANUFACTURER`(기본 `AMRProject`), `MQTT_COMMAND_TIMEOUT_SECONDS`(39단계, 기본 `300`).
 
 ---
 

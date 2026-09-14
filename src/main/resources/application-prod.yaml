@@ -38,6 +38,8 @@ app:
       enabled: ${ROBOT_GATEWAY_MQTT_ENABLED:false}
       broker-url: ${MQTT_BROKER_URL:tcp://mosquitto:1883}
       manufacturer: ${MQTT_MANUFACTURER:AMRProject}
+      # 39단계: 명령을 보낸 뒤 이 시간 안에 결과(state)가 없으면 UNKNOWN → 작업 복구 필요
+      command-timeout-seconds: ${MQTT_COMMAND_TIMEOUT_SECONDS:300}
   # 운영 기능이라 prod에서는 기본으로 켠다(기본 프로필·테스트는 꺼짐)
   dispatch:
     auto:

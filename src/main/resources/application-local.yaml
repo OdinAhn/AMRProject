@@ -30,6 +30,8 @@ app:
       enabled: ${ROBOT_GATEWAY_MQTT_ENABLED:false}
       broker-url: ${MQTT_BROKER_URL:tcp://localhost:1883}
       manufacturer: ${MQTT_MANUFACTURER:AMRProject}
+      # 39단계: 명령을 보낸 뒤 이 시간 안에 결과(state)가 없으면 UNKNOWN → 작업 복구 필요
+      command-timeout-seconds: ${MQTT_COMMAND_TIMEOUT_SECONDS:300}
   # 29단계: 기본값(application.yaml)은 꺼져 있고 local에서만 켠다 — 테스트 스위트는 자동 배정·연결 판정이 끼어들면 안 된다.
   dispatch:
     auto:

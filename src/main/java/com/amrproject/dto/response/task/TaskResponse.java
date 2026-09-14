@@ -42,6 +42,10 @@ public record TaskResponse(
             TaskStatus.QUEUED, TaskStatus.ASSIGNED, TaskStatus.RUNNING, TaskStatus.PAUSED
     );
 
+    private static final Set<TaskStepType> COMMAND_STEP_TYPES = Set.of(
+            TaskStepType.MOVE_TO_ORIGIN, TaskStepType.MOVE_TO_DESTINATION, TaskStepType.MOVE_TO_CHARGING_STATION, TaskStepType.DOCK_AND_CHARGE
+    );
+
     /** TaskService.reportUnavailable이 허용하는 상태와 같다. */
     private static final Set<TaskStatus> UNAVAILABLE_REPORTABLE = CANCELABLE;
 
@@ -67,7 +71,10 @@ public record TaskResponse(
             allowedActions.add("REPORT_UNAVAILABLE");
         }
         // 33단계: 관리자용 동작은 기존 값의 순서를 바꾸지 않도록 뒤에 붙인다.
-        if (task.getStatus() == TaskStatus.RUNNING) {
+        // 39단계: 로봇이 이동·충전 명령을 수행 중인 단계에서는 일시정지를 주지 않는다(TaskService.pause도 409).
+        boolean robotCommandInProgress = steps.stream()
+                .anyMatch(step -> step.getStatus() == TaskStepStatus.RUNNING && COMMAND_STEP_TYPES.contains(step.getStepType()));
+        if (task.getStatus() == TaskStatus.RUNNING && !robotCommandInProgress) {
             allowedActions.add("PAUSE");
         }
         if (task.getStatus() == TaskStatus.PAUSED) {

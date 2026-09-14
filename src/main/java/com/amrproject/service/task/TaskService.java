@@ -5,6 +5,7 @@ import com.amrproject.domain.entity.alarm.AlarmSourceType;
 import com.amrproject.domain.entity.alarm.AlarmType;
 import com.amrproject.domain.entity.event.OutboxEvent;
 import com.amrproject.domain.entity.robot.ChargingSession;
+import com.amrproject.domain.entity.robot.ChargingSessionStatus;
 import com.amrproject.domain.entity.robot.Robot;
 import com.amrproject.domain.entity.robot.RobotCommand;
 import com.amrproject.domain.entity.robot.RobotCommandStatus;
@@ -479,6 +480,13 @@ public class TaskService {
         if (task.getStatus() == TaskStatus.PAUSED) {
             return task;
         }
+        // 39단계: 로봇이 명령을 수행 중인 단계(이동·충전)에서는 멈추지 않는다. MQTT 로봇은 결과가 비동기로 오므로,
+        // 이동 중에 멈추면 도착 결과를 어떻게 이어갈지가 모호해진다 — 작업자 확인 단계에서만 일시정지한다.
+        if (task.getStatus() == TaskStatus.RUNNING && isCommandStep(findRunningStep(taskId))) {
+            throw new InvalidStateTransitionException(
+                    "TASK_COMMAND_IN_PROGRESS", "로봇이 이동·충전 중인 단계에서는 일시정지할 수 없습니다. 도착 후 다시 시도하세요."
+            );
+        }
         TaskStatus previous = task.getStatus();
         task.pause();
         recordEvent(task, "PAUSED", previous, task.getStatus(), actor);
@@ -653,14 +661,59 @@ public class TaskService {
 
         robotGateway.dispatch(command);
 
-        if (session != null) {
-            if (command.getStatus() == RobotCommandStatus.SUCCEEDED) {
-                session.complete(currentStateOf(robot).getBatteryPct());
-            } else {
-                session.abort();
-            }
+        // 39단계: 시뮬레이터는 여기서 이미 최종 결과지만, MQTT는 보냄(SENT)까지만 — 결과는 applyCommandOutcome이 나중에 반영한다.
+        if (isFinal(command.getStatus())) {
+            finishChargingSession(session, command, robot);
+            reactToCommandOutcome(task, step, command);
         }
+    }
 
+    private static final Set<RobotCommandStatus> FINAL_COMMAND_STATUSES = Set.of(
+            RobotCommandStatus.SUCCEEDED, RobotCommandStatus.FAILED, RobotCommandStatus.UNKNOWN
+    );
+
+    private static boolean isFinal(RobotCommandStatus status) {
+        return FINAL_COMMAND_STATUSES.contains(status);
+    }
+
+    private static boolean isCommandStep(TaskStep step) {
+        return MOVE_STEP_TYPES.contains(step.getStepType()) || step.getStepType() == TaskStepType.DOCK_AND_CHARGE;
+    }
+
+    private void finishChargingSession(ChargingSession session, RobotCommand command, Robot robot) {
+        if (session == null) {
+            return;
+        }
+        if (command.getStatus() == RobotCommandStatus.SUCCEEDED) {
+            session.complete(currentStateOf(robot).getBatteryPct());
+        } else {
+            session.abort();
+        }
+    }
+
+    /**
+     * 39단계: 비동기 로봇 명령(MQTT)의 결과를 작업에 반영한다. 호출자({@code RobotCommandCompletionService})가 작업 행을 먼저 잠그고
+     * 명령 상태를 최종으로 바꾼 같은 트랜잭션에서 부른다.
+     *
+     * <p>결과가 늦게 와서 그 사이 작업이 다른 상태가 됐거나(타임아웃으로 복구 필요, 취소, 비상정지), 복구 재개로 같은 단계에 새 명령이 나갔으면
+     * 작업은 건드리지 않는다 — 명령 기록만 남고 판단은 운영자 몫이다.
+     */
+    @Transactional
+    public void applyCommandOutcome(RobotCommand command) {
+        TaskStep step = command.getTaskStep();
+        if (step == null || !isFinal(command.getStatus())) {
+            return;
+        }
+        Task task = step.getTask();
+        boolean latestForStep = robotCommandRepository.findFirstByTaskStepIdOrderByIdDesc(step.getId())
+                .map(latest -> latest.getId().equals(command.getId()))
+                .orElse(false);
+        if (task.getStatus() != TaskStatus.RUNNING || step.getStatus() != TaskStepStatus.RUNNING || !latestForStep) {
+            return;
+        }
+        Robot robot = command.getRobot();
+        finishChargingSession(chargingSessionRepository.findFirstByTaskIdAndStatus(task.getId(), ChargingSessionStatus.CHARGING).orElse(null),
+                command, robot);
         reactToCommandOutcome(task, step, command);
     }
 
