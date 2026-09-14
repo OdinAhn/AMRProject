@@ -42,3 +42,7 @@ out/
 ### 43단계: Python 가상 로봇 ###
 .venv/
 __pycache__/
+
+### 44단계: MQTT 브로커 비밀값 ###
+infra/mosquitto/certs/
+infra/mosquitto/robot-credentials

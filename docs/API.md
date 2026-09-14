@@ -509,7 +509,7 @@ DESIGN.md §1/§4는 "로봇 없는 개발: 실제 통신 계약을 모사하는
   - ~~남은 한계: 이동 중 취소 시 cancelOrder 미전송, 늦은 결과로 자동 재개 안 함~~ → 40단계에서 해소.
   - 시뮬레이터는 메모리에서 즉시 끝나 잠금을 쥐고 기다리지 않으므로 기존처럼 요청 안에서 동기로 끝난다(응답의 이동 단계가 이미 `SUCCEEDED`).
 - **설정 적용은 미구현**: `applyConfiguration()`은 시뮬레이터와 동일하게 즉시 성공 처리만 한다 — 실제 로봇에 설정을 적용하는 프로토콜은 정해지지 않았다.
-- 관련 환경 변수: `ROBOT_GATEWAY_MQTT_ENABLED`, `MQTT_BROKER_URL`(기본 `tcp://localhost:1883`), `MQTT_MANUFACTURER`(기본 `AMRProject`), `MQTT_COMMAND_TIMEOUT_SECONDS`(39단계, 기본 `300`).
+- 관련 환경 변수: `ROBOT_GATEWAY_MQTT_ENABLED`, `MQTT_BROKER_URL`(기본 `tcp://localhost:1883`), `MQTT_MANUFACTURER`(기본 `AMRProject`), `MQTT_COMMAND_TIMEOUT_SECONDS`(39단계, 기본 `300`), `MQTT_USERNAME`/`MQTT_PASSWORD`/`MQTT_TLS_CA_FILE`(44단계 — 브로커 계정·TLS, 브로커 쪽 설정은 docs/DEPLOYMENT.md §4-1).
 
 ---
 
