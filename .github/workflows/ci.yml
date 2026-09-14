@@ -35,6 +35,29 @@ jobs:
       - name: Build frontend image
         run: docker build -t amr-frontend:ci frontend
 
+  # 43단계: VDA 5050 가상 로봇(Python) 로직 단위 테스트 — 브로커·서버 없이 돈다.
+  virtual-robot:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: tools/virtual-robot
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Unit tests
+        run: python -m unittest discover -s tests
+
+      - name: Compile scripts
+        run: python -m py_compile virtual_robot.py seed.py task.py
+
   # 28단계: 프론트엔드도 PR마다 타입 검사(tsc -b)·빌드·lint를 돌린다. 자동화된 화면 테스트는 없다(AGENTS.md 참고).
   frontend:
     runs-on: ubuntu-latest

@@ -206,7 +206,7 @@
 - **우선순위**: 작업 생성(`POST /api/worker/tasks`, `POST /api/external/tasks`)에 선택 필드 `priority`(0~9, 기본 0)를 받는다. 자동·수동 디스패치는 우선순위 내림차순, 같으면 먼저 들어온 순서로 배정한다(7단계부터 쿼리는 이미 그 순서였지만 값을 바꿀 방법이 없었다). 화면은 보통(0)·높음(5)·긴급(9)을 고른다.
 - **일시정지**: 작업 흐름만 멈춘다. `PAUSED` 작업은 작업자 단계 버튼(`DISPATCH`/`CONFIRM_UNLOAD`)이 사라지고, API로 호출해도 409다. 로봇 물리 정지와는 별개다(STATE_MACHINES.md §1).
 - **비상정지**: `EMERGENCY_STOP` 명령을 로봇에 보내고, 그 로봇이 맡은 `ASSIGNED`/`RUNNING`/`PAUSED`/`CANCEL_REQUESTED` 작업을 `RECOVERY_REQUIRED`로 보낸다(`TASK_RECOVERY_REQUIRED` 알람, 원인 "로봇 비상정지"). 명령 전달이 불확실(UNKNOWN)해도 작업은 멈춘 것으로 다룬다.
-  - 응답 `{robotId, robotCode, commandNo, commandStatus}`의 `commandStatus`는 **전달 여부일 뿐**이다. 실제로 멈췄는지는 `GET .../state`의 `safetyState`로 확인한다(DESIGN.md §3). 시뮬레이터는 즉시 `EMERGENCY_STOP`을 보고하고 명령을 SUCCEEDED로 끝낸다. MQTT 어댑터는 VDA 5050 `instantActions`의 `stopPause`를 발행하고 ACCEPTED까지만 둔다(축소 구현이 안전 상태를 파싱하지 않음).
+  - 응답 `{robotId, robotCode, commandNo, commandStatus}`의 `commandStatus`는 **전달 여부일 뿐**이다. 실제로 멈췄는지는 `GET .../state`의 `safetyState`로 확인한다(DESIGN.md §3). 시뮬레이터는 즉시 `EMERGENCY_STOP`을 보고하고 명령을 SUCCEEDED로 끝낸다. MQTT 어댑터는 VDA 5050 `instantActions`의 `startPause`(43단계에서 `stopPause`→`startPause`로 정정 — 스펙에서 stopPause는 재개다)를 발행하고 ACCEPTED까지만 둔다(축소 구현이 안전 상태를 파싱하지 않음).
   - 로봇이 `EMERGENCY_STOP`을 보고하면 `ROBOT_EMERGENCY_STOP`(CRITICAL) 알람이 뜨고, 자동 배정 대상에서 빠지며(`safetyState = NORMAL` 조건 추가), 시뮬레이터는 새 이동 명령을 거부한다(FAILED → 작업 복구 필요).
   - 해제는 현장에서만 가능하다고 가정한다(STATE_MACHINES.md §4.4). 시뮬레이터 전용 해제 API가 로봇의 NORMAL 보고를 흉내 내고, 알람은 자동 해소된다.
 - `allowedActions`에 관리자용 `PAUSE`(RUNNING)·`RESUME`(PAUSED)·`CHANGE_PRIORITY`(QUEUED)를 **기존 값 뒤에** 붙였다.
@@ -479,11 +479,19 @@ DESIGN.md §1/§4는 "로봇 없는 개발: 실제 통신 계약을 모사하는
 
 - **토픽**: 로봇당 `uagv/v2/{manufacturer}/{serialNumber}/order`(발행)와 `.../state`(구독) 두 개만 쓴다. `connection` 토픽(LWT 기반 온라인·오프라인 알림)은 이번 범위에 없다.
 - **VDA5050 축소 구현**: `order`는 목적지 station 하나짜리 단일 노드(`nodes: [{nodeId, sequenceId, released}]`)만 담는다 — edges/actions 등 전체 스펙의 나머지는 구현하지 않았다. `state`는 `orderId`/`driving`/`errors`/`batteryState.batteryCharge`만 본다. `driving:false`(또는 `errors` 존재)인 state가 오면 주문이 끝난 것으로 판단한다.
+- **43단계 — 실제 로봇 연동 준비(Python 가상 로봇으로 검증하며 고친 것)**:
+  - **주문 목적지 nodeId**: 작업장 코드 대신 작업장에 연결된 **활성 지도 노드 코드**를 보낸다(연결이 없으면 작업장 코드). 실제 로봇은 이 서버의 작업장 코드를 모르고 지도 노드만 안다. 충전 주문은 충전 작업장 노드에 `startCharging` 동작(`actionId` = 명령 번호)을 싣는다(예전엔 nodeId `UNKNOWN`).
+  - **주문 종료 판단**: 오류가 있거나, `driving:false`이면서 `nodeStates`(남은 노드)가 비었고 진행 중인 `actionStates`가 없을 때만 끝난 것으로 본다(`Vda5050State.orderFinished`). 예전엔 `driving:false`만 봐서 주문을 막 받고 출발하기 전이나 충전 중에도 끝난 것으로 판단했을 것이다. 보고에 없는 필드는 조건에서 뺀다.
+  - **`errors`**: 스펙대로 객체 목록(`errorType`, `errorLevel`, `errorDescription`)으로 읽는다. 예전엔 문자열 목록이라 실제 로봇의 오류 보고가 통째로 파싱 실패했다.
+  - **비상정지 동작**: `stopPause` → `startPause`(HARD). VDA 5050에서 `stopPause`는 일시정지 **해제**다. 표준에 원격 비상정지 동작이 없어 가장 가까운 즉시 정지를 쓴다.
+  - **`paused:true`** 보고는 안전 상태 `PROTECTIVE_STOP`으로 본다(움직일 수 없으므로 배정 제외).
+  - **해석할 수 없는 메시지**는 경고 로그를 남기고 버린다. 예전엔 예외가 MQTT 콜백 밖으로 나가 Paho가 브로커 연결을 끊었다(모든 로봇 통신 중단). 주문이 없을 때의 `orderId: ""`도 주문 없음으로 본다.
+  - 도구: `tools/virtual-robot/`(가상 로봇 무리·시연 데이터·작업 진행 스크립트, README 참고).
 - **41단계 — state 추가 해석** (`RobotStateReportService`, 모든 state 메시지에 적용, 없는 필드는 기존 값 유지, 그 밖의 필드는 무시):
   - `operatingMode`: `AUTOMATIC` → `AUTO`, `SEMIAUTOMATIC`/`MANUAL`/`TEACHIN` → `MANUAL`, `SERVICE` → `MAINTENANCE`. 자동 배정은 `AUTO`만 대상이라, 현장에서 수동으로 돌린 로봇에는 작업이 가지 않는다.
   - `safetyState`: `eStop`이 `NONE`이 아니면 `EMERGENCY_STOP`, 아니고 `fieldViolation:true`면 `PROTECTIVE_STOP`, 아니면 `NORMAL`. 비상정지 진입·해제 보고로 `ROBOT_EMERGENCY_STOP` 알람이 발생·해소되고(시뮬레이터와 같은 규칙) 배정 대상에서 빠진다. 로봇이 스스로 보고한 비상정지는 작업을 멈추지 않는다(서버 비상정지 API만 작업을 복구 필요로 보낸다 — 33단계와 같음).
   - `lastNodeId`: 활성 지도의 **노드 코드**와 같으면 그 노드, 아니면 같은 코드의 **작업장**에 연결된 노드(이 서버가 order의 `nodeId`로 작업장 코드를 보내므로)를 현재 위치(`current_node_id`)로 둔다. 둘 다 아니면 위치를 바꾸지 않는다. 가까운 로봇 선택(38단계)이 이 위치를 쓴다.
-  - `actionStates`: `actionId`가 이 서버의 비상정지(`stopPause`)·주문 취소(`cancelOrder`) 명령 번호이고 `actionStatus`가 `FINISHED`면 명령을 `SUCCEEDED`(이벤트 `ACTION_FINISHED`), `FAILED`면 `FAILED`로 끝낸다. 예전엔 전달된 `ACCEPTED`에서 멈춰 있었다.
+  - `actionStates`: `actionId`가 이 서버의 비상정지(`startPause`)·주문 취소(`cancelOrder`) 명령 번호이고 `actionStatus`가 `FINISHED`면 명령을 `SUCCEEDED`(이벤트 `ACTION_FINISHED`), `FAILED`면 `FAILED`로 끝낸다. 예전엔 전달된 `ACCEPTED`에서 멈춰 있었다.
   - 상태가 실제로 바뀔 때만 이력(`robot_state_snapshots`)과 `robot.state_changed` 이벤트를 남긴다. 상태 행은 잠금 조회로 읽고, 명령 행을 먼저 잠근다(결과 반영과 같은 순서).
 - ~~**동기식-타임아웃 한계**~~ (18~38단계): 주문을 발행한 뒤 요청 트랜잭션 안에서(작업·로봇·작업장 행 잠금을 쥔 채) 결과 state를 **3초** 기다렸다. 실제 로봇 이동은 훨씬 오래 걸리고, 기다리는 동안 같은 작업·로봇·작업장을 건드리는 다른 요청이 막혔다.
 - **39단계 — 비동기 명령**:

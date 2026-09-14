@@ -339,7 +339,7 @@ class MqttRobotGatewayTest extends AbstractIntegrationTest {
         });
     }
 
-    /** 41단계: 비상정지(stopPause)는 전달(ACCEPTED)까지만 두다가, 로봇이 actionStates로 수행 완료를 보고하면 SUCCEEDED가 된다. */
+    /** 41단계: 비상정지(startPause)는 전달(ACCEPTED)까지만 두다가, 로봇이 actionStates로 수행 완료를 보고하면 SUCCEEDED가 된다. */
     @Test
     void 즉시_동작_수행_보고로_비상정지_명령이_완료된다() throws Exception {
         Long siteId = createSite("SITE-MQTT9", "MQTT 물류센터9");
@@ -355,13 +355,56 @@ class MqttRobotGatewayTest extends AbstractIntegrationTest {
         String commandNo = objectMapper.readTree(response).get("commandNo").asString();
 
         publishRawState("ROBOT-MQTT9", "{\"actionStates\": [{\"actionId\": \"" + commandNo
-                + "\", \"actionType\": \"stopPause\", \"actionStatus\": \"FINISHED\"}], \"safetyState\": {\"eStop\": \"REMOTE\", \"fieldViolation\": false}}");
+                + "\", \"actionType\": \"startPause\", \"actionStatus\": \"FINISHED\"}], \"safetyState\": {\"eStop\": \"REMOTE\", \"fieldViolation\": false}}");
 
         awaitUntil(() -> "SUCCEEDED".equals(jdbcTemplate.queryForObject("select status from robot_commands where command_no = ?", String.class, commandNo)));
         assertThat(jdbcTemplate.queryForList(
                 "select e.event_type from command_events e join robot_commands c on c.id = e.command_id where c.command_no = ? order by e.id",
                 String.class, commandNo)).endsWith("ACTION_FINISHED");
         awaitUntil(() -> robotCurrentStateRepository.findById(robotId).orElseThrow().getSafetyState() == SafetyState.EMERGENCY_STOP);
+    }
+
+    /**
+     * 43단계(실제 로봇 연동 준비): 주문의 nodeId는 작업장 코드가 아니라 연결된 지도 노드 코드다. 스펙 형식의 errors(객체 목록)가 오면
+     * 명령이 FAILED·작업이 복구 필요가 되고, 해석할 수 없는 메시지가 먼저 와도 브로커 연결이 끊기지 않아 뒤따르는 보고를 처리한다.
+     */
+    @Test
+    void 주문은_지도_노드_코드로_보내고_스펙_형식_오류_보고와_잘못된_메시지를_견딘다() throws Exception {
+        Long siteId = createSite("SITE-MQTT10", "MQTT 물류센터10");
+        Long originId = createStation(siteId, "ST-MQTT15", "입고", StationType.PICKUP);
+        Long destinationId = createStation(siteId, "ST-MQTT16", "출고", StationType.DROPOFF);
+        Long versionId = createVersion(createMap(siteId));
+        Long n1 = createNode(versionId, "MQ10-N1", 0);
+        Long n2 = createNode(versionId, "MQ10-N2", 100);
+        createEdge(versionId, n1, n2);
+        mockMvc.perform(post("/api/admin/map-versions/{versionId}/validate", versionId)).andExpect(status().isOk());
+        mockMvc.perform(post("/api/admin/map-versions/{versionId}/activate", versionId)).andExpect(status().isOk());
+        bind(originId, versionId, n1);
+        bind(destinationId, versionId, n2);
+        Long robotId = createRobot(siteId, "ROBOT-MQTT10", "MQTT로봇10");
+        Long taskId = createTask(originId, destinationId, "idem-mqtt-10");
+
+        List<String> orders = new CopyOnWriteArrayList<>();
+        MqttClient listener = new MqttClient(brokerUrl(), MqttClient.generateClientId(), new MemoryPersistence());
+        listener.connect();
+        try {
+            listener.subscribe("uagv/v2/" + MANUFACTURER + "/ROBOT-MQTT10/order",
+                    (topic, message) -> orders.add(new String(message.getPayload(), StandardCharsets.UTF_8)));
+            taskService.assignRobot(taskId, robotRepository.findById(robotId).orElseThrow());
+            taskService.start(taskId);
+            awaitUntil(() -> !orders.isEmpty());
+        } finally {
+            listener.disconnect();
+            listener.close();
+        }
+        assertThat(objectMapper.readTree(orders.get(0)).get("nodes").get(0).get("nodeId").asString()).isEqualTo("MQ10-N1");
+
+        publishRawState("ROBOT-MQTT10", "this is not json");
+        publishRawState("ROBOT-MQTT10", "{\"orderId\": \"" + moveCommandNo(taskId) + "\", \"driving\": false, \"errors\": "
+                + "[{\"errorType\": \"noRouteError\", \"errorLevel\": \"FATAL\", \"errorDescription\": \"경로 없음\"}]}");
+
+        awaitUntil(() -> "FAILED".equals(moveCommandStatus(taskId)));
+        awaitUntil(() -> "RECOVERY_REQUIRED".equals(taskStatus(taskId)));
     }
 
     private String robotAlarmStatus(Long robotId) {

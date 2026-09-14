@@ -15,14 +15,17 @@ import com.amrproject.domain.entity.robot.RobotConfiguration;
 import com.amrproject.domain.entity.robot.RobotCurrentState;
 import com.amrproject.domain.entity.robot.RobotStateSnapshot;
 import com.amrproject.domain.entity.robot.SafetyState;
+import com.amrproject.domain.entity.site.Station;
 import com.amrproject.domain.entity.task.Task;
 import com.amrproject.domain.entity.task.TaskStep;
+import com.amrproject.repository.map.NodeRepository;
 import com.amrproject.repository.robot.CommandEventRepository;
 import com.amrproject.repository.robot.RobotCommandRepository;
 import com.amrproject.repository.robot.RobotCurrentStateRepository;
 import com.amrproject.repository.robot.RobotStateSnapshotRepository;
 import com.amrproject.robot.RobotGateway;
 import com.amrproject.service.alarm.AlarmService;
+import com.amrproject.service.map.MapRouteService;
 import com.amrproject.service.robot.RobotConnectionService;
 import com.amrproject.service.robot.RobotStateEventRecorder;
 import com.amrproject.service.robot.RobotStateReportService;
@@ -92,6 +95,8 @@ public class MqttRobotGateway implements RobotGateway, MqttCallback {
     private final RobotStateEventRecorder robotStateEventRecorder;
     private final RobotCommandRepository robotCommandRepository;
     private final RobotStateReportService robotStateReportService;
+    private final MapRouteService mapRouteService;
+    private final NodeRepository nodeRepository;
     /** 완료 서비스 → TaskService → RobotGateway(이 빈)로 이어지는 생성자 순환을 끊기 위해 쓸 때 꺼낸다 */
     private final ObjectProvider<RobotCommandCompletionService> completionService;
     private final TransactionTemplate transactionTemplate;
@@ -116,6 +121,8 @@ public class MqttRobotGateway implements RobotGateway, MqttCallback {
             RobotStateEventRecorder robotStateEventRecorder,
             RobotCommandRepository robotCommandRepository,
             RobotStateReportService robotStateReportService,
+            MapRouteService mapRouteService,
+            NodeRepository nodeRepository,
             ObjectProvider<RobotCommandCompletionService> completionService,
             PlatformTransactionManager transactionManager,
             @Value("${app.robot-gateway.mqtt.command-timeout-seconds:300}") long commandTimeoutSeconds
@@ -131,6 +138,8 @@ public class MqttRobotGateway implements RobotGateway, MqttCallback {
         this.robotStateEventRecorder = robotStateEventRecorder;
         this.robotCommandRepository = robotCommandRepository;
         this.robotStateReportService = robotStateReportService;
+        this.mapRouteService = mapRouteService;
+        this.nodeRepository = nodeRepository;
         this.completionService = completionService;
         // afterCommit 안에서는 커밋이 끝난 원래 트랜잭션 자원이 아직 묶여 있어, 기본 전파(REQUIRED)면 그 트랜잭션에 참여만 하고
         // 커밋되지 않는다 — 항상 새 트랜잭션으로 기록한다.
@@ -166,7 +175,10 @@ public class MqttRobotGateway implements RobotGateway, MqttCallback {
         String orderId = command.getCommandNo();
         String robotCode = robot.getCode();
         String targetNodeId = resolveTargetNodeId(command);
-        Runnable publish = () -> publishAfterCommit(commandId, orderId, robotCode, targetNodeId);
+        List<Vda5050Order.Action> actions = command.getCommandType() == RobotCommandType.START_CHARGE
+                ? List.of(new Vda5050Order.Action("startCharging", orderId, "HARD"))
+                : List.of();
+        Runnable publish = () -> publishAfterCommit(commandId, orderId, robotCode, targetNodeId, actions);
         if (TransactionSynchronizationManager.isSynchronizationActive()) {
             TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
                 @Override
@@ -180,9 +192,9 @@ public class MqttRobotGateway implements RobotGateway, MqttCallback {
     }
 
     /** 커밋된 명령을 발행하고, 발행되면 ACCEPTED→RUNNING, 실패하면 UNKNOWN(작업 복구 필요)으로 별도 트랜잭션에서 기록한다. */
-    private void publishAfterCommit(Long commandId, String orderId, String robotCode, String targetNodeId) {
+    private void publishAfterCommit(Long commandId, String orderId, String robotCode, String targetNodeId, List<Vda5050Order.Action> actions) {
         try {
-            publishOrder(robotCode, orderId, targetNodeId);
+            publishOrder(robotCode, orderId, targetNodeId, actions);
         } catch (MqttException e) {
             log.warn("MQTT order 발행 실패: commandNo={} robot={}", orderId, robotCode, e);
             transactionTemplate.executeWithoutResult(status -> completionService.getObject().markUnknown(commandId, "TIMEOUT",
@@ -225,15 +237,23 @@ public class MqttRobotGateway implements RobotGateway, MqttCallback {
 
     @Override
     public void messageArrived(String topic, MqttMessage message) {
-        Vda5050State state = jsonMapper.readValue(message.getPayload(), Vda5050State.class);
+        Vda5050State state;
+        try {
+            state = jsonMapper.readValue(message.getPayload(), Vda5050State.class);
+        } catch (RuntimeException e) {
+            // 43단계: 예외가 콜백 밖으로 나가면 Paho가 브로커 연결을 끊는다 — 잘못된 메시지 하나로 모든 로봇 통신이 멈추지 않게 버린다
+            log.warn("MQTT state 메시지를 해석할 수 없어 무시합니다: topic={}", topic, e);
+            return;
+        }
         recordTelemetryAsync(topic, state);
-        if (state.orderId() == null) {
+        // VDA 5050 로봇은 주문이 없을 때 orderId를 빈 문자열로 보낸다
+        if (state.orderId() == null || state.orderId().isBlank()) {
             return;
         }
-        boolean hasErrors = state.errors() != null && !state.errors().isEmpty();
-        if (!Boolean.FALSE.equals(state.driving()) && !hasErrors) {
+        if (!state.orderFinished()) {
             return;
         }
+        boolean hasErrors = state.hasErrors();
         // 39단계: DB 작업은 Paho 콜백 스레드에서 하지 않는다(콜백이 막히면 뒤따르는 메시지를 못 받는다)
         Integer batteryPct = state.batteryState() != null && state.batteryState().batteryCharge() != null
                 ? state.batteryState().batteryCharge().intValue()
@@ -287,7 +307,8 @@ public class MqttRobotGateway implements RobotGateway, MqttCallback {
             String eStop = state.safetyState().eStop();
             if (eStop != null && !"NONE".equals(eStop)) {
                 safety = SafetyState.EMERGENCY_STOP;
-            } else if (Boolean.TRUE.equals(state.safetyState().fieldViolation())) {
+            } else if (Boolean.TRUE.equals(state.safetyState().fieldViolation()) || Boolean.TRUE.equals(state.paused())) {
+                // 43단계: startPause로 멈춘 로봇(paused)도 움직일 수 없으므로 보호 정지로 보고 배정에서 뺀다
                 safety = SafetyState.PROTECTIVE_STOP;
             } else if (eStop != null || state.safetyState().fieldViolation() != null) {
                 safety = SafetyState.NORMAL;
@@ -356,14 +377,15 @@ public class MqttRobotGateway implements RobotGateway, MqttCallback {
     }
 
     /**
-     * 33단계: VDA 5050 instantActions의 {@code stopPause}를 보낸다. 로봇이 실제로 멈췄는지는 이 축소 구현이 state의 안전 상태를
+     * 33단계: VDA 5050 instantActions의 {@code startPause}(HARD)로 즉시 멈추게 한다. 43단계에서 바로잡음 — 예전엔 {@code stopPause}를 보냈는데
+     * 스펙에서 stopPause는 <b>일시정지 해제(재개)</b>라 실제 로봇은 반대로 동작했을 것이다. 표준에 원격 비상정지 동작은 없어 가장 가까운 startPause를 쓴다. 로봇이 실제로 멈췄는지는 이 축소 구현이 state의 안전 상태를
      * 파싱하지 않아 확인할 수 없으므로 명령은 ACCEPTED(전달됨)까지만 둔다 — SUCCEEDED로 표시하지 않는다(DESIGN.md §3).
      */
     private void emergencyStop(Robot robot, RobotCommand command) {
         command.send();
         recordCommandEvent(command, "SENT");
         try {
-            publishInstantAction(robot.getCode(), "stopPause", command.getCommandNo(), "HARD");
+            publishInstantAction(robot.getCode(), "startPause", command.getCommandNo(), "HARD");
             command.accept();
             recordCommandEvent(command, "ACCEPTED");
         } catch (MqttException e) {
@@ -385,7 +407,7 @@ public class MqttRobotGateway implements RobotGateway, MqttCallback {
                 new MqttMessage(jsonMapper.writeValueAsString(instantActions).getBytes(StandardCharsets.UTF_8)));
     }
 
-    private void publishOrder(String robotCode, String orderId, String nodeId) throws MqttException {
+    private void publishOrder(String robotCode, String orderId, String nodeId, List<Vda5050Order.Action> actions) throws MqttException {
         Vda5050Order order = new Vda5050Order(
                 headerId.incrementAndGet(),
                 Instant.now().toString(),
@@ -394,24 +416,36 @@ public class MqttRobotGateway implements RobotGateway, MqttCallback {
                 robotCode,
                 orderId,
                 0,
-                List.of(new Vda5050Order.Node(nodeId, 0, true))
+                List.of(new Vda5050Order.Node(nodeId, 0, true, actions))
         );
         String json = jsonMapper.writeValueAsString(order);
         mqttClient.publish(TOPIC_PREFIX + manufacturer + "/" + robotCode + "/order",
                 new MqttMessage(json.getBytes(StandardCharsets.UTF_8)));
     }
 
+    /**
+     * 주문의 목적지 nodeId. 43단계: 실제 로봇은 이 서버의 작업장 코드가 아니라 지도 노드를 알므로, 작업장에 연결된 활성 지도 노드의
+     * 코드를 보낸다. 지도나 연결이 없으면 예전처럼 작업장 코드를 보낸다. 충전(DOCK_AND_CHARGE)은 충전 작업장 노드다.
+     */
     private String resolveTargetNodeId(RobotCommand command) {
         TaskStep step = command.getTaskStep();
         if (step == null) {
             return "UNKNOWN";
         }
         Task task = step.getTask();
-        return switch (step.getStepType()) {
-            case MOVE_TO_ORIGIN -> task.getOriginStation().getCode();
-            case MOVE_TO_DESTINATION, MOVE_TO_CHARGING_STATION -> task.getDestinationStation().getCode();
-            default -> "UNKNOWN";
+        Station station = switch (step.getStepType()) {
+            case MOVE_TO_ORIGIN -> task.getOriginStation();
+            case MOVE_TO_DESTINATION, MOVE_TO_CHARGING_STATION, DOCK_AND_CHARGE -> task.getDestinationStation();
+            default -> null;
         };
+        if (station == null) {
+            return "UNKNOWN";
+        }
+        return mapRouteService.findActiveVersionId(task.getSite().getId())
+                .flatMap(versionId -> mapRouteService.findStationNodeId(station.getId(), versionId))
+                .flatMap(nodeRepository::findById)
+                .map(node -> node.getCode())
+                .orElse(station.getCode());
     }
 
     /** 호출한 트랜잭션에서 로봇 현재 상태를 읽어 연결·동작·배터리를 반영한다. motion/batteryPct가 null이면 기존 값을 유지한다. */
