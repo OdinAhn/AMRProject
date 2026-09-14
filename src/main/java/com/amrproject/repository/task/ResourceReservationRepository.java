@@ -6,6 +6,7 @@ import com.amrproject.domain.entity.task.ResourceType;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 
+import java.util.Collection;
 import java.util.List;
 
 public interface ResourceReservationRepository extends JpaRepository<ResourceReservation, Long> {
@@ -20,4 +21,13 @@ public interface ResourceReservationRepository extends JpaRepository<ResourceRes
     int countHeldForShare(String resourceType, Long resourceId);
 
     List<ResourceReservation> findByRobotIdAndStatus(Long robotId, ResourceReservationStatus status);
+
+    /** 46단계: 교통 관리 — 이 로봇들의 HELD 경로 예약을 공유 잠금으로 읽는다(최신 커밋 값). */
+    @Query(value = "select * from resource_reservations where resource_type = 'NODE' and status = 'HELD' and robot_id in (:robotIds) for share", nativeQuery = true)
+    List<ResourceReservation> findHeldNodeReservationsOfRobotsForShare(Collection<Long> robotIds);
+
+    List<ResourceReservation> findByRobotIdAndResourceTypeAndStatus(Long robotId, ResourceType resourceType, ResourceReservationStatus status);
+
+    /** 46단계: 경로 예약 수(테스트·운영 확인용). */
+    int countByRobotIdAndResourceTypeAndStatus(Long robotId, ResourceType resourceType, ResourceReservationStatus status);
 }

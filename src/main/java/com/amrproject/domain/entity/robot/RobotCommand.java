@@ -70,6 +70,19 @@ public class RobotCommand {
         this.status = RobotCommandStatus.PENDING;
     }
 
+    /** 46단계: 교통 대기 중(보내기 전)인 명령에 예약한 경로를 담는다. */
+    public void assignRoute(String payloadJson) {
+        requireStatus(RobotCommandStatus.PENDING, "ASSIGN_ROUTE");
+        this.payloadJson = payloadJson;
+    }
+
+    /** 46단계: 교통 대기 중(한 번도 보내지 않은) 명령을 취소·비상정지 등으로 끝낸다. */
+    public void abandon() {
+        requireStatus(RobotCommandStatus.PENDING, "ABANDON");
+        this.status = RobotCommandStatus.FAILED;
+        this.completedAt = Instant.now();
+    }
+
     public void send() {
         requireStatus(RobotCommandStatus.PENDING, "SEND");
         this.status = RobotCommandStatus.SENT;

@@ -21,6 +21,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.PriorityQueue;
+import java.util.Set;
 
 /**
  * 30단계: 활성 지도 위의 위치·경로 조회. 서버는 로봇에게 여전히 "이 작업장으로 가라"만 지시하고 경로를 내려보내지 않는다
@@ -129,11 +130,21 @@ public class MapRouteService {
         }
 
         public List<Waypoint> shortestPath(Long fromNodeId, Long toNodeId) {
-            if (!waypoints.containsKey(fromNodeId) || !waypoints.containsKey(toNodeId)) {
+            return shortestPathAvoiding(fromNodeId, toNodeId, Set.of());
+        }
+
+        /**
+         * 46단계: avoidNodeIds를 지나지 않는 최단 경로(교통 관리 — 다른 로봇이 있거나 예약한 노드를 돌아간다). 출발 노드는 피하지 않는다.
+         * 목적지가 avoidNodeIds에 있거나 돌아갈 길이 없으면 빈 목록.
+         */
+        public List<Waypoint> shortestPathAvoiding(Long fromNodeId, Long toNodeId, Set<Long> avoidNodeIds) {
+            if (!waypoints.containsKey(fromNodeId) || !waypoints.containsKey(toNodeId)
+                    || (!toNodeId.equals(fromNodeId) && avoidNodeIds.contains(toNodeId))) {
                 return List.of();
             }
+            Map<Long, Map<Long, Double>> usable = avoidNodeIds.isEmpty() ? outgoing : withoutNodes(avoidNodeIds, fromNodeId);
             Map<Long, Long> previous = new HashMap<>();
-            Map<Long, Double> best = dijkstra(fromNodeId, outgoing, previous, toNodeId);
+            Map<Long, Double> best = dijkstra(fromNodeId, usable, previous, toNodeId);
             if (!best.containsKey(toNodeId)) {
                 return List.of();
             }
@@ -162,6 +173,23 @@ public class MapRouteService {
                 return Map.of();
             }
             return dijkstra(targetNodeId, incoming, new HashMap<>(), null);
+        }
+
+        private Map<Long, Map<Long, Double>> withoutNodes(Set<Long> avoidNodeIds, Long keepNodeId) {
+            Map<Long, Map<Long, Double>> filtered = new HashMap<>();
+            outgoing.forEach((from, arcs) -> {
+                if (avoidNodeIds.contains(from) && !from.equals(keepNodeId)) {
+                    return;
+                }
+                Map<Long, Double> kept = new HashMap<>();
+                arcs.forEach((to, weight) -> {
+                    if (!avoidNodeIds.contains(to) || to.equals(keepNodeId)) {
+                        kept.put(to, weight);
+                    }
+                });
+                filtered.put(from, kept);
+            });
+            return filtered;
         }
 
         private static Map<Long, Double> dijkstra(Long start, Map<Long, Map<Long, Double>> arcs, Map<Long, Long> previous, Long stopAt) {

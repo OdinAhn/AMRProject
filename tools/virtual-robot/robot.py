@@ -111,8 +111,13 @@ class VirtualRobot:
         self._order_actions = [
             _ActionState(action["actionId"], action["actionType"]) for action in (target.get("actions") or [])
         ]
+        order_route = [node["nodeId"] for node in nodes]
         if self.route_map and self.route_map.has(self.last_node_id) and self.route_map.has(self._target):
-            path = self.route_map.shortest_path(self.last_node_id, self._target)
+            if len(order_route) > 1:
+                # 46단계: 서버가 예약한 전체 경로 주문 — 그 노드들을 순서대로 지난다(서버 경로의 첫 노드는 로봇의 현재 노드)
+                path = self._follow(order_route)
+            else:
+                path = self.route_map.shortest_path(self.last_node_id, self._target)
             if path is None:
                 return self._reject("noRouteError", f"{self.last_node_id}에서 {self._target}로 가는 통로가 없습니다")
             self._path = path[1:]
@@ -280,6 +285,20 @@ class VirtualRobot:
                 f"배터리={self.battery:.1f}% 주문={self.order_id[:8] or '-'} {' '.join(flags)}").rstrip()
 
     # ---- 내부 -------------------------------------------------------------------------------------------
+
+    def _follow(self, route: list[str]) -> list[str] | None:
+        """주문 노드를 차례로 잇는 경로(현재 노드부터). 이웃하지 않은 노드 사이는 지도 최단 경로로 잇고, 이을 수 없으면 None."""
+        path = [self.last_node_id]
+        for code in route:
+            if code == path[-1]:
+                continue
+            if not self.route_map.has(code):
+                return None
+            segment = self.route_map.shortest_path(path[-1], code)
+            if segment is None:
+                return None
+            path.extend(segment[1:])
+        return path
 
     def _order_active(self) -> bool:
         return bool(self._node_states or self._path or self._blind_remaining is not None

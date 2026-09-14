@@ -38,6 +38,10 @@ public interface RobotCommandRepository extends JpaRepository<RobotCommand, Long
     /** 39단계: 단계의 가장 최근 명령 — 복구 재개로 새 명령이 나간 뒤 도착한 옛 명령의 결과를 걸러낸다. */
     Optional<RobotCommand> findFirstByTaskStepIdOrderByIdDesc(Long taskStepId);
 
+    /** 46단계: 교통 대기 중인(보내지 않은) 이동 명령 id — 재시도 스케줄러가 순서대로 다시 계획한다. */
+    @Query("select c.id from RobotCommand c where c.status = com.amrproject.domain.entity.robot.RobotCommandStatus.PENDING and c.commandType = com.amrproject.domain.entity.robot.RobotCommandType.MOVE_TO order by c.id")
+    List<Long> findWaitingMoveCommandIds();
+
     /** 40단계: 이 명령 뒤에 같은 로봇으로 나간 비상정지가 있는가(id는 발행 순서대로 증가) — 늦은 도착 보고로 작업을 자동 재개할지 판단. */
     boolean existsByRobotIdAndCommandTypeAndIdGreaterThan(Long robotId, RobotCommandType commandType, Long id);
 }

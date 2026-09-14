@@ -96,6 +96,7 @@ public class TaskService {
     private final StationService stationService;
     private final RobotService robotService;
     private final RobotGateway robotGateway;
+    private final TrafficService trafficService;
     private final AlarmService alarmService;
     private final RobotRepository robotRepository;
     private final StationRepository stationRepository;
@@ -114,6 +115,7 @@ public class TaskService {
             StationService stationService,
             RobotService robotService,
             RobotGateway robotGateway,
+            TrafficService trafficService,
             AlarmService alarmService,
             RobotRepository robotRepository,
             StationRepository stationRepository
@@ -131,6 +133,7 @@ public class TaskService {
         this.stationService = stationService;
         this.robotService = robotService;
         this.robotGateway = robotGateway;
+        this.trafficService = trafficService;
         this.alarmService = alarmService;
         this.robotRepository = robotRepository;
         this.stationRepository = stationRepository;
@@ -667,8 +670,17 @@ public class TaskService {
 
         boolean isCharging = step.getStepType() == TaskStepType.DOCK_AND_CHARGE;
         RobotCommandType commandType = isCharging ? RobotCommandType.START_CHARGE : RobotCommandType.MOVE_TO;
-        RobotCommand command = new RobotCommand(UUID.randomUUID().toString(), step, robot, commandType, null);
+        // 46단계: 이동은 경로 노드를 예약한 뒤에만 보낸다. 막혀 있으면 명령을 PENDING으로 남기고 재시도 스케줄러가 다시 계획한다.
+        // 충전(도킹)은 이미 충전소 노드에 있으므로 경로가 없다.
+        TrafficService.Plan plan = isCharging ? TrafficService.Plan.UNMANAGED : trafficService.plan(robot, targetStation, step);
+        RobotCommand command = new RobotCommand(UUID.randomUUID().toString(), step, robot, commandType, plan.payloadJson());
         robotCommandRepository.save(command);
+        if (plan.isWaiting()) {
+            Instant now = Instant.now();
+            commandEventRepository.save(new CommandEvent(command, "WAITING_FOR_TRAFFIC", null, now, now));
+            recordEvent(task, "TRAFFIC_WAITING", task.getStatus(), task.getStatus(), null, truncate(plan.blockReason(), 500));
+            return;
+        }
 
         ChargingSession session = null;
         if (isCharging) {
@@ -676,14 +688,67 @@ public class TaskService {
             session = chargingSessionRepository.save(new ChargingSession(robot, task.getDestinationStation(), task, state.getBatteryPct()));
             session.startCharging();
         }
+        sendCommand(task, step, command, session);
+    }
 
+    private void sendCommand(Task task, TaskStep step, RobotCommand command, ChargingSession session) {
         robotGateway.dispatch(command);
 
         // 39단계: 시뮬레이터는 여기서 이미 최종 결과지만, MQTT는 보냄(SENT)까지만 — 결과는 applyCommandOutcome이 나중에 반영한다.
         if (isFinal(command.getStatus())) {
-            finishChargingSession(session, command, robot);
+            finishChargingSession(session, command, command.getRobot());
             reactToCommandOutcome(task, step, command);
         }
+    }
+
+    /**
+     * 46단계: 교통 대기 중인 이동 명령을 다시 계획한다(재시도 스케줄러가 부른다). 길이 비었으면 경로를 담아 보내고 true.
+     * 그 사이 작업이 진행 중이 아니게 됐거나 같은 단계에 새 명령이 나갔으면 이 명령을 보내지 않고 끝낸다. 기준 시간 넘게 막혀 있으면
+     * TRAFFIC_BLOCKED 알람을 올린다. 잠금 순서는 다른 작업 API와 같게 작업 행 → 명령 행 → (계획 중) 물류센터 행이다.
+     */
+    @Transactional
+    public boolean retryWaitingCommand(Long commandId) {
+        Optional<Long> taskId = robotCommandRepository.findTaskIdByCommandId(commandId);
+        if (taskId.isEmpty()) {
+            return false;
+        }
+        Task task = taskRepository.findByIdForUpdate(taskId.get()).orElse(null);
+        RobotCommand command = robotCommandRepository.findByIdForUpdate(commandId).orElse(null);
+        if (task == null || command == null || command.getStatus() != RobotCommandStatus.PENDING) {
+            return false;
+        }
+        TaskStep step = command.getTaskStep();
+        Robot robot = command.getRobot();
+        boolean latestForStep = robotCommandRepository.findFirstByTaskStepIdOrderByIdDesc(step.getId())
+                .map(latest -> latest.getId().equals(command.getId()))
+                .orElse(false);
+        if (task.getStatus() != TaskStatus.RUNNING || step.getStatus() != TaskStepStatus.RUNNING || !latestForStep) {
+            abandonWaitingCommand(command, "ABANDONED");
+            return false;
+        }
+
+        TrafficService.Plan plan = trafficService.plan(robot, resolveTargetStation(task, step), step);
+        if (plan.isWaiting()) {
+            commandEventRepository.findFirstByCommandIdAndEventTypeOrderByIdAsc(command.getId(), "WAITING_FOR_TRAFFIC")
+                    .filter(waiting -> waiting.getOccurredAt().isBefore(Instant.now().minusSeconds(trafficService.blockedAlarmSeconds())))
+                    .ifPresent(waiting -> alarmService.raise(AlarmType.TRAFFIC_BLOCKED, AlarmSeverity.WARNING, AlarmSourceType.ROBOT, robot.getId(),
+                            truncate("로봇 " + robot.getCode() + "이(가) 통로가 막혀 출발하지 못하고 있습니다: " + plan.blockReason(), ALARM_MESSAGE_MAX_LENGTH)));
+            return false;
+        }
+        command.assignRoute(plan.payloadJson());
+        Instant now = Instant.now();
+        commandEventRepository.save(new CommandEvent(command, "TRAFFIC_CLEARED", null, now, now));
+        recordEvent(task, "TRAFFIC_CLEARED", task.getStatus(), task.getStatus(), null);
+        alarmService.autoResolve(AlarmType.TRAFFIC_BLOCKED, AlarmSourceType.ROBOT, robot.getId());
+        sendCommand(task, step, command, null);
+        return true;
+    }
+
+    private void abandonWaitingCommand(RobotCommand command, String reason) {
+        command.abandon();
+        Instant now = Instant.now();
+        commandEventRepository.save(new CommandEvent(command, reason, null, now, now));
+        alarmService.autoResolve(AlarmType.TRAFFIC_BLOCKED, AlarmSourceType.ROBOT, command.getRobot().getId());
     }
 
     private static final Set<RobotCommandStatus> FINAL_COMMAND_STATUSES = Set.of(
@@ -773,7 +838,15 @@ public class TaskService {
                 .filter(step -> step.getStatus() == TaskStepStatus.RUNNING && isCommandStep(step))
                 .findFirst()
                 .flatMap(step -> robotCommandRepository.findFirstByTaskStepIdOrderByIdDesc(step.getId()))
-                .filter(command -> IN_FLIGHT_COMMAND_STATUSES.contains(command.getStatus()))
+                .filter(command -> command.getStatus() == RobotCommandStatus.PENDING || IN_FLIGHT_COMMAND_STATUSES.contains(command.getStatus()))
+                .filter(command -> {
+                    // 46단계: 교통 대기 중이라 보내지 않은 명령은 로봇에 알릴 것 없이 끝낸다(경로 예약도 없음)
+                    if (command.getStatus() != RobotCommandStatus.PENDING) {
+                        return true;
+                    }
+                    abandonWaitingCommand(command, reason);
+                    return false;
+                })
                 .map(command -> {
                     if (command.getStatus() == RobotCommandStatus.ACCEPTED) {
                         command.startRunning();
@@ -827,6 +900,11 @@ public class TaskService {
 
     private void reactToCommandOutcome(Task task, TaskStep step, RobotCommand command) {
         RobotCommandStatus status = command.getStatus();
+        // 46단계: 이동이 끝났으면(성공: 목적지 도착, 실패: 멈춘 자리) 경로 예약을 푼다 — 로봇은 이제 현재 노드로 자리를 막는다.
+        // 결과 불명(UNKNOWN)이면 경로 어딘가에 있을 수 있어 복구 처리 전까지 유지한다.
+        if (command.getCommandType() == RobotCommandType.MOVE_TO && status != RobotCommandStatus.UNKNOWN) {
+            trafficService.releaseNodes(command.getRobot());
+        }
         if (status == RobotCommandStatus.SUCCEEDED) {
             completeStepInternal(task, step);
             return;

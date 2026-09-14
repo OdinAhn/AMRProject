@@ -526,7 +526,7 @@ erDiagram
 | 컬럼 | 타입 | 설명 |
 |---|---|---|
 | id | BIGINT PK | |
-| resource_type | VARCHAR | `EDGE`, `ZONE`, `STATION` |
+| resource_type | VARCHAR | `EDGE`, `ZONE`, `STATION`, `NODE`(46단계 — 교통 관리 경로 노드, resource_id = nodes.id) |
 | resource_id | BIGINT | resource_type에 따른 대상 ID (다형성, 앱 레벨 검증) |
 | robot_id | BIGINT FK → robots | |
 | task_step_id | BIGINT FK → task_steps | nullable |

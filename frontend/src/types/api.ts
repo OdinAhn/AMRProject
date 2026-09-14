@@ -425,7 +425,8 @@ export type AlarmType =
   | "TASK_FAILED"
   | "LOAD_EXCEPTION"
   | "TASK_RECOVERY_REQUIRED"
-  | "ROBOT_EMERGENCY_STOP";
+  | "ROBOT_EMERGENCY_STOP"
+  | "TRAFFIC_BLOCKED";
 export type AlarmSeverity = "INFO" | "WARNING" | "CRITICAL";
 export type AlarmStatus = "OPEN" | "ACKNOWLEDGED" | "RESOLVED";
 export type AlarmSourceType = "ROBOT" | "TASK" | "STATION" | "SYSTEM";
