@@ -1,5 +1,6 @@
 package com.amrproject.service.event;
 
+import com.amrproject.repository.event.AuditLogRepository;
 import com.amrproject.repository.event.OutboxEventRepository;
 import com.amrproject.repository.robot.RobotStateSnapshotRepository;
 import org.slf4j.Logger;
@@ -25,6 +26,9 @@ import java.util.function.IntSupplier;
  * </ul>
  * {@link #BATCH_SIZE}건씩 별도 트랜잭션으로 지워, 한 번에 대량 삭제하며 테이블을 오래 잠그지 않는다.
  * {@code task_events}·{@code command_events}·{@code alarm_events}는 감사 추적 성격이라 이번 범위에서 지우지 않는다.
+ *
+ * <p>42단계: {@code audit_logs}(37단계)는 운영 이력보다 오래 두어야 해 별도 기간({@code app.retention.audit-days}, 기본 365일)으로 지운다.
+ * 0 이하면 지우지 않는다(무기한 보관).
  */
 @Service
 public class DataRetentionService {
@@ -34,22 +38,28 @@ public class DataRetentionService {
 
     private final OutboxEventRepository outboxEventRepository;
     private final RobotStateSnapshotRepository robotStateSnapshotRepository;
+    private final AuditLogRepository auditLogRepository;
     private final TransactionTemplate transactionTemplate;
     private final boolean enabled;
     private final Duration retention;
+    private final long auditRetentionDays;
 
     public DataRetentionService(
             OutboxEventRepository outboxEventRepository,
             RobotStateSnapshotRepository robotStateSnapshotRepository,
+            AuditLogRepository auditLogRepository,
             PlatformTransactionManager transactionManager,
             @Value("${app.retention.enabled:true}") boolean enabled,
-            @Value("${app.retention.days:30}") long retentionDays
+            @Value("${app.retention.days:30}") long retentionDays,
+            @Value("${app.retention.audit-days:365}") long auditRetentionDays
     ) {
         this.outboxEventRepository = outboxEventRepository;
         this.robotStateSnapshotRepository = robotStateSnapshotRepository;
+        this.auditLogRepository = auditLogRepository;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
         this.enabled = enabled;
         this.retention = Duration.ofDays(retentionDays);
+        this.auditRetentionDays = auditRetentionDays;
     }
 
     @Scheduled(cron = "${app.retention.cron:0 30 3 * * *}")
@@ -62,6 +72,17 @@ public class DataRetentionService {
             log.info("보관 기간({}일) 지난 데이터 삭제: outbox_events={}, robot_state_snapshots={}",
                     retention.toDays(), result.outboxEvents(), result.robotStateSnapshots());
         }
+        if (auditRetentionDays > 0) {
+            int auditLogs = purgeAuditLogsOlderThan(Instant.now().minus(Duration.ofDays(auditRetentionDays)));
+            if (auditLogs > 0) {
+                log.info("보관 기간({}일) 지난 감사 로그 삭제: audit_logs={}", auditRetentionDays, auditLogs);
+            }
+        }
+    }
+
+    /** 42단계: cutoff보다 오래된 감사 로그를 지우고 건수를 반환한다. */
+    public int purgeAuditLogsOlderThan(Instant cutoff) {
+        return deleteInBatches(() -> auditLogRepository.deleteCreatedBefore(cutoff, BATCH_SIZE));
     }
 
     /** cutoff보다 오래된 행을 지우고 테이블별 삭제 건수를 반환한다. */

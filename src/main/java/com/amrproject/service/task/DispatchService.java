@@ -25,6 +25,7 @@ import com.amrproject.service.map.MapRouteService.RouteGraph;
 import com.amrproject.service.site.SiteService;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -109,19 +110,23 @@ public class DispatchService {
         }
 
         List<Long> chargeTaskIds = new ArrayList<>();
+        List<Station> chargingStations = stationRepository.findBySiteIdAndStationType(siteId, StationType.CHARGING).stream()
+                .sorted(Comparator.comparing(Station::getId))
+                .toList();
         for (Robot robot : robots) {
             if (assignedThisCycle.contains(robot.getId()) || !needsCharging(robot)) {
                 continue;
             }
-            Optional<Station> chargingStation = stationRepository.findBySiteIdAndStationType(siteId, StationType.CHARGING).stream().findFirst();
-            if (chargingStation.isEmpty()) {
-                continue;
-            }
-            try {
-                Task chargeTask = taskService.createChargeTask(robot, chargingStation.get());
-                chargeTaskIds.add(chargeTask.getId());
-            } catch (InvalidStateTransitionException ex) {
-                // 충전소가 가득 찼다 — 다음 사이클에 재시도.
+            // 42단계: 가까운 충전소부터 시도하고, 가득 차 있으면(409) 다음으로 가까운 충전소로 넘어간다 — 예전엔 첫 번째 충전소만 시도해
+            // 그곳이 차 있으면 다른 충전소가 비어 있어도 다음 사이클까지 기다렸다.
+            for (Station station : rankChargingStations(robot, chargingStations, activeVersionId.orElse(null), graph)) {
+                try {
+                    Task chargeTask = taskService.createChargeTask(robot, station);
+                    chargeTaskIds.add(chargeTask.getId());
+                    break;
+                } catch (InvalidStateTransitionException ex) {
+                    // 이 충전소가 가득 찼다 — 다음 충전소로.
+                }
             }
         }
 
@@ -149,6 +154,27 @@ public class DispatchService {
         }
         candidates.sort(Comparator.comparing(Candidate::distance, Comparator.nullsLast(Comparator.naturalOrder())));
         return candidates;
+    }
+
+    /**
+     * 42단계: 충전소를 로봇 현재 위치에서의 통로 거리순으로 정렬한다. 로봇 위치를 모르거나, 지도에 연결되지 않았거나, 갈 길이 없는 충전소는
+     * 뒤에 두고 id 순서다(지도가 없으면 예전과 같은 id 순서).
+     */
+    private List<Station> rankChargingStations(Robot robot, List<Station> stations, Long activeVersionId, RouteGraph graph) {
+        if (graph == null || stations.size() < 2) {
+            return stations;
+        }
+        Long robotNodeId = robotCurrentStateRepository.findById(robot.getId()).map(RobotCurrentState::getCurrentNodeId).orElse(null);
+        Map<Long, Double> distancesFromRobot = robotNodeId == null ? Map.of() : graph.distancesFrom(robotNodeId);
+        Map<Long, Double> stationDistance = new HashMap<>();
+        for (Station station : stations) {
+            mapRouteService.findStationNodeId(station.getId(), activeVersionId)
+                    .map(distancesFromRobot::get)
+                    .ifPresent(distance -> stationDistance.put(station.getId(), distance));
+        }
+        return stations.stream()
+                .sorted(Comparator.comparing((Station station) -> stationDistance.get(station.getId()), Comparator.nullsLast(Comparator.naturalOrder())))
+                .toList();
     }
 
     /** distance: 출발 작업장까지 통로 거리(지도 좌표 단위), 모르면 null */

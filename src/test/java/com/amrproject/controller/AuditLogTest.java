@@ -14,11 +14,13 @@ import com.amrproject.dto.request.user.ResetPasswordRequest;
 import com.amrproject.repository.event.AuditLogRepository;
 import com.amrproject.repository.user.RoleRepository;
 import com.amrproject.repository.user.UserRepository;
+import com.amrproject.service.event.DataRetentionService;
 import com.amrproject.support.AbstractIntegrationTest;
 import com.amrproject.support.TestAdminTokenProvider;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers;
 import org.springframework.test.web.servlet.MockMvc;
@@ -28,7 +30,10 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.context.WebApplicationContext;
 import tools.jackson.databind.json.JsonMapper;
 
+import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.http.MediaType.APPLICATION_JSON;
@@ -68,6 +73,12 @@ class AuditLogTest extends AbstractIntegrationTest {
 
     @Autowired
     private PasswordEncoder passwordEncoder;
+
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
+
+    @Autowired
+    private DataRetentionService dataRetentionService;
 
     private MockMvc mockMvc;
     private String adminToken;
@@ -180,6 +191,26 @@ class AuditLogTest extends AbstractIntegrationTest {
                 .get("token").asString();
         mockMvc.perform(get("/api/admin/audit-logs").header("Authorization", "Bearer " + workerToken))
                 .andExpect(status().isForbidden());
+    }
+
+    /** 42단계: 보관 기간이 지난 감사 로그만 지운다. 시각 이동은 DB에서 한다(Hibernate UTC 저장과 어긋나지 않도록). */
+    @Test
+    void 보관_기간이_지난_감사_로그만_지운다() throws Exception {
+        Long siteId = createdId(post("/api/admin/sites"), new CreateSiteRequest("SITE-AUD3", "감사센터3"));
+        for (String name : List.of("오래된 수정", "최근 수정")) {
+            mockMvc.perform(patch("/api/admin/sites/{siteId}", siteId).header("Authorization", "Bearer " + adminToken)
+                            .contentType(APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(Map.of("name", name))))
+                    .andExpect(status().isOk());
+        }
+        List<AuditLog> logs = logsFor("SITE", siteId);
+        assertThat(logs).hasSize(2);
+        jdbcTemplate.update("update audit_logs set created_at = date_sub(created_at, interval 400 day) where id = ?", logs.get(0).getId());
+
+        int deleted = dataRetentionService.purgeAuditLogsOlderThan(Instant.now().minus(Duration.ofDays(365)));
+
+        assertThat(deleted).isGreaterThanOrEqualTo(1);
+        assertThat(logsFor("SITE", siteId)).extracting(AuditLog::getId).containsExactly(logs.get(1).getId());
     }
 
     private List<AuditLog> logsFor(String targetType, Long targetId) {

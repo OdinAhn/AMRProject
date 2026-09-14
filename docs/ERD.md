@@ -641,7 +641,7 @@ erDiagram
 | ip_address | VARCHAR(45) | IPv6 포함 |
 | created_at | DATETIME(6) | |
 
-인덱스: `(created_at)`, `(actor_username, created_at)`, `(target_type, target_id, created_at)`. 보관 정책 삭제 대상이 아니다(`task_events`와 같은 감사 추적).
+인덱스: `(created_at)`, `(actor_username, created_at)`, `(target_type, target_id, created_at)`. 42단계부터 `app.retention.audit-days`(기본 365일)가 지난 행을 매일 나눠 지운다(0 이하면 보관).
 
 ---
 

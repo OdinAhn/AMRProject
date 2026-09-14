@@ -21,6 +21,7 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
+import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import tools.jackson.databind.json.JsonMapper;
 
 import java.math.BigDecimal;
@@ -123,6 +124,51 @@ class NearestRobotDispatchTest extends AbstractIntegrationTest {
                 .andExpect(jsonPath("$.assignments[0].taskId").value(taskId))
                 .andExpect(jsonPath("$.assignments[0].robotId").value(firstRobot))
                 .andExpect(jsonPath("$.assignments[0].distanceToOrigin").doesNotExist());
+    }
+
+    /**
+     * 42단계: 배터리가 낮은 로봇은 가까운 충전소로 보낸다. 가장 가까운 충전소가 가득 차 있으면(다른 로봇이 예약) 다음으로 가까운 충전소로 보낸다.
+     * 먼 충전소를 먼저 등록해(id가 작음) 예전 로직(첫 번째 충전소)이면 실패하게 만든다.
+     */
+    @Test
+    void 배터리가_낮으면_가까운_충전소로_보내고_가득_차면_다음_충전소로_보낸다() throws Exception {
+        Long siteId = createSite("SITE-NEAR4", "최근접센터4");
+        Long farCharger = createStation(siteId, "CH-FAR", "먼 충전소", StationType.CHARGING);
+        Long nearCharger = createStation(siteId, "CH-NEAR", "가까운 충전소", StationType.CHARGING);
+        Long[] nodes = activateLineMap(siteId, EdgeDirection.TWO_WAY, nearCharger, farCharger); // 가까운=N1, 먼=N3
+
+        Long firstRobot = createInServiceRobot(siteId, "ROBOT-NEAR9", "충전로봇1");
+        placeRobot(firstRobot, nodes[0]);
+        setBattery(firstRobot, 10);
+        Long firstChargeTask = chargeTaskIdOf(post("/api/admin/sites/{siteId}/dispatch", siteId));
+        assertThat(destinationOf(firstChargeTask)).isEqualTo(nearCharger);
+        setBattery(firstRobot, 100);
+
+        // 가까운 충전소를 수용 1대로 두고 다른 로봇이 이미 차지하고 있게 한다
+        jdbcTemplate.update("update stations set max_concurrent_robots = 1 where id = ?", nearCharger);
+        Long occupyingRobot = createInServiceRobot(siteId, "ROBOT-NEAR10", "점유로봇");
+        jdbcTemplate.update("insert into resource_reservations (resource_type, resource_id, robot_id, status, reserved_at) values ('STATION', ?, ?, 'HELD', now(6))",
+                nearCharger, occupyingRobot);
+        Long secondRobot = createInServiceRobot(siteId, "ROBOT-NEAR11", "충전로봇2");
+        placeRobot(secondRobot, nodes[0]);
+        setBattery(secondRobot, 10);
+        Long secondChargeTask = chargeTaskIdOf(post("/api/admin/sites/{siteId}/dispatch", siteId));
+        assertThat(destinationOf(secondChargeTask)).isEqualTo(farCharger);
+    }
+
+    private Long chargeTaskIdOf(MockHttpServletRequestBuilder request) throws Exception {
+        String response = mockMvc.perform(request).andExpect(status().isOk())
+                .andExpect(jsonPath("$.chargeTaskIds.length()").value(1))
+                .andReturn().getResponse().getContentAsString();
+        return objectMapper.readTree(response).get("chargeTaskIds").get(0).asLong();
+    }
+
+    private Long destinationOf(Long taskId) {
+        return jdbcTemplate.queryForObject("select destination_station_id from tasks where id = ?", Long.class, taskId);
+    }
+
+    private void setBattery(Long robotId, int batteryPct) {
+        jdbcTemplate.update("update robot_current_states set battery_pct = ? where robot_id = ?", batteryPct, robotId);
     }
 
     /** N1(0,0) —(양방향)— N2(100,0) —(secondEdge)— N3(200,0). 입고=N1, 출고=N3. 반환: [N1, N2, N3] 노드 id */
