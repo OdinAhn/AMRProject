@@ -9,6 +9,13 @@ app:
   external:
     # 26단계: 비어 있으면 /api/external/** 요청은 전부 401 (fail-closed)
     api-key: ${EXTERNAL_API_KEY:}
+  auth:
+    # 36단계: 로그인 실패 횟수 제한(Redis 카운터). 창 안에서 기준에 닿으면 lock-seconds 동안 막는다
+    login-limit:
+      max-failures-per-username: ${LOGIN_MAX_FAILURES_PER_USERNAME:5}
+      max-failures-per-ip: ${LOGIN_MAX_FAILURES_PER_IP:50}
+      window-seconds: ${LOGIN_FAILURE_WINDOW_SECONDS:900}
+      lock-seconds: ${LOGIN_LOCK_SECONDS:900}
   bootstrap:
     admin:
       # 26단계: 둘 다 설정돼 있고 ADMIN 사용자가 없을 때만 최초 관리자를 만든다

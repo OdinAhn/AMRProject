@@ -6,6 +6,7 @@ import com.amrproject.dto.response.user.LoginResponse;
 import com.amrproject.dto.response.user.UserResponse;
 import com.amrproject.service.user.AuthService;
 import com.amrproject.service.user.UserService;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
@@ -34,8 +35,9 @@ public class AuthController {
     }
 
     @PostMapping("/login")
-    public LoginResponse login(@Valid @RequestBody LoginRequest request) {
-        AuthService.LoginResult result = authService.login(request.username(), request.password());
+    public LoginResponse login(@Valid @RequestBody LoginRequest request, HttpServletRequest httpRequest) {
+        // 36단계: prod 프로필은 리버스 프록시의 X-Forwarded-For로 실제 클라이언트 주소를 채운다(docs/DEPLOYMENT.md)
+        AuthService.LoginResult result = authService.login(request.username(), request.password(), httpRequest.getRemoteAddr());
         return new LoginResponse(result.token(), UserResponse.from(result.user()));
     }
 

@@ -31,7 +31,8 @@ class UserServiceLastAdminTest {
     private final RoleRepository roleRepository = Mockito.mock(RoleRepository.class);
     private final UserService userService = new UserService(
             userRepository, roleRepository, Mockito.mock(PasswordEncoder.class),
-            Mockito.mock(UserStationAssignmentRepository.class), Mockito.mock(StationService.class)
+            Mockito.mock(UserStationAssignmentRepository.class), Mockito.mock(StationService.class),
+            Mockito.mock(LoginAttemptLimiter.class)
     );
 
     private Role adminRole;

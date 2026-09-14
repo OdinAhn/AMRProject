@@ -53,8 +53,11 @@ async function request<T>(
   });
 
   if (response.status === 401) {
+    // 36단계: 로그인 실패(INVALID_CREDENTIALS)처럼 서버가 공통 오류 본문을 준 경우엔 그 메시지를 쓴다.
+    // 토큰 만료 등 Spring Security의 401은 본문에 code가 없어 기존 문구로 보여준다.
+    const error = parseJson(await response.text()) as ErrorResponse | undefined;
     onUnauthorized?.();
-    throw new ApiError(401, "UNAUTHORIZED", "인증이 필요합니다.");
+    throw new ApiError(401, error?.code ?? "UNAUTHORIZED", error?.code && error.message ? error.message : "인증이 필요합니다.");
   }
 
   if (response.status === 204) {

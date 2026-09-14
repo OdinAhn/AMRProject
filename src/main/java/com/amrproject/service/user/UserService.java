@@ -32,19 +32,22 @@ public class UserService {
     private final PasswordEncoder passwordEncoder;
     private final UserStationAssignmentRepository userStationAssignmentRepository;
     private final StationService stationService;
+    private final LoginAttemptLimiter loginAttemptLimiter;
 
     public UserService(
             UserRepository userRepository,
             RoleRepository roleRepository,
             PasswordEncoder passwordEncoder,
             UserStationAssignmentRepository userStationAssignmentRepository,
-            StationService stationService
+            StationService stationService,
+            LoginAttemptLimiter loginAttemptLimiter
     ) {
         this.userRepository = userRepository;
         this.roleRepository = roleRepository;
         this.passwordEncoder = passwordEncoder;
         this.userStationAssignmentRepository = userStationAssignmentRepository;
         this.stationService = stationService;
+        this.loginAttemptLimiter = loginAttemptLimiter;
     }
 
     @Transactional
@@ -101,6 +104,8 @@ public class UserService {
     public void resetPassword(Long id, String newPassword) {
         User user = getById(id);
         user.changePassword(passwordEncoder.encode(newPassword), Instant.now());
+        // 36단계: 잠긴 사용자(누군가 일부러 틀려 잠근 경우 포함)는 관리자가 비밀번호를 초기화해 바로 풀어 준다
+        loginAttemptLimiter.clearUsername(user.getUsername());
     }
 
     /**

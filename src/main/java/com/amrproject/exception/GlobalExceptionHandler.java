@@ -2,6 +2,7 @@ package com.amrproject.exception;
 
 import com.amrproject.dto.response.ErrorResponse;
 import jakarta.validation.ConstraintViolationException;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.FieldError;
@@ -41,6 +42,14 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(AuthenticationFailedException.class)
     public ResponseEntity<ErrorResponse> handleAuthenticationFailed(AuthenticationFailedException ex) {
         return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                .body(ErrorResponse.of(ex.getCode(), ex.getMessage()));
+    }
+
+    /** 36단계: 로그인 실패 누적으로 잠김 — Retry-After(초)를 함께 준다. */
+    @ExceptionHandler(LoginRateLimitedException.class)
+    public ResponseEntity<ErrorResponse> handleLoginRateLimited(LoginRateLimitedException ex) {
+        return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+                .header(HttpHeaders.RETRY_AFTER, String.valueOf(ex.getRetryAfterSeconds()))
                 .body(ErrorResponse.of(ex.getCode(), ex.getMessage()));
     }
 
