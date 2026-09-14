@@ -32,7 +32,8 @@ public class SecurityConfig {
             HttpSecurity http,
             AccessTokenService accessTokenService,
             UserRepository userRepository,
-            @Value("${app.external.api-key:}") String externalApiKey
+            @Value("${app.external.api-key:}") String externalApiKey,
+            @Value("${management.server.port:-1}") int managementPort
     ) throws Exception {
         http
                 .csrf(csrf -> csrf.disable())
@@ -41,6 +42,9 @@ public class SecurityConfig {
                         (request, response, authException) -> response.sendError(401, "Unauthorized")
                 ))
                 .authorizeHttpRequests(auth -> auth
+                        // 35단계: 운영 프로필은 actuator를 별도 관리 포트(기본 8081)로 띄우고 외부에 공개하지 않는다 —
+                        // 그 포트로 들어온 요청(Prometheus 수집 등)만 토큰 없이 허용한다.
+                        .requestMatchers(request -> managementPort > 0 && request.getLocalPort() == managementPort).permitAll()
                         .requestMatchers(
                                 "/actuator/health/**",
                                 "/v3/api-docs/**",
@@ -48,6 +52,8 @@ public class SecurityConfig {
                                 "/swagger-ui.html",
                                 "/api/auth/login"
                         ).permitAll()
+                        // 35단계: 애플리케이션 포트로 노출된 나머지 actuator(메트릭 등)는 관리자만
+                        .requestMatchers("/actuator/**").hasRole("ADMIN")
                         .requestMatchers("/api/external/**").hasRole("EXTERNAL")
                         .requestMatchers("/api/admin/**").hasRole("ADMIN")
                         .requestMatchers("/api/worker/**").hasAnyRole("ADMIN", "WORKER")

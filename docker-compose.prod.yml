@@ -1,0 +1,89 @@
+# 35단계: 전체 스택을 컨테이너로 띄우는 운영형 구성 (docs/DEPLOYMENT.md).
+# 개발용 docker-compose.yml과 달리 인프라 포트를 호스트에 열지 않고, 비밀값은 .env(.env.example 참고)에서만 받는다.
+#   docker compose -f docker-compose.prod.yml --env-file .env up -d --build
+# 프로젝트 이름을 따로 둬서 개발용 compose(같은 폴더 → 같은 기본 이름)의 컨테이너·볼륨과 섞이지 않게 한다.
+name: amr-prod
+services:
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_DATABASE: amr_project
+      MYSQL_USER: ${DB_USERNAME:?DB_USERNAME을 .env에 설정하세요}
+      MYSQL_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD를 .env에 설정하세요}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?MYSQL_ROOT_PASSWORD를 .env에 설정하세요}
+    volumes:
+      - amr_prod_mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  kafka:
+    image: apache/kafka:3.8.0
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@localhost:9093
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+    volumes:
+      - amr_prod_kafka_data:/var/lib/kafka/data
+    restart: unless-stopped
+
+  backend:
+    build: .
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_started
+    environment:
+      DB_HOST: mysql
+      DB_USERNAME: ${DB_USERNAME}
+      DB_PASSWORD: ${DB_PASSWORD}
+      REDIS_HOST: redis
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      TOKEN_SIGNING_SECRET: ${TOKEN_SIGNING_SECRET:?TOKEN_SIGNING_SECRET을 .env에 설정하세요}
+      EXTERNAL_API_KEY: ${EXTERNAL_API_KEY:-}
+      BOOTSTRAP_ADMIN_USERNAME: ${BOOTSTRAP_ADMIN_USERNAME:-}
+      BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD:-}
+      ROBOT_GATEWAY_MQTT_ENABLED: ${ROBOT_GATEWAY_MQTT_ENABLED:-false}
+      MQTT_BROKER_URL: ${MQTT_BROKER_URL:-tcp://mosquitto:1883}
+    # 관리 포트(8081)는 호스트에 열지 않는다 — 같은 네트워크의 Prometheus만 수집한다.
+    # 로컬에서 메트릭을 직접 보려면 아래 주석을 풀어 127.0.0.1에만 연다.
+    # ports:
+    #   - "127.0.0.1:8081:8081"
+    # 앱의 graceful shutdown(최대 20초, application-prod.yaml)보다 길게 — docker 기본 10초면 그 전에 강제 종료된다.
+    stop_grace_period: 30s
+    restart: unless-stopped
+
+  frontend:
+    build: ./frontend
+    depends_on:
+      - backend
+    environment:
+      BACKEND_URL: http://backend:8080
+    ports:
+      - "${HTTP_PORT:-80}:80"
+    restart: unless-stopped
+
+volumes:
+  amr_prod_mysql_data:
+  amr_prod_kafka_data:

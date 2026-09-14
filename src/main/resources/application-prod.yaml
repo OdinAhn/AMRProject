@@ -1,0 +1,63 @@
+# 35단계: 운영(컨테이너) 프로필 — 모든 접속 정보·비밀값을 환경 변수로만 받는다.
+# local 프로필과 달리 비밀값에 개발용 기본값을 두지 않는다: TOKEN_SIGNING_SECRET이 없으면 기동 실패,
+# EXTERNAL_API_KEY가 없으면 외부 API 전부 401(fail-closed). 자세한 내용은 docs/DEPLOYMENT.md.
+spring:
+  datasource:
+    url: jdbc:mysql://${DB_HOST}:${DB_PORT:3306}/${DB_NAME:amr_project}?serverTimezone=UTC&${DB_URL_OPTIONS:useSSL=false&allowPublicKeyRetrieval=true}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+  data:
+    redis:
+      host: ${REDIS_HOST}
+      port: ${REDIS_PORT:6379}
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS}
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: false
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+  lifecycle:
+    # SIGTERM을 받으면 새 요청을 받지 않고 진행 중인 요청을 최대 20초 기다린다(SSE 연결은 끊긴 뒤 브라우저가 재접속한다).
+    timeout-per-shutdown-phase: 20s
+
+server:
+  shutdown: graceful
+  # 리버스 프록시(nginx) 뒤에서 X-Forwarded-* 헤더를 신뢰한다
+  forward-headers-strategy: framework
+
+app:
+  token:
+    secret: ${TOKEN_SIGNING_SECRET}
+  external:
+    api-key: ${EXTERNAL_API_KEY:}
+  robot-gateway:
+    mqtt:
+      enabled: ${ROBOT_GATEWAY_MQTT_ENABLED:false}
+      broker-url: ${MQTT_BROKER_URL:tcp://mosquitto:1883}
+      manufacturer: ${MQTT_MANUFACTURER:AMRProject}
+  # 운영 기능이라 prod에서는 기본으로 켠다(기본 프로필·테스트는 꺼짐)
+  dispatch:
+    auto:
+      enabled: ${AUTO_DISPATCH_ENABLED:true}
+      interval-ms: ${AUTO_DISPATCH_INTERVAL_MS:5000}
+  robot:
+    connection-monitor:
+      enabled: ${ROBOT_CONNECTION_MONITOR_ENABLED:true}
+    heartbeat-timeout-seconds: ${ROBOT_HEARTBEAT_TIMEOUT_SECONDS:30}
+
+management:
+  server:
+    # actuator는 애플리케이션 포트와 분리한다 — 이 포트는 외부(리버스 프록시)에 공개하지 않는다
+    port: ${MANAGEMENT_PORT:8081}
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: never

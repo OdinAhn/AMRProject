@@ -24,4 +24,7 @@ public interface OutboxEventRepository extends JpaRepository<OutboxEvent, Long> 
     int deletePublishedBefore(Instant cutoff, int limit);
 
     List<OutboxEvent> findByIdGreaterThanAndStatusOrderByIdAsc(Long id, OutboxEventStatus status);
+
+    /** 35단계 메트릭: 발행 대기 이벤트 수(릴레이가 밀리면 계속 늘어난다). */
+    long countByStatus(OutboxEventStatus status);
 }

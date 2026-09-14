@@ -27,6 +27,9 @@ public interface TaskRepository extends JpaRepository<Task, Long> {
     @Query("select t.status as status, count(t) as count from Task t where t.site.id = :siteId and t.status in :statuses group by t.status")
     List<StatusCount> countBySiteAndStatusIn(Long siteId, Collection<TaskStatus> statuses);
 
+    /** 35단계 메트릭: 상태별 작업 수(전체 물류센터). */
+    long countByStatus(TaskStatus status);
+
     Optional<Task> findByIdempotencyKey(String idempotencyKey);
 
     Optional<Task> findByExternalRef(String externalRef);
