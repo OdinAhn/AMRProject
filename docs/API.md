@@ -162,7 +162,7 @@
 | POST | `/api/admin/robots/{robotId}/emergency-stop` | (33단계) 로봇 비상정지 — 아래 참고 |
 | POST | `/api/admin/robots/{robotId}/simulator/emergency-stop-release` | (33단계, 시뮬레이터 전용) 현장 비상정지 해제를 흉내 낸다, 204 |
 | POST | `/api/admin/sites/{siteId}/emergency-stop` | (33단계) 물류센터의 운영 중(`IN_SERVICE`) 로봇 전체 비상정지 — 로봇별 결과 배열 |
-| POST | `/api/admin/sites/{siteId}/dispatch` | 디스패치 사이클 실행 (7단계): `QUEUED` 작업 자동 배정 + 저배터리 로봇 자동 충전 작업 생성, 결과로 배정/생성된 taskId 목록 반환. (29단계) 같은 사이클이 `AutoDispatchScheduler`로 운영 중(`ACTIVE`)인 모든 물류센터에서 주기적으로(기본 5초) 자동 실행된다. 이 API는 즉시 한 번 더 돌리고 결과를 보고 싶을 때 쓴다 |
+| POST | `/api/admin/sites/{siteId}/dispatch` | 디스패치 사이클 실행 (7단계): `QUEUED` 작업 자동 배정 + 저배터리 로봇 자동 충전 작업 생성, 결과로 배정/생성된 taskId 목록 반환. (29단계) 같은 사이클이 `AutoDispatchScheduler`로 운영 중(`ACTIVE`)인 모든 물류센터에서 주기적으로(기본 5초) 자동 실행된다. 이 API는 즉시 한 번 더 돌리고 결과를 보고 싶을 때 쓴다. (38단계) 응답에 `assignments`(작업별로 고른 로봇과 출발지까지 통로 거리)가 추가됐다 — 아래 참고 |
 | GET | `/api/admin/sites/{siteId}/overview` | (30단계) 관제 대시보드 현황 — 아래 참고 |
 | GET | `/api/admin/sites/{siteId}/statistics` | (34단계) 운영 통계 — 쿼리 `from`, `to`(YYYY-MM-DD, 양 끝 포함), `zone`(기본 `Asia/Seoul`). 아래 참고 |
 | GET | `/api/admin/alarms` | 알람 목록 (필터: status, severity, sourceType). **31단계: 페이지 응답**(아래 참고) |
@@ -170,6 +170,14 @@
 | POST | `/api/admin/alarms/{alarmId}/acknowledge` | 확인 처리 (`OPEN`→`ACKNOWLEDGED`. 이미 `ACKNOWLEDGED`면 200으로 현재 상태 반환, `RESOLVED`면 409) |
 | POST | `/api/admin/alarms/{alarmId}/resolve` | 해제 처리 (`OPEN`/`ACKNOWLEDGED`→`RESOLVED`. 이미 `RESOLVED`면 200으로 현재 상태 반환) |
 | GET | `/api/admin/audit-logs` | (37단계) 감사 로그 — 필터 `actorUsername`, `targetType`, `targetId`, `page`, `size`. 최신순 페이지 응답. 아래 참고 |
+
+**38단계 — 가까운 로봇 선택** (디스패치 사이클, 자동·수동 공통):
+- 대기 작업을 우선순위 → 생성 순으로 하나씩 보며, 배정 가능한 로봇 중 **출발 작업장까지 활성 지도 통로 거리가 가장 짧은 로봇**에 먼저 배정을 시도한다. 거리는 로봇의 현재 노드(`current_node_id`)에서 출발 작업장에 연결된 노드까지 통로 방향(ONE_WAY)을 지킨 최단 거리다.
+- 위치를 모르는 로봇(현재 노드 없음, 또는 활성 지도에 없는 노드)과 출발지로 **갈 길이 없는 로봇**은 거리를 아는 로봇 뒤에 둔다. 같은 거리·둘 다 모름이면 로봇 id(등록) 순서다. 활성 지도가 없거나 출발 작업장이 지도에 연결되지 않았으면 모두 거리를 모르는 셈이라 예전과 같은 등록 순서다.
+- 작업마다 차례로 고르는 욕심쟁이(greedy) 방식이라 우선순위 높은 작업이 가까운 로봇을 먼저 가져간다. 사이클 전체 이동 거리 합의 최솟값은 보장하지 않는다.
+- 배정 시도가 409(작업장 수용량 등)면 다음으로 가까운 로봇을 시도한다(기존 동작).
+- 응답 `assignments`: `[{taskId, robotId, robotCode, distanceToOrigin}]` — 거리는 지도 좌표 단위(소수 첫째 자리), 모르면 null. `assignedTaskIds`/`chargeTaskIds`는 그대로다.
+- 충전소 선택은 아직 첫 번째 충전 작업장이다(가까운 충전소 선택은 남은 과제).
 
 **37단계 — 감사 로그** `GET /api/admin/audit-logs`: 누가 언제 무엇을 바꿨는지 추적한다(`ADMIN`만 조회).
 

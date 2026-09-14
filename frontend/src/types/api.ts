@@ -244,6 +244,15 @@ export interface StationAssignmentResponse {
 export interface DispatchResultResponse {
   assignedTaskIds: number[];
   chargeTaskIds: number[];
+  /** 38단계: 배정마다 고른 로봇과 출발 작업장까지 통로 거리(지도 좌표 단위, 위치·경로를 모르면 null) */
+  assignments: DispatchAssignment[];
+}
+
+export interface DispatchAssignment {
+  taskId: number;
+  robotId: number;
+  robotCode: string;
+  distanceToOrigin: number | null;
 }
 
 export interface LoginResponse {
