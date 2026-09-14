@@ -55,6 +55,7 @@ import tools.jackson.databind.json.JsonMapper;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
@@ -103,6 +104,7 @@ public class MqttRobotGateway implements RobotGateway, MqttCallback {
     private final ObjectProvider<RobotCommandCompletionService> completionService;
     private final TransactionTemplate transactionTemplate;
     private final long commandTimeoutSeconds;
+    private final boolean fullRoute;
 
     private final AtomicLong headerId = new AtomicLong();
     private final ExecutorService telemetryExecutor = Executors.newSingleThreadExecutor(runnable -> {
@@ -127,7 +129,8 @@ public class MqttRobotGateway implements RobotGateway, MqttCallback {
             NodeRepository nodeRepository,
             ObjectProvider<RobotCommandCompletionService> completionService,
             PlatformTransactionManager transactionManager,
-            @Value("${app.robot-gateway.mqtt.command-timeout-seconds:300}") long commandTimeoutSeconds
+            @Value("${app.robot-gateway.mqtt.command-timeout-seconds:300}") long commandTimeoutSeconds,
+            @Value("${app.robot-gateway.mqtt.full-route:true}") boolean fullRoute
     ) throws MqttException {
         this.mqttClient = mqttClient;
         this.manufacturer = manufacturer;
@@ -148,6 +151,7 @@ public class MqttRobotGateway implements RobotGateway, MqttCallback {
         this.transactionTemplate = new TransactionTemplate(transactionManager);
         this.transactionTemplate.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
         this.commandTimeoutSeconds = commandTimeoutSeconds;
+        this.fullRoute = fullRoute;
         mqttClient.setCallback(this);
         // 45단계: connection 토픽(로봇 연결·LWT 끊김 알림)도 받는다
         mqttClient.subscribe(new String[]{TOPIC_PREFIX + manufacturer + "/+/state", TOPIC_PREFIX + manufacturer + "/+/connection"});
@@ -178,10 +182,11 @@ public class MqttRobotGateway implements RobotGateway, MqttCallback {
         String orderId = command.getCommandNo();
         String robotCode = robot.getCode();
         String targetNodeId = resolveTargetNodeId(command);
+        List<String> route = fullRoute ? routeOf(command) : List.of();
         List<Vda5050Order.Action> actions = command.getCommandType() == RobotCommandType.START_CHARGE
                 ? List.of(new Vda5050Order.Action("startCharging", orderId, "HARD"))
                 : List.of();
-        Runnable publish = () -> publishAfterCommit(commandId, orderId, robotCode, targetNodeId, actions);
+        Runnable publish = () -> publishAfterCommit(commandId, orderId, robotCode, targetNodeId, route, actions);
         if (TransactionSynchronizationManager.isSynchronizationActive()) {
             TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
                 @Override
@@ -195,9 +200,10 @@ public class MqttRobotGateway implements RobotGateway, MqttCallback {
     }
 
     /** 커밋된 명령을 발행하고, 발행되면 ACCEPTED→RUNNING, 실패하면 UNKNOWN(작업 복구 필요)으로 별도 트랜잭션에서 기록한다. */
-    private void publishAfterCommit(Long commandId, String orderId, String robotCode, String targetNodeId, List<Vda5050Order.Action> actions) {
+    private void publishAfterCommit(Long commandId, String orderId, String robotCode, String targetNodeId, List<String> route,
+                                    List<Vda5050Order.Action> actions) {
         try {
-            publishOrder(robotCode, orderId, targetNodeId, actions);
+            publishOrder(robotCode, orderId, targetNodeId, route, actions);
         } catch (MqttException e) {
             log.warn("MQTT order 발행 실패: commandNo={} robot={}", orderId, robotCode, e);
             transactionTemplate.executeWithoutResult(status -> completionService.getObject().markUnknown(commandId, "TIMEOUT",
@@ -448,7 +454,21 @@ public class MqttRobotGateway implements RobotGateway, MqttCallback {
                 new MqttMessage(jsonMapper.writeValueAsString(instantActions).getBytes(StandardCharsets.UTF_8)));
     }
 
-    private void publishOrder(String robotCode, String orderId, String nodeId, List<Vda5050Order.Action> actions) throws MqttException {
+    private void publishOrder(String robotCode, String orderId, String nodeId, List<String> route, List<Vda5050Order.Action> actions)
+            throws MqttException {
+        List<Vda5050Order.Node> nodes = new ArrayList<>();
+        List<Vda5050Order.Edge> edges = new ArrayList<>();
+        if (route.size() > 1) {
+            for (int i = 0; i < route.size(); i++) {
+                boolean last = i == route.size() - 1;
+                nodes.add(new Vda5050Order.Node(route.get(i), i * 2, true, last ? actions : List.of()));
+                if (!last) {
+                    edges.add(new Vda5050Order.Edge(route.get(i) + "-" + route.get(i + 1), i * 2 + 1, true, route.get(i), route.get(i + 1)));
+                }
+            }
+        } else {
+            nodes.add(new Vda5050Order.Node(nodeId, 0, true, actions));
+        }
         Vda5050Order order = new Vda5050Order(
                 headerId.incrementAndGet(),
                 Instant.now().toString(),
@@ -457,11 +477,22 @@ public class MqttRobotGateway implements RobotGateway, MqttCallback {
                 robotCode,
                 orderId,
                 0,
-                List.of(new Vda5050Order.Node(nodeId, 0, true, actions))
+                nodes,
+                edges
         );
         String json = jsonMapper.writeValueAsString(order);
         mqttClient.publish(TOPIC_PREFIX + manufacturer + "/" + robotCode + "/order",
                 new MqttMessage(json.getBytes(StandardCharsets.UTF_8)));
+    }
+
+    /** 46단계: 교통 관리가 명령에 담은 경로(노드 코드). 없으면 빈 목록. */
+    private List<String> routeOf(RobotCommand command) {
+        if (command.getPayloadJson() == null || command.getPayloadJson().isBlank()) {
+            return List.of();
+        }
+        List<String> route = new ArrayList<>();
+        jsonMapper.readTree(command.getPayloadJson()).path("route").forEach(node -> route.add(node.asString()));
+        return route;
     }
 
     /**

@@ -200,6 +200,8 @@
 
 **27단계**: 알람 종류에 `TASK_RECOVERY_REQUIRED`를 추가했다. 작업이 `RECOVERY_REQUIRED`가 되는 모든 경로(명령 실패·불명, 적재 중 취소, 작업 불가 보고)에서 발생하고, `recover` 시 자동 해소된다. 발생·해소 규칙 전체 표는 `STATE_MACHINES.md` §7에 있다.
 
+**46단계**: 알람 종류에 `TRAFFIC_BLOCKED`(WARNING, source ROBOT)를 추가했다 — 교통 관리로 이동 명령이 `app.traffic.blocked-alarm-seconds`보다 오래 기다리면 발생, 출발·대기 종료 시 자동 해소(§7).
+
 **19단계**: 응답에 `allowedActions`를 추가했다(Task/Robot 응답과 같은 패턴) — `OPEN`→`["ACKNOWLEDGE","RESOLVE"]`, `ACKNOWLEDGED`→`["RESOLVE"]`, `RESOLVED`→`[]`. 관리자 화면(`/alarms`)이 이 배열만 보고 버튼을 그린다.
 
 **33단계 — 우선순위·일시정지·비상정지**:
@@ -479,12 +481,19 @@ DESIGN.md §1/§4는 "로봇 없는 개발: 실제 통신 계약을 모사하는
 
 `RobotGateway`의 두 번째 구현체 `MqttRobotGateway`를 추가했다 — `app.robot-gateway.mqtt.enabled=true`(기본 `false`)일 때만 활성화되고, 꺼져 있으면 지금처럼 `SimulatorRobotGateway`가 그대로 쓰인다. 실제 로봇은 여전히 없어 로컬 MQTT 브로커(Mosquitto)와 테스트용 "가상 VDA5050 로봇"으로만 검증했다.
 
-- **토픽**: 로봇당 `uagv/v2/{manufacturer}/{serialNumber}/order`(발행)와 `.../state`(구독) 두 개만 쓴다. `connection` 토픽(LWT 기반 온라인·오프라인 알림)은 이번 범위에 없다.
+- **토픽**: 로봇당 `uagv/v2/{manufacturer}/{serialNumber}/order`(발행)와 `.../state`(구독) 두 개만 쓴다. `connection` 토픽(LWT 기반 온라인·오프라인 알림)은 이번 범위에 없다. (→ 40단계 `instantActions` 발행, 45단계 `connection` 구독 추가)
 - **VDA5050 축소 구현**: `order`는 목적지 station 하나짜리 단일 노드(`nodes: [{nodeId, sequenceId, released}]`)만 담는다 — edges/actions 등 전체 스펙의 나머지는 구현하지 않았다. `state`는 `orderId`/`driving`/`errors`/`batteryState.batteryCharge`만 본다. `driving:false`(또는 `errors` 존재)인 state가 오면 주문이 끝난 것으로 판단한다.
 - **45단계 — 연결·적재·위치 추정 상태**:
   - **`connection` 토픽**을 구독한다. `OFFLINE`(정상 종료)·`CONNECTIONBROKEN`(비정상 끊김 — 브로커가 로봇의 LWT로 대신 보냄, 보통 retain)이 오면 하트비트 타임아웃(기본 30초)을 기다리지 않고 **바로 OFFLINE**·`ROBOT_COMM_LOST` 알람, `ONLINE`이면 하트비트처럼 복구·알람 해소. 서버가 재기동하면 retain된 끊김 메시지로 이미 끊긴 로봇을 바로 안다.
   - **`loads`**: 빈 목록이면 `EMPTY`, 짐이 있으면 `LOADED`(보고에 없으면 유지). 적재 상태는 로봇 상태에 기록·표시만 하고 배정 조건에는 쓰지 않는다.
   - **`agvPosition.positionInitialized`**: `false`면 위치 추정 `LOST` — `LOCALIZATION_LOST` 알람(시뮬레이터와 같은 규칙), 배정 조건(`LOCALIZED`)에서 빠진다. `true`면 `LOCALIZED`·알람 해소. 좌표(x, y)는 여전히 쓰지 않는다.
+- **46단계 — 교통 관리·전체 경로 주문** (시뮬레이터·MQTT 공통, `app.traffic.enabled` 기본 `true`):
+  - 작업장 이동 명령을 만들 때 로봇 현재 노드에서 목적지 작업장 노드까지, **다른 로봇이 서 있는 노드와 다른 로봇이 경로로 예약한 노드를 피한** 최단 경로를 구한다. 경로가 있으면(더 멀어도) 경로의 노드를 모두 `resource_reservations`(`resource_type = NODE`)로 예약하고 명령 `payload_json`에 `{"route": [노드 코드...]}`로 담아 보낸다. 판단은 물류센터 행 잠금 안에서 해 두 로봇이 같은 노드를 동시에 잡지 않는다.
+  - **피해 갈 길이 없으면** 명령을 보내지 않고 `PENDING`으로 둔다(명령 이벤트 `WAITING_FOR_TRAFFIC`, 작업 이력 `TRAFFIC_WAITING`에 막힌 노드·로봇). 단계는 `RUNNING`이라 응답·화면에서는 이동 중과 같게 보인다. 다른 로봇의 예약이 풀린 트랜잭션이 커밋되면 바로, 그 밖에는 `app.traffic.retry-ms`(기본 2초) 주기로 오래 기다린 명령부터 다시 계획한다. 길이 나면 경로를 담아 보내고 `TRAFFIC_CLEARED` 이력을 남긴다.
+  - `app.traffic.blocked-alarm-seconds`(기본 60초)보다 오래 기다리면 로봇에 `TRAFFIC_BLOCKED`(WARNING) 알람, 출발하거나 대기가 끝나면 자동 해소. 교착(서로 막음)을 자동으로 풀지는 않는다 — 운영자가 한 작업을 취소하거나 로봇을 옮긴다.
+  - 예약은 이동 명령이 **성공·실패로 끝나면** 반납한다. 결과 불명(`UNKNOWN`)이면 로봇이 어디 있는지 모르므로 유지한다(복구 결정 뒤 다음 이동 계획에서 새로 잡거나 반납). 기다리던 중 작업 취소·비상정지·복구로 끝나면 명령만 `FAILED`(로봇에 보낸 적이 없으므로 `cancelOrder`도 보내지 않음).
+  - 관리하지 않는 경우(예전처럼 바로 보냄): 현재 노드를 모르는 로봇, 활성 지도가 없거나 목적지 작업장이 지도에 연결되지 않음, 지도상 갈 길 자체가 없음, 충전 이동.
+  - **MQTT 전체 경로 주문**(`app.robot-gateway.mqtt.full-route`, 기본 `true`): 경로가 있으면 `nodes`에 경로 노드 전부(`sequenceId` 0, 2, 4…), `edges`에 이웃 노드 쌍(`edgeId` = `시작코드-끝코드`, `sequenceId` 1, 3…)을 모두 `released:true`로 담고, 동작(예: `startCharging`)은 마지막 노드에 붙인다. 경로가 없는 명령은 예전처럼 목적지 노드 하나다.
 - **43단계 — 실제 로봇 연동 준비(Python 가상 로봇으로 검증하며 고친 것)**:
   - **주문 목적지 nodeId**: 작업장 코드 대신 작업장에 연결된 **활성 지도 노드 코드**를 보낸다(연결이 없으면 작업장 코드). 실제 로봇은 이 서버의 작업장 코드를 모르고 지도 노드만 안다. 충전 주문은 충전 작업장 노드에 `startCharging` 동작(`actionId` = 명령 번호)을 싣는다(예전엔 nodeId `UNKNOWN`).
   - **주문 종료 판단**: 오류가 있거나, `driving:false`이면서 `nodeStates`(남은 노드)가 비었고 진행 중인 `actionStates`가 없을 때만 끝난 것으로 본다(`Vda5050State.orderFinished`). 예전엔 `driving:false`만 봐서 주문을 막 받고 출발하기 전이나 충전 중에도 끝난 것으로 판단했을 것이다. 보고에 없는 필드는 조건에서 뺀다.

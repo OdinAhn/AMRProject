@@ -21,6 +21,10 @@ import java.util.Optional;
  */
 public interface RobotCurrentStateRepository extends JpaRepository<RobotCurrentState, Long> {
 
+    /** 46단계: 교통 관리 — 로봇들의 최신 위치를 공유 잠금으로 읽는다(상태 행만 잠근다). */
+    @Query(value = "select * from robot_current_states where robot_id in (:robotIds) for share", nativeQuery = true)
+    List<RobotCurrentState> findByRobotIdInForShare(java.util.Collection<Long> robotIds);
+
     /** 41단계: 실제 로봇의 모드·안전·위치 보고를 반영할 때 행을 잠그고 최신 값을 읽는다(동시에 도는 명령 처리의 갱신을 덮어쓰지 않도록). */
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select s from RobotCurrentState s where s.robotId = :robotId")

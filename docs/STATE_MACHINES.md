@@ -93,6 +93,7 @@ stateDiagram-v2
 stateDiagram-v2
     [*] --> PENDING
     PENDING --> SENT : 게이트웨이로 송신
+    PENDING --> FAILED : 교통 대기 중 작업 취소·비상정지·복구 (46단계)
     SENT --> ACCEPTED : 로봇 수락 응답
     SENT --> FAILED : 로봇 거부 응답
     SENT --> UNKNOWN : 응답 타임아웃 (수신 여부 불명)
@@ -111,6 +112,7 @@ stateDiagram-v2
 - `command_events`에 모든 전이가 기록되며, `occurred_at`(로봇 보고 시각)과 `received_at`(서버 수신 시각)을 분리해 지연·유실을 감지한다.
 - 하나의 `task_step`에 대해 활성(`PENDING`~`RUNNING`) 명령은 최대 1개만 존재해야 한다 (중복 명령 방지, DESIGN.md §9).
 - **39단계 구현**: 시뮬레이터는 요청 트랜잭션 안에서 최종 상태까지 전이한다. MQTT는 요청에서 `SENT`까지만, 커밋 뒤 발행되면 `ACCEPTED`→`RUNNING`, 완료 state가 오면 `SUCCEEDED`/`FAILED`, 보낸 뒤 `MQTT_COMMAND_TIMEOUT_SECONDS` 안에 결과가 없거나 발행에 실패하면 `UNKNOWN`이 된다. 결과가 발행 기록보다 먼저 오면 `SENT`→`ACCEPTED`→`RUNNING`을 채운 뒤 끝낸다. `UNKNOWN` 뒤 늦게 온 결과는 `SUCCEEDED`/`FAILED`로 기록한다. 40단계부터 이동 명령의 늦은 `SUCCEEDED`는 작업을 `RECOVERY_REQUIRED → RUNNING`으로 자동 재개한다(그 뒤 같은 로봇에 비상정지가 없을 때만, API.md §7). 작업 취소·비상정지로 끝낸 진행 중 명령은 `FAILED`(이벤트 `CANCELED`/`EMERGENCY_STOPPED`)이고 늦은 결과는 무시된다.
+- **46단계 구현**: 교통 관리로 피해 갈 길이 없는 이동 명령은 `PENDING`에 머문다(명령 이벤트 `WAITING_FOR_TRAFFIC`). 길이 나면 경로를 담아 `SENT`로 보내고(`TRAFFIC_CLEARED`), 기다리던 작업이 취소·비상정지·복구되거나 더는 최신 명령이 아니면 로봇에 보내지 않은 채 `FAILED`로 끝낸다. 재계획은 작업 행 → 명령 행 순서로 잠근다.
 
 ---
 
@@ -250,6 +252,7 @@ stateDiagram-v2
 **7단계 구현**: `resource_type`은 `STATION`만 실제로 사용한다 — `EDGE`/`ZONE` 기반 예약은 로봇의 현재 위치(노드) 추적이 아직 없어 계산할 수 없다 (`MOVE_TO_ORIGIN`의 출발 노드를 모름). MOVE 단계를 시작할 때 목적지 station을 예약하고, 그 station에서의 다음 확인 단계(`CONFIRM_LOAD`/`CONFIRM_UNLOAD`/`DOCK_AND_CHARGE`)가 성공할 때 해제한다 — "이동 중"이 아니라 "그 station을 실제로 점유하는 구간"을 예약 구간으로 본다. 용량(`stations.max_concurrent_robots`, `null`이면 무제한) 초과 시 예약 자체를 거부(409)한다 — 모든 처리가 한 트랜잭션 안에서 즉시 성공하거나 즉시 롤백되므로 로봇이 자원을 쥔 채 대기하며 순환 대기(교착)를 만드는 코드 경로가 없다. `EXPIRED`/`expires_at`은 스키마에만 있고 아직 채우지 않는다 — TTL은 비동기/실제 로봇 통신이 도입된 뒤 의미가 생긴다.
 
 - `EXPIRED`는 통신 단절 등으로 반납되지 않은 예약이 교통을 영구 차단하지 않도록 하는 안전장치다. TTL 값과 만료 시 실제 로봇 위치 재확인 절차는 7단계(다중 로봇 운영) 구현 시 확정한다.
+- **46단계 구현**: `resource_type = NODE`로 교통 관리 경로 노드를 예약한다(API.md §7). 이동 명령을 보낼 때 경로 노드를 한꺼번에 `HELD`로 잡고(로봇의 이전 노드 예약은 반납), 이동이 성공·실패로 끝나면 `RELEASED`. 결과 불명이면 유지한다. `EXPIRED`(TTL)는 여전히 쓰지 않는다.
 
 ---
 

@@ -68,6 +68,9 @@ const TASK_EVENT_TYPE: Record<string, string> = {
   PAUSED: "일시정지",
   RESUMED: "일시정지 해제",
   PRIORITY_CHANGED: "우선순위 변경",
+  RECOVERY_AUTO_RESUMED: "자동 재개(늦은 도착 보고)",
+  TRAFFIC_WAITING: "교통 대기",
+  TRAFFIC_CLEARED: "교통 대기 해제(출발)",
 };
 
 const ALARM_TYPE: Record<AlarmType, string> = {
@@ -76,6 +79,7 @@ const ALARM_TYPE: Record<AlarmType, string> = {
   TASK_FAILED: "작업 최종 실패",
   LOAD_EXCEPTION: "적재 센서 이상",
   TASK_RECOVERY_REQUIRED: "작업 복구 필요",
+  TRAFFIC_BLOCKED: "통로 막힘(교통 대기 지연)",
   ROBOT_EMERGENCY_STOP: "로봇 비상정지",
 };
 

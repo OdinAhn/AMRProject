@@ -71,7 +71,7 @@ SPRING_PROFILES_ACTIVE=local ROBOT_GATEWAY_MQTT_ENABLED=true ./gradlew bootRun
 
 | 서버가 보냄 | 가상 로봇 |
 |---|---|
-| `order` (목적지 노드 1개) | 현재 노드에서 활성 지도 최단 경로로 `--speed`(기본 20/초)로 이동. 이동 중 `driving:true`, `nodeStates`에 남은 노드, 노드를 지날 때 `lastNodeId` 갱신. 도착하면 `driving:false`·`nodeStates:[]` |
+| `order` (46단계부터 서버가 예약한 경로 전체 — 여러 노드면 그 노드를 차례로 따라감) | 노드가 하나면 현재 노드에서 활성 지도 최단 경로로 `--speed`(기본 20/초)로 이동. 이동 중 `driving:true`, `nodeStates`에 남은 노드, 노드를 지날 때 `lastNodeId` 갱신. 도착하면 `driving:false`·`nodeStates:[]` |
 | 목적지 노드의 `startCharging` 동작 | 도착 뒤 배터리가 100%가 될 때까지 `actionStates` RUNNING·`charging:true`(`--charge-per-sec`) → FINISHED |
 | `instantActions` `startPause` (서버 비상정지) | 즉시 정지, `paused:true`, `eStop:REMOTE`로 **현장 해제 전까지 유지**(서버 정책: 비상정지 해제는 현장) |
 | `instantActions` `stopPause` | 원격 비상정지 중이 아니면 재개, 아니면 FAILED |
@@ -112,7 +112,8 @@ CI(`ci.yml`의 `virtual-robot` job)에서도 실행합니다. 실제 브로커·
 
 ## 실제 로봇과의 차이 · 연동 전 확인할 것
 
-- 서버의 VDA 5050 구현은 **축소 버전**입니다. 주문은 목적지 노드 하나(경로·통로 `edges` 없음)라, 실제 로봇이 전체 경로를 받아야 하는 제조사면 서버 쪽 확장이 필요합니다.
+- 서버의 VDA 5050 구현은 **축소 버전**입니다. 46단계부터 주문에 교통 관리로 예약한 경로 전체(`nodes`·`edges`, 모두 `released:true`)를 담지만, 노드 좌표·edge 속성(최대 속도·궤적)·부분 해제는 없습니다. 제조사가 이것들을 요구하면 서버 쪽 확장이 필요합니다(`app.robot-gateway.mqtt.full-route=false`면 목적지 노드 하나).
+- 서버는 경로의 노드 사이를 로봇이 알아서 간다고 가정합니다 — 주문의 연속한 두 노드가 로봇 지도에서도 직접 이어져 있어야 합니다.
 - 서버는 `agvPosition` 좌표를 쓰지 않고 `lastNodeId`로만 위치를 압니다 — 로봇이 보고하는 노드 id가 서버 지도 노드 코드와 같아야 합니다.
 - 비상정지는 표준에 원격 비상정지 동작이 없어 `startPause`(HARD)로 보냅니다. 실제 로봇이 이것을 어떻게 다루는지(유지·자동 해제)는 제조사별로 확인해야 합니다.
 - 서버는 `loads`는 빈 차/적재 여부만, `agvPosition`은 위치 추정 여부만 봅니다(좌표·짐 종류는 무시).

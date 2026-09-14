@@ -13,6 +13,10 @@ public interface RobotRepository extends JpaRepository<Robot, Long> {
 
     List<Robot> findBySiteId(Long siteId);
 
+    /** 46단계: 물류센터 로봇 id(잠그지 않는다 — 교통 관리 참고). */
+    @Query("select r.id from Robot r where r.site.id = :siteId")
+    List<Long> findIdsBySiteId(Long siteId);
+
     boolean existsByCode(String code);
 
     Optional<Robot> findByCode(String code);

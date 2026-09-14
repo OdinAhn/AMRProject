@@ -77,6 +77,21 @@ class VirtualRobotTest(unittest.TestCase):
         self.assertTrue(finished(state))
         self.assertAlmostEqual(state["batteryState"]["batteryCharge"], 78.0, places=1)  # 200 × 0.01
 
+    def test_follows_full_route_order_from_server(self):
+        full = {"orderId": "r1", "orderUpdateId": 0, "nodes": [
+            {"nodeId": "N1", "sequenceId": 0, "released": True},
+            {"nodeId": "N2", "sequenceId": 2, "released": True},
+            {"nodeId": "N3", "sequenceId": 4, "released": True},
+        ], "edges": [
+            {"edgeId": "N1-N2", "sequenceId": 1, "startNodeId": "N1", "endNodeId": "N2", "released": True},
+            {"edgeId": "N2-N3", "sequenceId": 3, "startNodeId": "N2", "endNodeId": "N3", "released": True},
+        ]}
+        self.robot.handle_order(full)
+        self.assertEqual([n["nodeId"] for n in self.state()["nodeStates"]], ["N2", "N3"])
+        run(self.robot, 5)
+        self.assertEqual(self.state()["lastNodeId"], "N3")
+        self.assertTrue(finished(self.state()))
+
     def test_charging_action_keeps_order_open_until_full(self):
         self.robot.handle_order(order("c1", "N1", [{"actionType": "startCharging", "actionId": "c1", "blockingType": "HARD"}]))
         run(self.robot, 0.5)
