@@ -3,6 +3,7 @@ import { AdminLayout } from "./layouts/AdminLayout";
 import { WorkerLayout } from "./layouts/WorkerLayout";
 import { ProtectedRoute } from "./lib/auth";
 import { AlarmsPage } from "./pages/alarms/AlarmsPage";
+import { AuditLogsPage } from "./pages/audit/AuditLogsPage";
 import { DashboardPage } from "./pages/dashboard/DashboardPage";
 import { DispatchPage } from "./pages/dispatch/DispatchPage";
 import { EventsPage } from "./pages/events/EventsPage";
@@ -53,6 +54,7 @@ function App() {
         <Route path="users/:userId" element={<UserDetailPage />} />
         <Route path="alarms" element={<AlarmsPage />} />
         <Route path="events" element={<EventsPage />} />
+        <Route path="audit-logs" element={<AuditLogsPage />} />
         <Route path="account" element={<AccountPage />} />
       </Route>
       <Route
