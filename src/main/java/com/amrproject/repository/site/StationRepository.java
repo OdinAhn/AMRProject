@@ -16,6 +16,9 @@ public interface StationRepository extends JpaRepository<Station, Long> {
 
     boolean existsBySiteIdAndCode(Long siteId, String code);
 
+    /** 41단계: 로봇이 보고한 노드 id가 작업장 코드일 때 작업장을 찾는다. */
+    Optional<Station> findBySiteIdAndCode(Long siteId, String code);
+
     List<Station> findBySiteIdAndStationType(Long siteId, StationType stationType);
 
     /** 31단계: 작업장 수용량 검사(예약 수 세기 → 예약 저장)를 작업장 단위로 직렬화한다. */

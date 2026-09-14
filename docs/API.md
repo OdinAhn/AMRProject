@@ -479,6 +479,12 @@ DESIGN.md §1/§4는 "로봇 없는 개발: 실제 통신 계약을 모사하는
 
 - **토픽**: 로봇당 `uagv/v2/{manufacturer}/{serialNumber}/order`(발행)와 `.../state`(구독) 두 개만 쓴다. `connection` 토픽(LWT 기반 온라인·오프라인 알림)은 이번 범위에 없다.
 - **VDA5050 축소 구현**: `order`는 목적지 station 하나짜리 단일 노드(`nodes: [{nodeId, sequenceId, released}]`)만 담는다 — edges/actions 등 전체 스펙의 나머지는 구현하지 않았다. `state`는 `orderId`/`driving`/`errors`/`batteryState.batteryCharge`만 본다. `driving:false`(또는 `errors` 존재)인 state가 오면 주문이 끝난 것으로 판단한다.
+- **41단계 — state 추가 해석** (`RobotStateReportService`, 모든 state 메시지에 적용, 없는 필드는 기존 값 유지, 그 밖의 필드는 무시):
+  - `operatingMode`: `AUTOMATIC` → `AUTO`, `SEMIAUTOMATIC`/`MANUAL`/`TEACHIN` → `MANUAL`, `SERVICE` → `MAINTENANCE`. 자동 배정은 `AUTO`만 대상이라, 현장에서 수동으로 돌린 로봇에는 작업이 가지 않는다.
+  - `safetyState`: `eStop`이 `NONE`이 아니면 `EMERGENCY_STOP`, 아니고 `fieldViolation:true`면 `PROTECTIVE_STOP`, 아니면 `NORMAL`. 비상정지 진입·해제 보고로 `ROBOT_EMERGENCY_STOP` 알람이 발생·해소되고(시뮬레이터와 같은 규칙) 배정 대상에서 빠진다. 로봇이 스스로 보고한 비상정지는 작업을 멈추지 않는다(서버 비상정지 API만 작업을 복구 필요로 보낸다 — 33단계와 같음).
+  - `lastNodeId`: 활성 지도의 **노드 코드**와 같으면 그 노드, 아니면 같은 코드의 **작업장**에 연결된 노드(이 서버가 order의 `nodeId`로 작업장 코드를 보내므로)를 현재 위치(`current_node_id`)로 둔다. 둘 다 아니면 위치를 바꾸지 않는다. 가까운 로봇 선택(38단계)이 이 위치를 쓴다.
+  - `actionStates`: `actionId`가 이 서버의 비상정지(`stopPause`)·주문 취소(`cancelOrder`) 명령 번호이고 `actionStatus`가 `FINISHED`면 명령을 `SUCCEEDED`(이벤트 `ACTION_FINISHED`), `FAILED`면 `FAILED`로 끝낸다. 예전엔 전달된 `ACCEPTED`에서 멈춰 있었다.
+  - 상태가 실제로 바뀔 때만 이력(`robot_state_snapshots`)과 `robot.state_changed` 이벤트를 남긴다. 상태 행은 잠금 조회로 읽고, 명령 행을 먼저 잠근다(결과 반영과 같은 순서).
 - ~~**동기식-타임아웃 한계**~~ (18~38단계): 주문을 발행한 뒤 요청 트랜잭션 안에서(작업·로봇·작업장 행 잠금을 쥔 채) 결과 state를 **3초** 기다렸다. 실제 로봇 이동은 훨씬 오래 걸리고, 기다리는 동안 같은 작업·로봇·작업장을 건드리는 다른 요청이 막혔다.
 - **39단계 — 비동기 명령**:
   1. 이동·충전 단계를 시작하는 요청은 명령을 `SENT`로 기록하고 **바로 끝난다**. 응답의 단계는 `RUNNING`(로봇 이동 중)이다.

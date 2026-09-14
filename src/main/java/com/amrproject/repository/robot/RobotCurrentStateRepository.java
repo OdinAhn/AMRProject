@@ -3,12 +3,15 @@ package com.amrproject.repository.robot;
 import com.amrproject.domain.entity.robot.ConnectionState;
 import com.amrproject.domain.entity.robot.RobotCurrentState;
 import com.amrproject.domain.entity.robot.RobotLifecycleStatus;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 
 /**
  * 29단계의 연결 감시 쿼리는 엔티티를 읽어 고친 뒤 저장하는 대신 조건부 bulk update를 쓴다 — 같은 행을
@@ -17,6 +20,11 @@ import java.util.List;
  * 평가하므로, 그 사이 명령이 커밋해 수신 시각이 새로워졌으면 0행이 갱신된다.
  */
 public interface RobotCurrentStateRepository extends JpaRepository<RobotCurrentState, Long> {
+
+    /** 41단계: 실제 로봇의 모드·안전·위치 보고를 반영할 때 행을 잠그고 최신 값을 읽는다(동시에 도는 명령 처리의 갱신을 덮어쓰지 않도록). */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select s from RobotCurrentState s where s.robotId = :robotId")
+    Optional<RobotCurrentState> findByRobotIdForUpdate(Long robotId);
 
     /** 29단계: 운영 중이고 지정한 연결 상태인데 마지막 수신이 threshold보다 오래된 로봇 id. */
     @Query("""
