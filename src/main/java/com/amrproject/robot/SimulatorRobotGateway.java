@@ -16,6 +16,7 @@ import com.amrproject.domain.entity.robot.RobotConfiguration;
 import com.amrproject.domain.entity.robot.RobotCurrentState;
 import com.amrproject.domain.entity.robot.RobotStateSnapshot;
 import com.amrproject.domain.entity.robot.SafetyState;
+import com.amrproject.repository.map.NodeRepository;
 import com.amrproject.repository.robot.CommandEventRepository;
 import com.amrproject.repository.robot.RobotCurrentStateRepository;
 import com.amrproject.repository.robot.RobotStateSnapshotRepository;
@@ -25,8 +26,11 @@ import com.amrproject.service.alarm.AlarmService;
 import com.amrproject.service.map.MapRouteService;
 import com.amrproject.service.robot.RobotStateEventRecorder;
 import org.springframework.stereotype.Component;
+import tools.jackson.databind.json.JsonMapper;
 
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -53,6 +57,8 @@ public class SimulatorRobotGateway implements RobotGateway {
     private final MapRouteService mapRouteService;
     private final SimulatedMotionPublisher simulatedMotionPublisher;
     private final RobotStateEventRecorder robotStateEventRecorder;
+    private final NodeRepository nodeRepository;
+    private final JsonMapper jsonMapper;
     private final Map<Long, SimulatedFault> pendingFaults = new ConcurrentHashMap<>();
     /** 29단계: COMMUNICATION_LOSS 장애로 끊긴 로봇 — 다음 정상 명령 전까지 시뮬레이터 하트비트가 되살리지 않는다(메모리 전용). */
     private final Set<Long> communicationLostRobotIds = ConcurrentHashMap.newKeySet();
@@ -64,7 +70,9 @@ public class SimulatorRobotGateway implements RobotGateway {
             AlarmService alarmService,
             MapRouteService mapRouteService,
             SimulatedMotionPublisher simulatedMotionPublisher,
-            RobotStateEventRecorder robotStateEventRecorder
+            RobotStateEventRecorder robotStateEventRecorder,
+            NodeRepository nodeRepository,
+            JsonMapper jsonMapper
     ) {
         this.commandEventRepository = commandEventRepository;
         this.robotCurrentStateRepository = robotCurrentStateRepository;
@@ -73,6 +81,8 @@ public class SimulatorRobotGateway implements RobotGateway {
         this.mapRouteService = mapRouteService;
         this.simulatedMotionPublisher = simulatedMotionPublisher;
         this.robotStateEventRecorder = robotStateEventRecorder;
+        this.nodeRepository = nodeRepository;
+        this.jsonMapper = jsonMapper;
     }
 
     @Override
@@ -129,6 +139,8 @@ public class SimulatorRobotGateway implements RobotGateway {
         int batteryPct = isCharging ? targetBatteryPct(robot) : state.getBatteryPct();
         if (command.getCommandType() == RobotCommandType.MOVE_TO) {
             arriveAtTargetNode(robot, state, command);
+        } else if (command.getCommandType() == RobotCommandType.REPOSITION) {
+            arriveAtRouteEnd(robot, state, command);
         }
         report(robot, state, ConnectionState.ONLINE, OperationMode.AUTO, MotionState.IDLE, state.getSafetyState(), localization, loadState, batteryPct);
     }
@@ -151,6 +163,26 @@ public class SimulatorRobotGateway implements RobotGateway {
                         mapRouteService.shortestPath(versionId, previousNodeId, targetNodeId));
             }
         }, () -> state.arriveAt(null));
+    }
+
+    /** 47단계: 비키기 이동은 작업장이 아니라 경로(payload_json의 route)의 마지막 노드로 간다. */
+    private void arriveAtRouteEnd(Robot robot, RobotCurrentState state, RobotCommand command) {
+        List<String> route = new ArrayList<>();
+        jsonMapper.readTree(command.getPayloadJson()).path("route").forEach(node -> route.add(node.asString()));
+        if (route.isEmpty()) {
+            return;
+        }
+        mapRouteService.findActiveVersionId(robot.getSite().getId()).ifPresent(versionId -> nodeRepository.findByMapVersionId(versionId).stream()
+                .filter(node -> node.getCode().equals(route.getLast()))
+                .findFirst()
+                .ifPresent(target -> {
+                    Long previousNodeId = state.getCurrentNodeId();
+                    state.arriveAt(target.getId());
+                    if (previousNodeId != null && !previousNodeId.equals(target.getId())) {
+                        simulatedMotionPublisher.animateAfterCommit(robot.getId(), versionId,
+                                mapRouteService.shortestPath(versionId, previousNodeId, target.getId()));
+                    }
+                }));
     }
 
     private Station resolveTargetStation(TaskStep step) {

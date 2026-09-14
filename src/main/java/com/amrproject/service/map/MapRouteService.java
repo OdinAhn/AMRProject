@@ -164,6 +164,14 @@ public class MapRouteService {
             return dijkstra(sourceNodeId, outgoing, new HashMap<>(), null);
         }
 
+        /** 47단계: avoidNodeIds를 지나지 않고 출발 노드에서 갈 수 있는 노드까지의 최단 거리(비키기 목적지 고르기). 출발 노드는 피하지 않는다. */
+        public Map<Long, Double> distancesFromAvoiding(Long sourceNodeId, Set<Long> avoidNodeIds) {
+            if (!waypoints.containsKey(sourceNodeId)) {
+                return Map.of();
+            }
+            return dijkstra(sourceNodeId, withoutNodes(avoidNodeIds, sourceNodeId), new HashMap<>(), null);
+        }
+
         /**
          * 38단계: 모든 노드에서 목적지 노드까지의 최단 거리. 통로를 거꾸로 따라 목적지에서 한 번만 탐색하므로 로봇이 여러 대여도
          * 로봇마다 경로를 따로 구하지 않는다. 목적지로 갈 수 없는 노드는 결과에 없다(목적지 자신은 0).

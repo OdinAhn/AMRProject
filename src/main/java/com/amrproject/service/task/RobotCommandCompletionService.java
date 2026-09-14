@@ -32,7 +32,7 @@ public class RobotCommandCompletionService {
             RobotCommandStatus.SENT, RobotCommandStatus.ACCEPTED, RobotCommandStatus.RUNNING
     );
     /** 타임아웃 감시 대상 — 비상정지는 전달(ACCEPTED)까지만 추적하는 명령이라 제외한다(33단계) */
-    private static final List<RobotCommandType> AWAITED_TYPES = List.of(RobotCommandType.MOVE_TO, RobotCommandType.START_CHARGE);
+    private static final List<RobotCommandType> AWAITED_TYPES = List.of(RobotCommandType.MOVE_TO, RobotCommandType.START_CHARGE, RobotCommandType.REPOSITION);
 
     private final RobotCommandRepository robotCommandRepository;
     private final CommandEventRepository commandEventRepository;

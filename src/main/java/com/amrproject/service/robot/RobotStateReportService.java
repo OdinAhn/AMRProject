@@ -24,6 +24,7 @@ import com.amrproject.repository.robot.RobotStateSnapshotRepository;
 import com.amrproject.repository.site.StationRepository;
 import com.amrproject.service.alarm.AlarmService;
 import com.amrproject.service.map.MapRouteService;
+import com.amrproject.service.task.TrafficService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -57,6 +58,7 @@ public class RobotStateReportService {
     private final MapRouteService mapRouteService;
     private final AlarmService alarmService;
     private final RobotStateEventRecorder robotStateEventRecorder;
+    private final TrafficService trafficService;
 
     public RobotStateReportService(
             RobotRepository robotRepository,
@@ -68,7 +70,8 @@ public class RobotStateReportService {
             NodeRepository nodeRepository,
             MapRouteService mapRouteService,
             AlarmService alarmService,
-            RobotStateEventRecorder robotStateEventRecorder
+            RobotStateEventRecorder robotStateEventRecorder,
+            TrafficService trafficService
     ) {
         this.robotRepository = robotRepository;
         this.robotCurrentStateRepository = robotCurrentStateRepository;
@@ -80,6 +83,7 @@ public class RobotStateReportService {
         this.mapRouteService = mapRouteService;
         this.alarmService = alarmService;
         this.robotStateEventRecorder = robotStateEventRecorder;
+        this.trafficService = trafficService;
     }
 
     /**
@@ -112,9 +116,14 @@ public class RobotStateReportService {
 
         SafetyState previousSafety = state.getSafetyState();
         LocalizationState previousLocalization = state.getLocalizationState();
+        Long previousNodeId = state.getCurrentNodeId();
         state.report(state.getConnectionState(), mode, state.getMotionState(), safety, load,
                 localization, state.getBatteryPct(), Instant.now());
         state.arriveAt(nodeId);
+        if (!Objects.equals(nodeId, previousNodeId)) {
+            // 47단계: 경로의 다음 노드에 왔다 — 지나온 노드 예약을 풀어 뒤따르는 로봇이 기다리지 않게 한다
+            trafficService.releasePassedNodes(robot, nodeId);
+        }
         robotStateSnapshotRepository.save(new RobotStateSnapshot(robot, state));
         robotStateEventRecorder.recordChanged(robot.getId());
         reconcileSafetyAlarm(robot, previousSafety, safety);
