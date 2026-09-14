@@ -14,6 +14,7 @@ import com.amrproject.domain.entity.robot.RobotCommandType;
 import com.amrproject.domain.entity.robot.RobotConfiguration;
 import com.amrproject.domain.entity.robot.RobotCurrentState;
 import com.amrproject.domain.entity.robot.RobotStateSnapshot;
+import com.amrproject.domain.entity.robot.SafetyState;
 import com.amrproject.domain.entity.task.Task;
 import com.amrproject.domain.entity.task.TaskStep;
 import com.amrproject.repository.robot.CommandEventRepository;
@@ -24,6 +25,7 @@ import com.amrproject.robot.RobotGateway;
 import com.amrproject.service.alarm.AlarmService;
 import com.amrproject.service.robot.RobotConnectionService;
 import com.amrproject.service.robot.RobotStateEventRecorder;
+import com.amrproject.service.robot.RobotStateReportService;
 import com.amrproject.service.task.RobotCommandCompletionService;
 import jakarta.annotation.PreDestroy;
 import org.eclipse.paho.client.mqttv3.IMqttDeliveryToken;
@@ -89,6 +91,7 @@ public class MqttRobotGateway implements RobotGateway, MqttCallback {
     private final RobotConnectionService robotConnectionService;
     private final RobotStateEventRecorder robotStateEventRecorder;
     private final RobotCommandRepository robotCommandRepository;
+    private final RobotStateReportService robotStateReportService;
     /** 완료 서비스 → TaskService → RobotGateway(이 빈)로 이어지는 생성자 순환을 끊기 위해 쓸 때 꺼낸다 */
     private final ObjectProvider<RobotCommandCompletionService> completionService;
     private final TransactionTemplate transactionTemplate;
@@ -112,6 +115,7 @@ public class MqttRobotGateway implements RobotGateway, MqttCallback {
             RobotConnectionService robotConnectionService,
             RobotStateEventRecorder robotStateEventRecorder,
             RobotCommandRepository robotCommandRepository,
+            RobotStateReportService robotStateReportService,
             ObjectProvider<RobotCommandCompletionService> completionService,
             PlatformTransactionManager transactionManager,
             @Value("${app.robot-gateway.mqtt.command-timeout-seconds:300}") long commandTimeoutSeconds
@@ -126,6 +130,7 @@ public class MqttRobotGateway implements RobotGateway, MqttCallback {
         this.robotConnectionService = robotConnectionService;
         this.robotStateEventRecorder = robotStateEventRecorder;
         this.robotCommandRepository = robotCommandRepository;
+        this.robotStateReportService = robotStateReportService;
         this.completionService = completionService;
         // afterCommit 안에서는 커밋이 끝난 원래 트랜잭션 자원이 아직 묶여 있어, 기본 전파(REQUIRED)면 그 트랜잭션에 참여만 하고
         // 커밋되지 않는다 — 항상 새 트랜잭션으로 기록한다.
@@ -257,13 +262,45 @@ public class MqttRobotGateway implements RobotGateway, MqttCallback {
         Integer batteryPct = state.batteryState() != null && state.batteryState().batteryCharge() != null
                 ? state.batteryState().batteryCharge().intValue()
                 : null;
+        RobotStateReportService.Report report = toReport(serialNumber, state);
         telemetryExecutor.execute(() -> {
             try {
                 robotConnectionService.receiveTelemetry(serialNumber, batteryPct);
+                // 41단계: 동작 모드·안전 상태·위치·즉시 동작 결과
+                robotStateReportService.apply(report);
             } catch (Exception e) {
                 log.warn("MQTT 텔레메트리 기록 실패: robotCode={}", serialNumber, e);
             }
         });
+    }
+
+    /** 41단계: VDA 5050 state 필드를 프로토콜과 무관한 도메인 보고로 바꾼다. 없거나 모르는 값은 null(변경 없음)로 둔다. */
+    static RobotStateReportService.Report toReport(String robotCode, Vda5050State state) {
+        OperationMode mode = state.operatingMode() == null ? null : switch (state.operatingMode()) {
+            case "AUTOMATIC" -> OperationMode.AUTO;
+            case "SEMIAUTOMATIC", "MANUAL", "TEACHIN" -> OperationMode.MANUAL;
+            case "SERVICE" -> OperationMode.MAINTENANCE;
+            default -> null;
+        };
+        SafetyState safety = null;
+        if (state.safetyState() != null) {
+            String eStop = state.safetyState().eStop();
+            if (eStop != null && !"NONE".equals(eStop)) {
+                safety = SafetyState.EMERGENCY_STOP;
+            } else if (Boolean.TRUE.equals(state.safetyState().fieldViolation())) {
+                safety = SafetyState.PROTECTIVE_STOP;
+            } else if (eStop != null || state.safetyState().fieldViolation() != null) {
+                safety = SafetyState.NORMAL;
+            }
+        }
+        List<RobotStateReportService.ActionResult> actionResults = state.actionStates() == null ? List.of()
+                : state.actionStates().stream()
+                        .filter(action -> action.actionId() != null)
+                        .filter(action -> "FINISHED".equals(action.actionStatus()) || "FAILED".equals(action.actionStatus()))
+                        .map(action -> new RobotStateReportService.ActionResult(action.actionId(), "FINISHED".equals(action.actionStatus())))
+                        .toList();
+        String lastNodeId = state.lastNodeId() == null || state.lastNodeId().isBlank() ? null : state.lastNodeId();
+        return new RobotStateReportService.Report(robotCode, mode, safety, lastNodeId, actionResults);
     }
 
     @PreDestroy

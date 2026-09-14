@@ -1,18 +1,28 @@
 package com.amrproject.robot.mqtt;
 
+import com.amrproject.domain.entity.map.EdgeDirection;
+import com.amrproject.domain.entity.map.NodeType;
 import com.amrproject.domain.entity.robot.ConnectionState;
+import com.amrproject.domain.entity.robot.OperationMode;
 import com.amrproject.domain.entity.robot.Robot;
 import com.amrproject.domain.entity.robot.RobotCurrentState;
 import com.amrproject.domain.entity.robot.RobotLifecycleStatus;
+import com.amrproject.domain.entity.robot.SafetyState;
 import com.amrproject.domain.entity.site.StationType;
+import com.amrproject.dto.request.map.CreateEdgeRequest;
+import com.amrproject.dto.request.map.CreateMapRequest;
+import com.amrproject.dto.request.map.CreateMapVersionRequest;
+import com.amrproject.dto.request.map.CreateNodeRequest;
 import com.amrproject.dto.request.robot.CreateRobotRequest;
 import com.amrproject.dto.request.robot.UpdateRobotLifecycleStatusRequest;
+import com.amrproject.dto.request.site.BindStationMapRequest;
 import com.amrproject.dto.request.site.CreateSiteRequest;
 import com.amrproject.dto.request.site.CreateStationRequest;
 import com.amrproject.dto.request.task.CreateTaskRequest;
 import com.amrproject.repository.robot.RobotCurrentStateRepository;
 import com.amrproject.repository.robot.RobotRepository;
 import com.amrproject.service.robot.RobotConnectionService;
+import com.amrproject.service.task.DispatchService;
 import com.amrproject.service.task.TaskService;
 import com.amrproject.support.AbstractIntegrationTest;
 import org.eclipse.paho.client.mqttv3.MqttClient;
@@ -29,6 +39,7 @@ import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.utility.DockerImageName;
 import tools.jackson.databind.json.JsonMapper;
 
+import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
@@ -41,6 +52,7 @@ import static org.springframework.http.MediaType.APPLICATION_JSON;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -94,6 +106,9 @@ class MqttRobotGatewayTest extends AbstractIntegrationTest {
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
+
+    @Autowired
+    private DispatchService dispatchService;
 
     @Test
     void 가상_VDA5050_로봇이_응답하면_명령이_SUCCEEDED로_끝난다() throws Exception {
@@ -265,6 +280,144 @@ class MqttRobotGatewayTest extends AbstractIntegrationTest {
         Thread.sleep(3000);
         assertThat(moveCommandStatus(taskId)).isEqualTo("FAILED");
         assertThat(robotCurrentStateRepository.findById(robotId).orElseThrow().getConnectionState()).isEqualTo(ConnectionState.ONLINE);
+    }
+
+    /**
+     * 41단계: 실제 로봇의 state 보고에서 동작 모드(MANUAL/AUTOMATIC)·마지막 노드(지도 노드 코드)·안전 상태(eStop)를 읽어 반영한다.
+     * 스펙의 다른 필드(agvPosition, loads, headerId 등)가 섞여 와도 무시한다. 수동 모드 보고 동안은 배정되지 않고, 자동 모드 보고 뒤에는
+     * 가까운 로봇 선택(38단계)이 보고된 위치로 거리를 계산해 배정한다.
+     */
+    @Test
+    void state_보고의_동작모드_위치_안전상태가_반영되고_가까운_로봇_배정에_쓰인다() throws Exception {
+        Long siteId = createSite("SITE-MQTT8", "MQTT 물류센터8");
+        Long originId = createStation(siteId, "ST-MQTT13", "입고", StationType.PICKUP);
+        Long destinationId = createStation(siteId, "ST-MQTT14", "출고", StationType.DROPOFF);
+        Long versionId = createVersion(createMap(siteId));
+        Long n1 = createNode(versionId, "MQ-N1", 0);
+        Long n2 = createNode(versionId, "MQ-N2", 100);
+        createEdge(versionId, n1, n2);
+        mockMvc.perform(post("/api/admin/map-versions/{versionId}/validate", versionId)).andExpect(status().isOk());
+        mockMvc.perform(post("/api/admin/map-versions/{versionId}/activate", versionId)).andExpect(status().isOk());
+        bind(originId, versionId, n1);
+        bind(destinationId, versionId, n2);
+        Long robotId = createRobot(siteId, "ROBOT-MQTT8", "MQTT로봇8");
+        mockMvc.perform(patch("/api/admin/robots/{robotId}/lifecycle-status", robotId)
+                        .contentType(APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new UpdateRobotLifecycleStatusRequest(RobotLifecycleStatus.IN_SERVICE))))
+                .andExpect(status().isOk());
+
+        // 현장에서 수동 모드로 둔 로봇: 위치는 반영되지만 자동 배정 대상이 아니다
+        publishRawState("ROBOT-MQTT8", """
+                {"headerId": 7, "timestamp": "2026-09-14T00:00:00Z", "version": "2.0.0", "manufacturer": "AMRProject",
+                 "serialNumber": "ROBOT-MQTT8", "driving": false, "operatingMode": "MANUAL", "lastNodeId": "MQ-N2",
+                 "safetyState": {"eStop": "NONE", "fieldViolation": false}, "batteryState": {"batteryCharge": 90.0, "charging": false},
+                 "agvPosition": {"x": 100.0, "y": 0.0, "theta": 0.0, "mapId": "m1", "positionInitialized": true}, "loads": []}
+                """);
+        awaitUntil(() -> {
+            RobotCurrentState state = robotCurrentStateRepository.findById(robotId).orElseThrow();
+            return state.getOperationMode() == OperationMode.MANUAL && n2.equals(state.getCurrentNodeId())
+                    && state.getConnectionState() == ConnectionState.ONLINE;
+        });
+        Long taskId = createTask(originId, destinationId, "idem-mqtt-8");
+        assertThat(dispatchService.runCycle(siteId).assignments()).isEmpty();
+
+        // 로봇이 비상정지 버튼을 보고하면 안전 상태·알람이 바뀌고, 해제 보고로 풀린다
+        publishRawState("ROBOT-MQTT8", "{\"safetyState\": {\"eStop\": \"MANUAL\", \"fieldViolation\": false}}");
+        awaitUntil(() -> robotCurrentStateRepository.findById(robotId).orElseThrow().getSafetyState() == SafetyState.EMERGENCY_STOP);
+        assertThat(robotAlarmStatus(robotId)).isEqualTo("OPEN");
+        publishRawState("ROBOT-MQTT8", "{\"safetyState\": {\"eStop\": \"NONE\", \"fieldViolation\": false}}");
+        awaitUntil(() -> robotCurrentStateRepository.findById(robotId).orElseThrow().getSafetyState() == SafetyState.NORMAL);
+        assertThat(robotAlarmStatus(robotId)).isEqualTo("RESOLVED");
+
+        publishRawState("ROBOT-MQTT8", "{\"operatingMode\": \"AUTOMATIC\"}");
+        awaitUntil(() -> robotCurrentStateRepository.findById(robotId).orElseThrow().getOperationMode() == OperationMode.AUTO);
+        var result = dispatchService.runCycle(siteId);
+        assertThat(result.assignments()).singleElement().satisfies(assignment -> {
+            assertThat(assignment.taskId()).isEqualTo(taskId);
+            assertThat(assignment.robotId()).isEqualTo(robotId);
+            assertThat(assignment.distanceToOrigin()).isEqualTo(100.0);
+        });
+    }
+
+    /** 41단계: 비상정지(stopPause)는 전달(ACCEPTED)까지만 두다가, 로봇이 actionStates로 수행 완료를 보고하면 SUCCEEDED가 된다. */
+    @Test
+    void 즉시_동작_수행_보고로_비상정지_명령이_완료된다() throws Exception {
+        Long siteId = createSite("SITE-MQTT9", "MQTT 물류센터9");
+        Long robotId = createRobot(siteId, "ROBOT-MQTT9", "MQTT로봇9");
+        mockMvc.perform(patch("/api/admin/robots/{robotId}/lifecycle-status", robotId)
+                        .contentType(APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new UpdateRobotLifecycleStatusRequest(RobotLifecycleStatus.IN_SERVICE))))
+                .andExpect(status().isOk());
+        String response = mockMvc.perform(post("/api/admin/robots/{robotId}/emergency-stop", robotId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.commandStatus").value("ACCEPTED"))
+                .andReturn().getResponse().getContentAsString();
+        String commandNo = objectMapper.readTree(response).get("commandNo").asString();
+
+        publishRawState("ROBOT-MQTT9", "{\"actionStates\": [{\"actionId\": \"" + commandNo
+                + "\", \"actionType\": \"stopPause\", \"actionStatus\": \"FINISHED\"}], \"safetyState\": {\"eStop\": \"REMOTE\", \"fieldViolation\": false}}");
+
+        awaitUntil(() -> "SUCCEEDED".equals(jdbcTemplate.queryForObject("select status from robot_commands where command_no = ?", String.class, commandNo)));
+        assertThat(jdbcTemplate.queryForList(
+                "select e.event_type from command_events e join robot_commands c on c.id = e.command_id where c.command_no = ? order by e.id",
+                String.class, commandNo)).endsWith("ACTION_FINISHED");
+        awaitUntil(() -> robotCurrentStateRepository.findById(robotId).orElseThrow().getSafetyState() == SafetyState.EMERGENCY_STOP);
+    }
+
+    private String robotAlarmStatus(Long robotId) {
+        return jdbcTemplate.queryForObject(
+                "select status from alarms where alarm_type = 'ROBOT_EMERGENCY_STOP' and source_type = 'ROBOT' and source_id = ? order by id desc limit 1",
+                String.class, robotId);
+    }
+
+    private void publishRawState(String robotCode, String json) throws Exception {
+        MqttClient robotClient = new MqttClient(brokerUrl(), MqttClient.generateClientId(), new MemoryPersistence());
+        robotClient.connect();
+        try {
+            robotClient.publish("uagv/v2/" + MANUFACTURER + "/" + robotCode + "/state", new MqttMessage(json.getBytes(StandardCharsets.UTF_8)));
+        } finally {
+            robotClient.disconnect();
+            robotClient.close();
+        }
+    }
+
+    private void bind(Long stationId, Long versionId, Long nodeId) throws Exception {
+        mockMvc.perform(put("/api/admin/stations/{stationId}/map-binding", stationId)
+                        .contentType(APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new BindStationMapRequest(versionId, nodeId))))
+                .andExpect(status().isOk());
+    }
+
+    private void createEdge(Long versionId, Long from, Long to) throws Exception {
+        mockMvc.perform(post("/api/admin/map-versions/{versionId}/edges", versionId)
+                        .contentType(APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new CreateEdgeRequest(from, to, EdgeDirection.TWO_WAY, null, null))))
+                .andExpect(status().isCreated());
+    }
+
+    private Long createNode(Long versionId, String code, int x) throws Exception {
+        return createdId(mockMvc.perform(post("/api/admin/map-versions/{versionId}/nodes", versionId)
+                .contentType(APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(new CreateNodeRequest(code, BigDecimal.valueOf(x), BigDecimal.ZERO, NodeType.STATION))))
+                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString());
+    }
+
+    private Long createVersion(Long mapId) throws Exception {
+        return createdId(mockMvc.perform(post("/api/admin/maps/{mapId}/versions", mapId)
+                .contentType(APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(new CreateMapVersionRequest(null, "LOCAL_XY"))))
+                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString());
+    }
+
+    private Long createMap(Long siteId) throws Exception {
+        return createdId(mockMvc.perform(post("/api/admin/sites/{siteId}/maps", siteId)
+                .contentType(APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(new CreateMapRequest("MQTT 지도"))))
+                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString());
+    }
+
+    private Long createdId(String response) {
+        return objectMapper.readTree(response).get("id").asLong();
     }
 
     private String moveCommandNo(Long taskId) {
