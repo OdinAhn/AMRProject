@@ -33,6 +33,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.BooleanSupplier;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -143,11 +144,11 @@ class MqttRobotGatewayTest extends AbstractIntegrationTest {
     }
 
     /**
-     * 39단계: 이동 중(명령 진행 중)에는 일시정지를 거절하고 버튼도 주지 않는다. 타임아웃 뒤 늦게 도착한 성공 결과는 명령 기록만 바꾸고,
-     * 이미 복구 필요로 간 작업을 되살리지 않는다(운영자가 recover로 결정).
+     * 39단계: 이동 중(명령 진행 중)에는 일시정지를 거절하고 버튼도 주지 않는다.
+     * 40단계: 타임아웃으로 결과 불명이 된 이동을 로봇이 나중에 "도착"으로 보고하면 작업이 자동으로 이어지고 복구 필요 알람이 해소된다.
      */
     @Test
-    void 이동_중에는_일시정지를_거절하고_타임아웃_뒤_늦은_결과는_작업을_바꾸지_않는다() throws Exception {
+    void 이동_중에는_일시정지를_거절하고_타임아웃_뒤_도착_보고가_오면_작업을_자동으로_이어간다() throws Exception {
         Long siteId = createSite("SITE-MQTT4", "MQTT 물류센터4");
         Long originId = createStation(siteId, "ST-MQTT5", "입고", StationType.PICKUP);
         Long destinationId = createStation(siteId, "ST-MQTT6", "출고", StationType.DROPOFF);
@@ -168,9 +169,114 @@ class MqttRobotGatewayTest extends AbstractIntegrationTest {
                 "select c.command_no from robot_commands c join task_steps s on s.id = c.task_step_id where s.task_id = ?", String.class, taskId);
         publishState("ROBOT-MQTT4", new Vda5050State(orderId, false, List.of(), new Vda5050State.BatteryState(70.0)));
 
-        awaitUntil(() -> "SUCCEEDED".equals(commandStatus(taskId)));
+        awaitUntil(() -> "RUNNING".equals(taskStatus(taskId)));
+        assertThat(commandStatus(taskId)).isEqualTo("SUCCEEDED");
+        assertThat(stepStatus(taskId, 1)).isEqualTo("SUCCEEDED");
+        assertThat(stepStatus(taskId, 2)).isEqualTo("RUNNING");
+        assertThat(jdbcTemplate.queryForObject(
+                "select status from alarms where alarm_type = 'TASK_RECOVERY_REQUIRED' and source_type = 'TASK' and source_id = ? order by id desc limit 1",
+                String.class, taskId)).isEqualTo("RESOLVED");
+        assertThat(jdbcTemplate.queryForList("select event_type from task_events where task_id = ? order by id", String.class, taskId))
+                .endsWith("RECOVERY_REQUIRED", "RECOVERY_AUTO_RESUMED");
+    }
+
+    /** 40단계: 결과 불명 뒤 운영자가 그 로봇을 비상정지했다면, 늦은 도착 보고가 와도 작업을 자동으로 이어가지 않는다. */
+    @Test
+    void 결과_불명_뒤_비상정지한_로봇의_늦은_도착_보고로는_작업을_이어가지_않는다() throws Exception {
+        Long siteId = createSite("SITE-MQTT5", "MQTT 물류센터5");
+        Long originId = createStation(siteId, "ST-MQTT7", "입고", StationType.PICKUP);
+        Long destinationId = createStation(siteId, "ST-MQTT8", "출고", StationType.DROPOFF);
+        Long robotId = createRobot(siteId, "ROBOT-MQTT5", "MQTT로봇5");
+        Long taskId = createTask(originId, destinationId, "idem-mqtt-5");
+        taskService.assignRobot(taskId, robotRepository.findById(robotId).orElseThrow());
+        taskService.start(taskId);
+        awaitUntil(() -> "RECOVERY_REQUIRED".equals(taskStatus(taskId)));
+
+        mockMvc.perform(post("/api/admin/robots/{robotId}/emergency-stop", robotId)).andExpect(status().isOk());
+        publishState("ROBOT-MQTT5", new Vda5050State(moveCommandNo(taskId), false, List.of(), new Vda5050State.BatteryState(70.0)));
+
+        awaitUntil(() -> "SUCCEEDED".equals(moveCommandStatus(taskId)));
         assertThat(taskStatus(taskId)).isEqualTo("RECOVERY_REQUIRED");
-        assertThat(stepStatus(taskId, 1)).isEqualTo("RUNNING");
+    }
+
+    /**
+     * 40단계: 이동 중(적재 전) 작업을 취소하면 로봇에 VDA 5050 cancelOrder를 커밋 뒤에 보내고, 진행 중이던 이동 명령은 CANCELED 사유로
+     * FAILED 처리한다 — 늦은 state는 무시되고, 타임아웃 감시가 로봇을 통신 두절로 보고하지도 않는다.
+     */
+    @Test
+    void 이동_중_취소하면_로봇에_주문_취소를_보내고_진행_중_명령을_끝낸다() throws Exception {
+        Long siteId = createSite("SITE-MQTT6", "MQTT 물류센터6");
+        Long originId = createStation(siteId, "ST-MQTT9", "입고", StationType.PICKUP);
+        Long destinationId = createStation(siteId, "ST-MQTT10", "출고", StationType.DROPOFF);
+        Long robotId = createRobot(siteId, "ROBOT-MQTT6", "MQTT로봇6");
+        Long taskId = createTask(originId, destinationId, "idem-mqtt-6");
+
+        List<String> instantActions = new CopyOnWriteArrayList<>();
+        MqttClient listener = new MqttClient(brokerUrl(), MqttClient.generateClientId(), new MemoryPersistence());
+        listener.connect();
+        try {
+            listener.subscribe("uagv/v2/" + MANUFACTURER + "/ROBOT-MQTT6/instantActions",
+                    (topic, message) -> instantActions.add(new String(message.getPayload(), StandardCharsets.UTF_8)));
+            taskService.assignRobot(taskId, robotRepository.findById(robotId).orElseThrow());
+            taskService.start(taskId);
+            awaitUntil(() -> "RUNNING".equals(moveCommandStatus(taskId)));
+
+            mockMvc.perform(post("/api/admin/tasks/{taskId}/cancel", taskId))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.status").value("CANCELED"));
+            awaitUntil(() -> !instantActions.isEmpty());
+        } finally {
+            listener.disconnect();
+            listener.close();
+        }
+
+        assertThat(instantActions.get(0)).contains("\"actionType\":\"cancelOrder\"");
+        assertThat(moveCommandStatus(taskId)).isEqualTo("FAILED");
+        assertThat(jdbcTemplate.queryForList(
+                "select e.event_type from command_events e join robot_commands c on c.id = e.command_id where c.command_no = ? order by e.id",
+                String.class, moveCommandNo(taskId))).endsWith("CANCELED");
+        awaitUntil(() -> "ACCEPTED".equals(jdbcTemplate.queryForObject(
+                "select c.status from robot_commands c join task_steps s on s.id = c.task_step_id where s.task_id = ? and c.command_type = 'CANCEL'",
+                String.class, taskId)));
+
+        // 타임아웃(2초)이 지나도 끝난 명령은 감시 대상이 아니다 — 로봇이 통신 두절로 보고되지 않는다
+        Thread.sleep(3000);
+        assertThat(moveCommandStatus(taskId)).isEqualTo("FAILED");
+        assertThat(robotCurrentStateRepository.findById(robotId).orElseThrow().getConnectionState()).isEqualTo(ConnectionState.ONLINE);
+        assertThat(taskStatus(taskId)).isEqualTo("CANCELED");
+    }
+
+    /** 40단계: 이동 중 비상정지하면 진행 중이던 이동 명령을 EMERGENCY_STOPPED 사유로 끝내 타임아웃 감시가 로봇을 통신 두절로 보고하지 않는다. */
+    @Test
+    void 이동_중_비상정지하면_진행_중_명령을_끝내고_작업은_복구_필요가_된다() throws Exception {
+        Long siteId = createSite("SITE-MQTT7", "MQTT 물류센터7");
+        Long originId = createStation(siteId, "ST-MQTT11", "입고", StationType.PICKUP);
+        Long destinationId = createStation(siteId, "ST-MQTT12", "출고", StationType.DROPOFF);
+        Long robotId = createRobot(siteId, "ROBOT-MQTT7", "MQTT로봇7");
+        Long taskId = createTask(originId, destinationId, "idem-mqtt-7");
+        taskService.assignRobot(taskId, robotRepository.findById(robotId).orElseThrow());
+        taskService.start(taskId);
+        awaitUntil(() -> "RUNNING".equals(moveCommandStatus(taskId)));
+
+        mockMvc.perform(post("/api/admin/robots/{robotId}/emergency-stop", robotId)).andExpect(status().isOk());
+
+        assertThat(taskStatus(taskId)).isEqualTo("RECOVERY_REQUIRED");
+        assertThat(moveCommandStatus(taskId)).isEqualTo("FAILED");
+        Thread.sleep(3000);
+        assertThat(moveCommandStatus(taskId)).isEqualTo("FAILED");
+        assertThat(robotCurrentStateRepository.findById(robotId).orElseThrow().getConnectionState()).isEqualTo(ConnectionState.ONLINE);
+    }
+
+    private String moveCommandNo(Long taskId) {
+        return jdbcTemplate.queryForObject(
+                "select c.command_no from robot_commands c join task_steps s on s.id = c.task_step_id where s.task_id = ? and c.command_type = 'MOVE_TO' order by c.id desc limit 1",
+                String.class, taskId);
+    }
+
+    private String moveCommandStatus(Long taskId) {
+        return jdbcTemplate.queryForObject(
+                "select c.status from robot_commands c join task_steps s on s.id = c.task_step_id where s.task_id = ? and c.command_type = 'MOVE_TO' order by c.id desc limit 1",
+                String.class, taskId);
     }
 
     private void publishState(String robotCode, Vda5050State state) throws Exception {

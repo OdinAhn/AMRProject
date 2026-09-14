@@ -486,8 +486,11 @@ DESIGN.md §1/§4는 "로봇 없는 개발: 실제 통신 계약을 모사하는
   3. 완료 state(`driving:false` 또는 `errors`)가 오면 명령 `SUCCEEDED`/`FAILED`, 로봇 상태(`IDLE`·배터리), 작업 진행(다음 단계 또는 복구 필요)을 **한 트랜잭션**으로 반영한다(`RobotCommandCompletionService`, 작업 행 → 명령 행 → 로봇 상태 행 순서로 잠금). 화면은 기존 실시간 이벤트(`task.step_started` 등)로 갱신된다.
   4. `MQTT_COMMAND_TIMEOUT_SECONDS`(기본 300초) 안에 결과가 없으면 감시 스케줄러가 `UNKNOWN`으로 두고 작업을 복구 필요로 보낸다(로봇 상태 OFFLINE → `ROBOT_COMM_LOST` 알람).
   5. **늦게 온 결과**(타임아웃·취소·비상정지 뒤, 또는 복구 재개로 같은 단계에 새 명령이 나간 뒤)는 명령 기록만 바꾸고 작업은 건드리지 않는다 — 운영자가 recover로 결정한다.
+     - (40단계) 예외: 타임아웃으로 **결과 불명(UNKNOWN)이던 이동 명령**에 로봇이 나중에 **도착(성공)**을 보고하면 작업을 자동으로 이어간다(`RECOVERY_AUTO_RESUMED` 이력, 복구 필요 알람 해소). 실패 보고, 충전 명령, 결과 불명이 원인이 아닌 복구 필요(비상정지·작업 불가 보고), 그 뒤 같은 로봇에 비상정지가 나간 경우는 자동으로 잇지 않는다.
   - **일시정지**: 로봇이 명령을 수행 중인 단계(이동·충전)에서는 409 `TASK_COMMAND_IN_PROGRESS`이고 `allowedActions`에 `PAUSE`가 없다. 도착해 작업자 확인 단계가 되면 멈출 수 있다.
-  - **남은 한계**: 이동 중 취소하면 작업은 규칙대로 취소되지만 로봇에 주문 취소(VDA 5050 `cancelOrder`)를 보내지 않아 로봇은 목적지까지 간다. 늦게 온 결과로 `UNKNOWN` 작업을 자동 재개하지 않는다.
+  - **이동 중 취소(40단계)**: 적재 전이면 작업을 취소하면서 진행 중이던 이동 명령을 `FAILED`(이벤트 `CANCELED`)로 끝내고, **커밋 뒤** 로봇에 VDA 5050 `instantActions`의 `cancelOrder`를 보낸다(취소 명령 `CANCEL`은 전달된 `ACCEPTED`까지만 — 실제 취소 여부는 `actionStates`를 파싱하지 않아 확인하지 않음). 적재 중 취소는 예전처럼 복구 필요로 보내고 로봇은 멈추지 않는다(운영자 결정).
+  - **이동 중 비상정지(40단계)**: 진행 중이던 이동 명령을 `FAILED`(이벤트 `EMERGENCY_STOPPED`)로 끝낸다 — 예전엔 명령이 남아 있다가 타임아웃 감시가 로봇을 통신 두절(OFFLINE·알람)로 잘못 보고했다.
+  - ~~남은 한계: 이동 중 취소 시 cancelOrder 미전송, 늦은 결과로 자동 재개 안 함~~ → 40단계에서 해소.
   - 시뮬레이터는 메모리에서 즉시 끝나 잠금을 쥐고 기다리지 않으므로 기존처럼 요청 안에서 동기로 끝난다(응답의 이동 단계가 이미 `SUCCEEDED`).
 - **설정 적용은 미구현**: `applyConfiguration()`은 시뮬레이터와 동일하게 즉시 성공 처리만 한다 — 실제 로봇에 설정을 적용하는 프로토콜은 정해지지 않았다.
 - 관련 환경 변수: `ROBOT_GATEWAY_MQTT_ENABLED`, `MQTT_BROKER_URL`(기본 `tcp://localhost:1883`), `MQTT_MANUFACTURER`(기본 `AMRProject`), `MQTT_COMMAND_TIMEOUT_SECONDS`(39단계, 기본 `300`).

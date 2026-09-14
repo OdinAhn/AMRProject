@@ -6,6 +6,7 @@ import com.amrproject.domain.entity.alarm.AlarmType;
 import com.amrproject.domain.entity.event.OutboxEvent;
 import com.amrproject.domain.entity.robot.ChargingSession;
 import com.amrproject.domain.entity.robot.ChargingSessionStatus;
+import com.amrproject.domain.entity.robot.CommandEvent;
 import com.amrproject.domain.entity.robot.Robot;
 import com.amrproject.domain.entity.robot.RobotCommand;
 import com.amrproject.domain.entity.robot.RobotCommandStatus;
@@ -34,6 +35,7 @@ import com.amrproject.exception.InvalidRequestException;
 import com.amrproject.exception.InvalidStateTransitionException;
 import com.amrproject.repository.event.OutboxEventRepository;
 import com.amrproject.repository.robot.ChargingSessionRepository;
+import com.amrproject.repository.robot.CommandEventRepository;
 import com.amrproject.repository.robot.RobotCommandRepository;
 import com.amrproject.repository.robot.RobotCurrentStateRepository;
 import com.amrproject.repository.robot.RobotRepository;
@@ -47,6 +49,7 @@ import com.amrproject.robot.RobotGateway;
 import com.amrproject.service.alarm.AlarmService;
 import com.amrproject.service.robot.RobotService;
 import com.amrproject.service.site.StationService;
+import java.time.Instant;
 import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -86,6 +89,7 @@ public class TaskService {
     private final TaskEventRepository taskEventRepository;
     private final OutboxEventRepository outboxEventRepository;
     private final RobotCommandRepository robotCommandRepository;
+    private final CommandEventRepository commandEventRepository;
     private final ResourceReservationRepository resourceReservationRepository;
     private final ChargingSessionRepository chargingSessionRepository;
     private final RobotCurrentStateRepository robotCurrentStateRepository;
@@ -103,6 +107,7 @@ public class TaskService {
             TaskEventRepository taskEventRepository,
             OutboxEventRepository outboxEventRepository,
             RobotCommandRepository robotCommandRepository,
+            CommandEventRepository commandEventRepository,
             ResourceReservationRepository resourceReservationRepository,
             ChargingSessionRepository chargingSessionRepository,
             RobotCurrentStateRepository robotCurrentStateRepository,
@@ -119,6 +124,7 @@ public class TaskService {
         this.taskEventRepository = taskEventRepository;
         this.outboxEventRepository = outboxEventRepository;
         this.robotCommandRepository = robotCommandRepository;
+        this.commandEventRepository = commandEventRepository;
         this.resourceReservationRepository = resourceReservationRepository;
         this.chargingSessionRepository = chargingSessionRepository;
         this.robotCurrentStateRepository = robotCurrentStateRepository;
@@ -449,6 +455,14 @@ public class TaskService {
             markRecoveryRequired(task, "RECOVERY_REQUIRED", null, "적재 중 취소 요청");
             return;
         }
+        // 40단계: 비동기 로봇(MQTT)이 아직 이동 중이면 그 명령을 끝내고 로봇에 주문 취소를 보낸다 — 예전엔 작업만 취소되고
+        // 로봇은 목적지까지 계속 갔다. 적재 중 취소는 위에서 복구 필요로 보내 운영자가 정하므로 멈추지 않는다.
+        interruptInFlightCommand(task, "CANCELED").ifPresent(interrupted -> {
+            RobotCommand cancel = robotCommandRepository.save(new RobotCommand(
+                    UUID.randomUUID().toString(), interrupted.getTaskStep(), interrupted.getRobot(), RobotCommandType.CANCEL, interrupted.getCommandNo()
+            ));
+            robotGateway.dispatch(cancel);
+        });
         TaskStatus previous = task.getStatus();
         task.confirmCanceled();
         recordEvent(task, "CANCELED", previous, task.getStatus(), null);
@@ -531,7 +545,11 @@ public class TaskService {
         taskAssignmentRepository.findByRobotIdAndStatus(robot.getId(), TaskAssignmentStatus.ACTIVE)
                 .map(TaskAssignment::getTask)
                 .filter(task -> EMERGENCY_INTERRUPTIBLE.contains(task.getStatus()))
-                .ifPresent(task -> markRecoveryRequired(task, "RECOVERY_REQUIRED", null, "로봇 비상정지"));
+                .ifPresent(task -> {
+                    // 40단계: 진행 중이던 이동 명령은 비상정지로 끝난 것으로 기록한다(나중에 타임아웃 감시가 로봇을 통신 두절로 보고하지 않도록)
+                    interruptInFlightCommand(task, "EMERGENCY_STOPPED");
+                    markRecoveryRequired(task, "RECOVERY_REQUIRED", null, "로봇 비상정지");
+                });
     }
 
     /**
@@ -699,7 +717,7 @@ public class TaskService {
      * 작업은 건드리지 않는다 — 명령 기록만 남고 판단은 운영자 몫이다.
      */
     @Transactional
-    public void applyCommandOutcome(RobotCommand command) {
+    public void applyCommandOutcome(RobotCommand command, RobotCommandStatus previousStatus) {
         TaskStep step = command.getTaskStep();
         if (step == null || !isFinal(command.getStatus())) {
             return;
@@ -708,7 +726,18 @@ public class TaskService {
         boolean latestForStep = robotCommandRepository.findFirstByTaskStepIdOrderByIdDesc(step.getId())
                 .map(latest -> latest.getId().equals(command.getId()))
                 .orElse(false);
-        if (task.getStatus() != TaskStatus.RUNNING || step.getStatus() != TaskStepStatus.RUNNING || !latestForStep) {
+        if (step.getStatus() != TaskStepStatus.RUNNING || !latestForStep) {
+            return;
+        }
+        if (task.getStatus() == TaskStatus.RECOVERY_REQUIRED && canAutoResume(task, command, previousStatus)) {
+            TaskStatus previous = task.getStatus();
+            task.resumeFromRecovery();
+            recordEvent(task, "RECOVERY_AUTO_RESUMED", previous, task.getStatus(), null, "결과 불명이던 이동 명령의 완료 보고 수신");
+            alarmService.autoResolve(AlarmType.TASK_RECOVERY_REQUIRED, AlarmSourceType.TASK, task.getId());
+            reactToCommandOutcome(task, step, command);
+            return;
+        }
+        if (task.getStatus() != TaskStatus.RUNNING) {
             return;
         }
         Robot robot = command.getRobot();
@@ -716,6 +745,49 @@ public class TaskService {
                 command, robot);
         reactToCommandOutcome(task, step, command);
     }
+
+    /**
+     * 40단계: 타임아웃으로 결과 불명(UNKNOWN)이 돼 복구 필요로 간 이동을, 로봇이 나중에 "도착했다"고 보고하면 운영자 개입 없이 이어간다
+     * (STATE_MACHINES.md §3 UNKNOWN → SUCCEEDED "재연결 후 이미 완료 확인"). 다음 경우는 자동으로 잇지 않는다:
+     * <ul>
+     *   <li>실패 보고 — 운영자가 재시도·실패를 정한다</li>
+     *   <li>이동이 아닌 명령(충전) — 충전 세션이 이미 중단 처리됐다</li>
+     *   <li>결과 불명이 아니었던 명령 — 복구 필요의 원인이 타임아웃이 아니다(비상정지·작업 불가 보고 등)</li>
+     *   <li>그 뒤 같은 로봇에 비상정지가 나갔다 — 운영자가 멈추라고 한 로봇을 다시 움직이면 안 된다</li>
+     * </ul>
+     */
+    private boolean canAutoResume(Task task, RobotCommand command, RobotCommandStatus previousStatus) {
+        return command.getStatus() == RobotCommandStatus.SUCCEEDED
+                && previousStatus == RobotCommandStatus.UNKNOWN
+                && command.getCommandType() == RobotCommandType.MOVE_TO
+                && !robotCommandRepository.existsByRobotIdAndCommandTypeAndIdGreaterThan(
+                        command.getRobot().getId(), RobotCommandType.EMERGENCY_STOP, command.getId());
+    }
+
+    /**
+     * 40단계: 작업의 진행 중 단계에 결과를 기다리는 로봇 명령(비동기 게이트웨이)이 있으면 FAILED로 끝내고 사유 이벤트를 남긴다.
+     * 끝낸 명령의 늦은 결과는 이미 최종 상태라 무시되고, 타임아웃 감시 대상에서도 빠진다. 시뮬레이터는 진행 중 명령이 없어 아무 일도 없다.
+     */
+    private Optional<RobotCommand> interruptInFlightCommand(Task task, String reason) {
+        return taskStepRepository.findByTaskIdOrderByStepNoAsc(task.getId()).stream()
+                .filter(step -> step.getStatus() == TaskStepStatus.RUNNING && isCommandStep(step))
+                .findFirst()
+                .flatMap(step -> robotCommandRepository.findFirstByTaskStepIdOrderByIdDesc(step.getId()))
+                .filter(command -> IN_FLIGHT_COMMAND_STATUSES.contains(command.getStatus()))
+                .map(command -> {
+                    if (command.getStatus() == RobotCommandStatus.ACCEPTED) {
+                        command.startRunning();
+                    }
+                    command.fail();
+                    Instant now = Instant.now();
+                    commandEventRepository.save(new CommandEvent(command, reason, null, now, now));
+                    return command;
+                });
+    }
+
+    private static final Set<RobotCommandStatus> IN_FLIGHT_COMMAND_STATUSES = Set.of(
+            RobotCommandStatus.SENT, RobotCommandStatus.ACCEPTED, RobotCommandStatus.RUNNING
+    );
 
     private Station resolveTargetStation(Task task, TaskStep step) {
         return switch (step.getStepType()) {

@@ -37,4 +37,7 @@ public interface RobotCommandRepository extends JpaRepository<RobotCommand, Long
 
     /** 39단계: 단계의 가장 최근 명령 — 복구 재개로 새 명령이 나간 뒤 도착한 옛 명령의 결과를 걸러낸다. */
     Optional<RobotCommand> findFirstByTaskStepIdOrderByIdDesc(Long taskStepId);
+
+    /** 40단계: 이 명령 뒤에 같은 로봇으로 나간 비상정지가 있는가(id는 발행 순서대로 증가) — 늦은 도착 보고로 작업을 자동 재개할지 판단. */
+    boolean existsByRobotIdAndCommandTypeAndIdGreaterThan(Long robotId, RobotCommandType commandType, Long id);
 }
