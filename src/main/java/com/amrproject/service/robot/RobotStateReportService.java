@@ -5,6 +5,8 @@ import com.amrproject.domain.entity.alarm.AlarmSourceType;
 import com.amrproject.domain.entity.alarm.AlarmType;
 import com.amrproject.domain.entity.map.Node;
 import com.amrproject.domain.entity.robot.CommandEvent;
+import com.amrproject.domain.entity.robot.LoadState;
+import com.amrproject.domain.entity.robot.LocalizationState;
 import com.amrproject.domain.entity.robot.OperationMode;
 import com.amrproject.domain.entity.robot.Robot;
 import com.amrproject.domain.entity.robot.RobotCommand;
@@ -99,19 +101,24 @@ public class RobotStateReportService {
         RobotCurrentState state = locked.get();
         OperationMode mode = report.operationMode() != null ? report.operationMode() : state.getOperationMode();
         SafetyState safety = report.safetyState() != null ? report.safetyState() : state.getSafetyState();
+        LoadState load = report.loadState() != null ? report.loadState() : state.getLoadState();
+        LocalizationState localization = report.localizationState() != null ? report.localizationState() : state.getLocalizationState();
         Long nodeId = report.lastNodeId() == null ? state.getCurrentNodeId()
                 : resolveNodeId(robot, report.lastNodeId()).orElse(state.getCurrentNodeId());
-        if (mode == state.getOperationMode() && safety == state.getSafetyState() && Objects.equals(nodeId, state.getCurrentNodeId())) {
+        if (mode == state.getOperationMode() && safety == state.getSafetyState() && load == state.getLoadState()
+                && localization == state.getLocalizationState() && Objects.equals(nodeId, state.getCurrentNodeId())) {
             return;
         }
 
         SafetyState previousSafety = state.getSafetyState();
-        state.report(state.getConnectionState(), mode, state.getMotionState(), safety, state.getLoadState(),
-                state.getLocalizationState(), state.getBatteryPct(), Instant.now());
+        LocalizationState previousLocalization = state.getLocalizationState();
+        state.report(state.getConnectionState(), mode, state.getMotionState(), safety, load,
+                localization, state.getBatteryPct(), Instant.now());
         state.arriveAt(nodeId);
         robotStateSnapshotRepository.save(new RobotStateSnapshot(robot, state));
         robotStateEventRecorder.recordChanged(robot.getId());
         reconcileSafetyAlarm(robot, previousSafety, safety);
+        reconcileLocalizationAlarm(robot, previousLocalization, localization);
     }
 
     /**
@@ -156,6 +163,16 @@ public class RobotStateReportService {
         }
     }
 
+    /** 45단계: 시뮬레이터(14단계)와 같은 규칙 — 위치 추정 실패 보고 시 알람, 회복 보고 시 자동 해소. 실패한 로봇은 배정 대상에서도 빠진다. */
+    private void reconcileLocalizationAlarm(Robot robot, LocalizationState previous, LocalizationState current) {
+        if (current == LocalizationState.LOST && previous != LocalizationState.LOST) {
+            alarmService.raise(AlarmType.LOCALIZATION_LOST, AlarmSeverity.WARNING, AlarmSourceType.ROBOT, robot.getId(),
+                    "로봇 위치 추정에 실패했습니다(positionInitialized=false): " + robot.getCode());
+        } else if (current != LocalizationState.LOST && previous == LocalizationState.LOST) {
+            alarmService.autoResolve(AlarmType.LOCALIZATION_LOST, AlarmSourceType.ROBOT, robot.getId());
+        }
+    }
+
     private void recordEvent(RobotCommand command, String eventType) {
         Instant now = Instant.now();
         commandEventRepository.save(new CommandEvent(command, eventType, null, now, now));
@@ -171,7 +188,10 @@ public class RobotStateReportService {
             OperationMode operationMode,
             SafetyState safetyState,
             String lastNodeId,
-            List<ActionResult> actionResults
+            List<ActionResult> actionResults,
+            /** 45단계 */
+            LoadState loadState,
+            LocalizationState localizationState
     ) {
     }
 

@@ -5,6 +5,8 @@ import com.amrproject.domain.entity.alarm.AlarmSourceType;
 import com.amrproject.domain.entity.alarm.AlarmType;
 import com.amrproject.domain.entity.robot.CommandEvent;
 import com.amrproject.domain.entity.robot.ConnectionState;
+import com.amrproject.domain.entity.robot.LoadState;
+import com.amrproject.domain.entity.robot.LocalizationState;
 import com.amrproject.domain.entity.robot.MotionState;
 import com.amrproject.domain.entity.robot.OperationMode;
 import com.amrproject.domain.entity.robot.Robot;
@@ -147,7 +149,8 @@ public class MqttRobotGateway implements RobotGateway, MqttCallback {
         this.transactionTemplate.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
         this.commandTimeoutSeconds = commandTimeoutSeconds;
         mqttClient.setCallback(this);
-        mqttClient.subscribe(TOPIC_PREFIX + manufacturer + "/+/state");
+        // 45단계: connection 토픽(로봇 연결·LWT 끊김 알림)도 받는다
+        mqttClient.subscribe(new String[]{TOPIC_PREFIX + manufacturer + "/+/state", TOPIC_PREFIX + manufacturer + "/+/connection"});
     }
 
     @Override
@@ -237,6 +240,10 @@ public class MqttRobotGateway implements RobotGateway, MqttCallback {
 
     @Override
     public void messageArrived(String topic, MqttMessage message) {
+        if (topic.endsWith("/connection")) {
+            receiveConnection(topic, message);
+            return;
+        }
         Vda5050State state;
         try {
             state = jsonMapper.readValue(message.getPayload(), Vda5050State.class);
@@ -294,6 +301,36 @@ public class MqttRobotGateway implements RobotGateway, MqttCallback {
         });
     }
 
+    /**
+     * 45단계: VDA 5050 connection 메시지. 로봇은 접속하면 ONLINE, 정상 종료하면 OFFLINE을 보내고, 비정상으로 끊기면 브로커가 LWT로
+     * CONNECTIONBROKEN을 보낸다(보통 retain). 끊김은 하트비트 타임아웃을 기다리지 않고 바로 반영하고, ONLINE은 하트비트와 같이 복구한다.
+     */
+    private void receiveConnection(String topic, MqttMessage message) {
+        String[] parts = topic.split("/");
+        if (parts.length < 5) {
+            return;
+        }
+        String serialNumber = parts[3];
+        String connectionState;
+        try {
+            connectionState = jsonMapper.readTree(message.getPayload()).path("connectionState").asString("");
+        } catch (RuntimeException e) {
+            log.warn("MQTT connection 메시지를 해석할 수 없어 무시합니다: topic={}", topic, e);
+            return;
+        }
+        telemetryExecutor.execute(() -> {
+            try {
+                if ("ONLINE".equals(connectionState)) {
+                    robotConnectionService.receiveTelemetry(serialNumber, null);
+                } else if ("OFFLINE".equals(connectionState) || "CONNECTIONBROKEN".equals(connectionState)) {
+                    robotConnectionService.receiveDisconnected(serialNumber, connectionState);
+                }
+            } catch (Exception e) {
+                log.warn("MQTT connection 반영 실패: robotCode={}", serialNumber, e);
+            }
+        });
+    }
+
     /** 41단계: VDA 5050 state 필드를 프로토콜과 무관한 도메인 보고로 바꾼다. 없거나 모르는 값은 null(변경 없음)로 둔다. */
     static RobotStateReportService.Report toReport(String robotCode, Vda5050State state) {
         OperationMode mode = state.operatingMode() == null ? null : switch (state.operatingMode()) {
@@ -321,7 +358,11 @@ public class MqttRobotGateway implements RobotGateway, MqttCallback {
                         .map(action -> new RobotStateReportService.ActionResult(action.actionId(), "FINISHED".equals(action.actionStatus())))
                         .toList();
         String lastNodeId = state.lastNodeId() == null || state.lastNodeId().isBlank() ? null : state.lastNodeId();
-        return new RobotStateReportService.Report(robotCode, mode, safety, lastNodeId, actionResults);
+        // 45단계: loads가 오면 빈 목록 = 빈 차, 아니면 적재. agvPosition.positionInitialized=false면 위치 추정 실패
+        LoadState load = state.loads() == null ? null : state.loads().isEmpty() ? LoadState.EMPTY : LoadState.LOADED;
+        LocalizationState localization = state.agvPosition() == null || state.agvPosition().positionInitialized() == null ? null
+                : state.agvPosition().positionInitialized() ? LocalizationState.LOCALIZED : LocalizationState.LOST;
+        return new RobotStateReportService.Report(robotCode, mode, safety, lastNodeId, actionResults, load, localization);
     }
 
     @PreDestroy

@@ -22,12 +22,16 @@ public record Vda5050State(
         /** 43단계: 아직 지나야 할 주문 노드. 비어 있어야 주문이 끝난 것이다 */
         List<NodeState> nodeStates,
         /** 43단계: startPause로 일시정지(정지) 중 */
-        Boolean paused
+        Boolean paused,
+        /** 45단계: 실린 짐 목록(비어 있으면 빈 차) */
+        List<Load> loads,
+        /** 45단계: 위치. positionInitialized=false면 위치 추정 실패 */
+        AgvPosition agvPosition
 ) {
 
     /** 18단계 필드만 쓰는 기존 메시지(테스트·가상 로봇)용. */
     public Vda5050State(String orderId, Boolean driving, List<Error> errors, BatteryState batteryState) {
-        this(orderId, driving, errors, batteryState, null, null, null, null, null, null);
+        this(orderId, driving, errors, batteryState, null, null, null, null, null, null, null, null);
     }
 
     public record BatteryState(Double batteryCharge) {
@@ -46,6 +50,12 @@ public record Vda5050State(
     }
 
     public record NodeState(String nodeId, Integer sequenceId, Boolean released) {
+    }
+
+    public record Load(String loadId, String loadType) {
+    }
+
+    public record AgvPosition(Double x, Double y, Double theta, String mapId, Boolean positionInitialized) {
     }
 
     /**

@@ -56,6 +56,17 @@ public interface RobotCurrentStateRepository extends JpaRepository<RobotCurrentS
             """)
     int reviveIfOffline(Long robotId, Instant now);
 
+    /** 45단계: 로봇(브로커)이 연결 끊김을 알렸다 — ONLINE이면 바로 OFFLINE으로 바꾼다. 갱신된 행 수(0 또는 1)를 반환한다. */
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("""
+            update RobotCurrentState s
+               set s.stateVersion = s.stateVersion + 1,
+                   s.connectionState = com.amrproject.domain.entity.robot.ConnectionState.OFFLINE
+             where s.robotId = :robotId
+               and s.connectionState = com.amrproject.domain.entity.robot.ConnectionState.ONLINE
+            """)
+    int markOfflineIfOnline(Long robotId);
+
     /** 29단계: 여전히 ONLINE이고 수신이 오래됐을 때만 OFFLINE으로 바꾼다. 갱신된 행 수(0 또는 1)를 반환한다. */
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("""

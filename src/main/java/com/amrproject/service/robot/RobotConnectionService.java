@@ -135,6 +135,24 @@ public class RobotConnectionService {
         }
     }
 
+    /**
+     * 45단계: 실제 로봇(MQTT)의 connection 토픽이 연결 끊김(OFFLINE·CONNECTIONBROKEN)을 알렸다. 하트비트 타임아웃을 기다리지 않고 바로
+     * OFFLINE·통신 두절 알람으로 바꾼다. 다시 연결(ONLINE)되면 {@link #receiveTelemetry}와 같이 복구한다.
+     */
+    @Transactional
+    public void receiveDisconnected(String robotCode, String connectionState) {
+        Optional<Robot> found = robotRepository.findByCode(robotCode);
+        if (found.isEmpty() || robotCurrentStateRepository.markOfflineIfOnline(found.get().getId()) == 0) {
+            return;
+        }
+        Robot robot = found.get();
+        recordSnapshot(robot);
+        robotStateEventRecorder.recordChanged(robot.getId());
+        String reason = "CONNECTIONBROKEN".equals(connectionState) ? "연결이 비정상적으로 끊겼습니다" : "연결을 종료했습니다";
+        alarmService.raise(AlarmType.ROBOT_COMM_LOST, AlarmSeverity.WARNING, AlarmSourceType.ROBOT, robot.getId(),
+                "로봇이 " + reason + "(MQTT connection " + connectionState + "): " + robot.getCode());
+    }
+
     /** bulk update가 영속성 컨텍스트를 비우므로(clearAutomatically) 갱신된 행을 다시 읽어 이력을 남긴다. */
     private void recordSnapshot(Robot robot) {
         robotCurrentStateRepository.findById(robot.getId())

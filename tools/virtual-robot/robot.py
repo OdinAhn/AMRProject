@@ -66,6 +66,10 @@ class VirtualRobot:
         self.silent = False
         """통신 두절 흉내: 주문을 받지 않고 state도 보내지 않는다(움직임은 계속)"""
         self.fail_next_order = False
+        self.position_lost = False
+        """위치 추정 실패 흉내: positionInitialized=false, 주문 거부(45단계)"""
+        self.loads: list[dict] = []
+        """실린 짐(45단계). 콘솔 load/unload로 바꾼다"""
         self.order_id = ""
         self.order_update_id = 0
         self.errors: list[dict] = []
@@ -94,6 +98,8 @@ class VirtualRobot:
             return self._reject("orderError", "주문에 노드가 없습니다")
         if self.e_stop != "NONE" or self.paused:
             return self._reject("orderError", "비상정지·일시정지 중에는 주문을 받을 수 없습니다")
+        if self.position_lost:
+            return self._reject("orderError", "위치 추정에 실패해 주문을 받을 수 없습니다")
         if self.operating_mode != "AUTOMATIC":
             return self._reject("orderError", f"{self.operating_mode} 모드에서는 주문을 받을 수 없습니다")
         if self.fail_next_order:
@@ -245,9 +251,9 @@ class VirtualRobot:
                 "y": round(self.y, 3),
                 "theta": round(self.theta, 3),
                 "mapId": self.route_map.map_id if self.route_map else "unknown",
-                "positionInitialized": bool(self.last_node_id),
+                "positionInitialized": bool(self.last_node_id) and not self.position_lost,
             },
-            "loads": [],
+            "loads": list(self.loads),
             "actionStates": [
                 {"actionId": a.action_id, "actionType": a.action_type, "actionStatus": a.status}
                 for a in self._order_actions + self._instant_actions
@@ -266,6 +272,8 @@ class VirtualRobot:
             ("장애물", self.field_violation),
             ("통신두절", self.silent),
             ("다음주문실패", self.fail_next_order),
+            ("위치추정실패", self.position_lost),
+            (f"짐={len(self.loads)}", bool(self.loads)),
             (self.operating_mode, self.operating_mode != "AUTOMATIC"),
         ) if on]
         return (f"{self.serial}: {status} 위치={self.last_node_id or '?'} ({self.x:.1f},{self.y:.1f}) "

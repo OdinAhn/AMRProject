@@ -481,6 +481,10 @@ DESIGN.md §1/§4는 "로봇 없는 개발: 실제 통신 계약을 모사하는
 
 - **토픽**: 로봇당 `uagv/v2/{manufacturer}/{serialNumber}/order`(발행)와 `.../state`(구독) 두 개만 쓴다. `connection` 토픽(LWT 기반 온라인·오프라인 알림)은 이번 범위에 없다.
 - **VDA5050 축소 구현**: `order`는 목적지 station 하나짜리 단일 노드(`nodes: [{nodeId, sequenceId, released}]`)만 담는다 — edges/actions 등 전체 스펙의 나머지는 구현하지 않았다. `state`는 `orderId`/`driving`/`errors`/`batteryState.batteryCharge`만 본다. `driving:false`(또는 `errors` 존재)인 state가 오면 주문이 끝난 것으로 판단한다.
+- **45단계 — 연결·적재·위치 추정 상태**:
+  - **`connection` 토픽**을 구독한다. `OFFLINE`(정상 종료)·`CONNECTIONBROKEN`(비정상 끊김 — 브로커가 로봇의 LWT로 대신 보냄, 보통 retain)이 오면 하트비트 타임아웃(기본 30초)을 기다리지 않고 **바로 OFFLINE**·`ROBOT_COMM_LOST` 알람, `ONLINE`이면 하트비트처럼 복구·알람 해소. 서버가 재기동하면 retain된 끊김 메시지로 이미 끊긴 로봇을 바로 안다.
+  - **`loads`**: 빈 목록이면 `EMPTY`, 짐이 있으면 `LOADED`(보고에 없으면 유지). 적재 상태는 로봇 상태에 기록·표시만 하고 배정 조건에는 쓰지 않는다.
+  - **`agvPosition.positionInitialized`**: `false`면 위치 추정 `LOST` — `LOCALIZATION_LOST` 알람(시뮬레이터와 같은 규칙), 배정 조건(`LOCALIZED`)에서 빠진다. `true`면 `LOCALIZED`·알람 해소. 좌표(x, y)는 여전히 쓰지 않는다.
 - **43단계 — 실제 로봇 연동 준비(Python 가상 로봇으로 검증하며 고친 것)**:
   - **주문 목적지 nodeId**: 작업장 코드 대신 작업장에 연결된 **활성 지도 노드 코드**를 보낸다(연결이 없으면 작업장 코드). 실제 로봇은 이 서버의 작업장 코드를 모르고 지도 노드만 안다. 충전 주문은 충전 작업장 노드에 `startCharging` 동작(`actionId` = 명령 번호)을 싣는다(예전엔 nodeId `UNKNOWN`).
   - **주문 종료 판단**: 오류가 있거나, `driving:false`이면서 `nodeStates`(남은 노드)가 비었고 진행 중인 `actionStates`가 없을 때만 끝난 것으로 본다(`Vda5050State.orderFinished`). 예전엔 `driving:false`만 봐서 주문을 막 받고 출발하기 전이나 충전 중에도 끝난 것으로 판단했을 것이다. 보고에 없는 필드는 조건에서 뺀다.
