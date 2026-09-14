@@ -4,6 +4,7 @@ import com.amrproject.repository.user.UserRepository;
 import com.amrproject.security.AccessTokenService;
 import com.amrproject.security.ExternalApiKeyFilter;
 import com.amrproject.security.TokenAuthenticationFilter;
+import jakarta.servlet.DispatcherType;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -42,6 +43,11 @@ public class SecurityConfig {
                         (request, response, authException) -> response.sendError(401, "Unauthorized")
                 ))
                 .authorizeHttpRequests(auth -> auth
+                        // SSE(비동기 응답)를 마무리하는 ASYNC dispatch는 이미 인가를 통과한 원래 요청의 연장이라 다시 검사하지 않는다.
+                        // 토큰 필터(OncePerRequestFilter)는 ASYNC dispatch에서 돌지 않아, 검사하면 인증 정보가 없어 거부되고
+                        // 이미 응답을 보낸 뒤라 "response is already committed" ERROR 로그만 남았다(클라이언트가 끊은 SSE에 이벤트를 보낼 때).
+                        // ASYNC dispatch는 서블릿 컨테이너가 내부에서만 만들며 클라이언트가 직접 요청할 수 없다.
+                        .dispatcherTypeMatchers(DispatcherType.ASYNC).permitAll()
                         // 35단계: 운영 프로필은 actuator를 별도 관리 포트(기본 8081)로 띄우고 외부에 공개하지 않는다 —
                         // 그 포트로 들어온 요청(Prometheus 수집 등)만 토큰 없이 허용한다.
                         .requestMatchers(request -> managementPort > 0 && request.getLocalPort() == managementPort).permitAll()

@@ -7,6 +7,7 @@ import com.amrproject.dto.request.user.LoginRequest;
 import com.amrproject.repository.user.RoleRepository;
 import com.amrproject.repository.user.UserRepository;
 import com.amrproject.support.AbstractIntegrationTest;
+import jakarta.servlet.DispatcherType;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -155,6 +156,22 @@ class AuthenticationTest extends AbstractIntegrationTest {
                 .andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsString();
         return objectMapper.readTree(response).get("token").asString();
+    }
+
+    /**
+     * SSE를 마무리하는 ASYNC dispatch는 원래 요청(REQUEST)에서 이미 인가됐으므로 다시 거부하지 않는다 — 거부하면 클라이언트가 끊은 SSE에
+     * 이벤트를 보낼 때마다 "response is already committed" ERROR 로그가 남았다. 클라이언트가 보내는 일반 요청(REQUEST)은 그대로 401이다.
+     * ASYNC dispatch는 서블릿 컨테이너만 만들 수 있어, 여기서는 MockMvc로 dispatch 종류를 직접 지정해 규칙만 확인한다.
+     */
+    @Test
+    void ASYNC_dispatch는_다시_인가하지_않고_일반_요청은_여전히_토큰이_필요하다() throws Exception {
+        mockMvc.perform(get("/api/admin/sites"))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(get("/api/admin/sites").with(request -> {
+                    request.setDispatcherType(DispatcherType.ASYNC);
+                    return request;
+                }))
+                .andExpect(status().isOk());
     }
 
     private void createUser(String username, String password, String roleCode) {
