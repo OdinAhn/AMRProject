@@ -110,7 +110,7 @@ stateDiagram-v2
 - `UNKNOWN`은 DESIGN.md §6의 "응답이 없어서 실제 실행 여부를 모르는 경우"에 대응하는 상태다. **`UNKNOWN`을 임의로 `FAILED`로 간주해 재전송하지 않는다** — 반드시 로봇/게이트웨이에 실제 상태를 재조회한 뒤에만 다음 상태로 전이한다.
 - `command_events`에 모든 전이가 기록되며, `occurred_at`(로봇 보고 시각)과 `received_at`(서버 수신 시각)을 분리해 지연·유실을 감지한다.
 - 하나의 `task_step`에 대해 활성(`PENDING`~`RUNNING`) 명령은 최대 1개만 존재해야 한다 (중복 명령 방지, DESIGN.md §9).
-- **39단계 구현**: 시뮬레이터는 요청 트랜잭션 안에서 최종 상태까지 전이한다. MQTT는 요청에서 `SENT`까지만, 커밋 뒤 발행되면 `ACCEPTED`→`RUNNING`, 완료 state가 오면 `SUCCEEDED`/`FAILED`, 보낸 뒤 `MQTT_COMMAND_TIMEOUT_SECONDS` 안에 결과가 없거나 발행에 실패하면 `UNKNOWN`이 된다. 결과가 발행 기록보다 먼저 오면 `SENT`→`ACCEPTED`→`RUNNING`을 채운 뒤 끝낸다. `UNKNOWN` 뒤 늦게 온 결과는 `SUCCEEDED`/`FAILED`로 기록하되 작업은 자동으로 되돌리지 않는다(작업은 이미 복구 필요).
+- **39단계 구현**: 시뮬레이터는 요청 트랜잭션 안에서 최종 상태까지 전이한다. MQTT는 요청에서 `SENT`까지만, 커밋 뒤 발행되면 `ACCEPTED`→`RUNNING`, 완료 state가 오면 `SUCCEEDED`/`FAILED`, 보낸 뒤 `MQTT_COMMAND_TIMEOUT_SECONDS` 안에 결과가 없거나 발행에 실패하면 `UNKNOWN`이 된다. 결과가 발행 기록보다 먼저 오면 `SENT`→`ACCEPTED`→`RUNNING`을 채운 뒤 끝낸다. `UNKNOWN` 뒤 늦게 온 결과는 `SUCCEEDED`/`FAILED`로 기록한다. 40단계부터 이동 명령의 늦은 `SUCCEEDED`는 작업을 `RECOVERY_REQUIRED → RUNNING`으로 자동 재개한다(그 뒤 같은 로봇에 비상정지가 없을 때만, API.md §7). 작업 취소·비상정지로 끝낸 진행 중 명령은 `FAILED`(이벤트 `CANCELED`/`EMERGENCY_STOPPED`)이고 늦은 결과는 무시된다.
 
 ---
 

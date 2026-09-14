@@ -77,7 +77,8 @@ public class RobotCommandCompletionService {
             }
             recordEvent(command, succeeded ? "SUCCEEDED" : "FAILED");
             robotStateUpdater.accept(command);
-            taskService.applyCommandOutcome(command);
+            // 40단계: 결과 불명(UNKNOWN)이던 명령의 늦은 성공이면 작업을 자동으로 이어갈 수 있다 — 직전 상태를 함께 넘긴다
+            taskService.applyCommandOutcome(command, status);
         });
     }
 
@@ -94,10 +95,11 @@ public class RobotCommandCompletionService {
             if (command.getStatus() == RobotCommandStatus.ACCEPTED) {
                 command.startRunning();
             }
+            RobotCommandStatus previous = command.getStatus();
             command.markUnknown();
             recordEvent(command, eventType);
             robotStateUpdater.accept(command);
-            taskService.applyCommandOutcome(command);
+            taskService.applyCommandOutcome(command, previous);
         });
     }
 
