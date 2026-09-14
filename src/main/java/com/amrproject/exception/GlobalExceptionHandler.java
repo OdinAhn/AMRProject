@@ -9,6 +9,7 @@ import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.context.request.async.AsyncRequestNotUsableException;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
 import java.util.List;
@@ -81,6 +82,15 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorResponse> handleDuplicate(DuplicateResourceException ex) {
         return ResponseEntity.status(HttpStatus.CONFLICT)
                 .body(ErrorResponse.of(ex.getCode(), ex.getMessage()));
+    }
+
+    /**
+     * 클라이언트가 이미 끊은 비동기 응답(SSE)에 쓰려다 난 예외 — 응답을 보낼 곳이 없으므로 아무것도 쓰지 않는다. 아래 catch-all이 잡으면
+     * text/event-stream 응답에 JSON 오류 본문을 쓰려다 실패해 연결이 끊길 때마다 WARN 로그가 남는다.
+     */
+    @ExceptionHandler(AsyncRequestNotUsableException.class)
+    public void handleAsyncRequestNotUsable(AsyncRequestNotUsableException ex) {
+        // 끊긴 연결 정리는 SseEmitter의 onError/onCompletion(구독 해제)이 맡는다
     }
 
     @ExceptionHandler(Exception.class)
