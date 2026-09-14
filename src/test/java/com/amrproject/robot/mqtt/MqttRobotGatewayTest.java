@@ -515,6 +515,74 @@ class MqttRobotGatewayTest extends AbstractIntegrationTest {
         assertThat(order.get("edges").get(1).get("sequenceId").asInt()).isEqualTo(3);
     }
 
+    /**
+     * 47단계: 할 일 없는 로봇(MQ14, N2)이 기다리는 로봇(MQ15, N1 → N3)의 길을 막으면, 교통 재시도 스케줄러가 MQ14에 길 밖 노드 S로 가는
+     * 주문(REPOSITION, 작업 없음)을 보낸다. MQ14가 도착을 보고하면 예약이 풀리고 MQ15에 전체 경로 주문이 나간다.
+     */
+    @Test
+    void 길을_막고_선_로봇에_비키기_주문을_보내고_도착하면_기다리던_로봇이_출발한다() throws Exception {
+        Long siteId = createSite("SITE-MQTT14", "MQTT 물류센터14");
+        Long originId = createStation(siteId, "ST-MQTT21", "입고", StationType.PICKUP);
+        Long destinationId = createStation(siteId, "ST-MQTT22", "출고", StationType.DROPOFF);
+        Long versionId = createVersion(createMap(siteId));
+        Long n1 = createNode(versionId, "MQ14-N1", 0);
+        Long n2 = createNode(versionId, "MQ14-N2", 100);
+        Long n3 = createNode(versionId, "MQ14-N3", 200);
+        Long side = createNode(versionId, "MQ14-S", 150);
+        createEdge(versionId, n1, n2);
+        createEdge(versionId, n2, n3);
+        createEdge(versionId, n2, side);
+        mockMvc.perform(post("/api/admin/map-versions/{versionId}/validate", versionId)).andExpect(status().isOk());
+        mockMvc.perform(post("/api/admin/map-versions/{versionId}/activate", versionId)).andExpect(status().isOk());
+        bind(originId, versionId, n3);
+        bind(destinationId, versionId, n1);
+        Long idleId = createRobot(siteId, "ROBOT-MQTT14", "MQTT로봇14");
+        Long moverId = createRobot(siteId, "ROBOT-MQTT15", "MQTT로봇15");
+        for (Long robotId : List.of(idleId, moverId)) {
+            mockMvc.perform(patch("/api/admin/robots/{robotId}/lifecycle-status", robotId)
+                            .contentType(APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(new UpdateRobotLifecycleStatusRequest(RobotLifecycleStatus.IN_SERVICE))))
+                    .andExpect(status().isOk());
+        }
+        publishRawState("ROBOT-MQTT14", "{\"lastNodeId\": \"MQ14-N2\"}");
+        publishRawState("ROBOT-MQTT15", "{\"lastNodeId\": \"MQ14-N1\"}");
+        awaitUntil(() -> n2.equals(robotCurrentStateRepository.findById(idleId).orElseThrow().getCurrentNodeId())
+                && n1.equals(robotCurrentStateRepository.findById(moverId).orElseThrow().getCurrentNodeId()));
+        Long taskId = createTask(originId, destinationId, "idem-mqtt-14");
+
+        List<String> idleOrders = new CopyOnWriteArrayList<>();
+        List<String> moverOrders = new CopyOnWriteArrayList<>();
+        MqttClient listener = new MqttClient(brokerUrl(), MqttClient.generateClientId(), new MemoryPersistence());
+        listener.connect();
+        try {
+            listener.subscribe("uagv/v2/" + MANUFACTURER + "/ROBOT-MQTT14/order",
+                    (topic, message) -> idleOrders.add(new String(message.getPayload(), StandardCharsets.UTF_8)));
+            listener.subscribe("uagv/v2/" + MANUFACTURER + "/ROBOT-MQTT15/order",
+                    (topic, message) -> moverOrders.add(new String(message.getPayload(), StandardCharsets.UTF_8)));
+            taskService.assignRobot(taskId, robotRepository.findById(moverId).orElseThrow());
+            taskService.start(taskId);
+            assertThat(commandStatus(taskId)).isEqualTo("PENDING");
+
+            awaitUntil(() -> !idleOrders.isEmpty());
+            var reposition = objectMapper.readTree(idleOrders.get(0));
+            assertThat(reposition.get("nodes").valueStream().map(node -> node.get("nodeId").asString()).toList())
+                    .containsExactly("MQ14-N2", "MQ14-S");
+            assertThat(moverOrders).isEmpty();
+
+            publishRawState("ROBOT-MQTT14", "{\"orderId\": \"" + reposition.get("orderId").asString()
+                    + "\", \"lastNodeId\": \"MQ14-S\", \"driving\": false, \"nodeStates\": [], \"actionStates\": [], \"errors\": []}");
+            awaitUntil(() -> !moverOrders.isEmpty());
+        } finally {
+            listener.disconnect();
+            listener.close();
+        }
+        assertThat(objectMapper.readTree(moverOrders.get(0)).get("nodes").valueStream().map(node -> node.get("nodeId").asString()).toList())
+                .containsExactly("MQ14-N1", "MQ14-N2", "MQ14-N3");
+        assertThat(jdbcTemplate.queryForObject("select status from robot_commands where robot_id = ? and command_type = 'REPOSITION'", String.class, idleId))
+                .isEqualTo("SUCCEEDED");
+        assertThat(robotCurrentStateRepository.findById(idleId).orElseThrow().getCurrentNodeId()).isEqualTo(side);
+    }
+
     private void publishConnection(String robotCode, String connectionState) throws Exception {
         MqttClient robotClient = new MqttClient(brokerUrl(), MqttClient.generateClientId(), new MemoryPersistence());
         robotClient.connect();

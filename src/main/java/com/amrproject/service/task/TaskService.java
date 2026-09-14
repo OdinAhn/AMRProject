@@ -12,6 +12,7 @@ import com.amrproject.domain.entity.robot.RobotCommand;
 import com.amrproject.domain.entity.robot.RobotCommandStatus;
 import com.amrproject.domain.entity.robot.RobotCommandType;
 import com.amrproject.domain.entity.robot.RobotCurrentState;
+import com.amrproject.domain.entity.robot.RobotLifecycleStatus;
 import com.amrproject.domain.entity.site.Site;
 import com.amrproject.domain.entity.site.Station;
 import com.amrproject.domain.entity.task.ResourceReservation;
@@ -54,10 +55,12 @@ import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -744,6 +747,116 @@ public class TaskService {
         return true;
     }
 
+    /**
+     * 47단계: 비키기 후보 — 교통 대기 중인 명령의 원래 최단 경로 위에 서 있는 다른 로봇과 그 로봇의 진행 중 작업 id(없으면 null).
+     * 잠그지 않고 읽는다. 실제로 비킬지는 {@link #yieldForWaitingCommand}가 잠근 뒤 다시 판단한다.
+     */
+    public List<YieldCandidate> findYieldCandidates(Long commandId) {
+        RobotCommand command = robotCommandRepository.findById(commandId).orElse(null);
+        if (command == null || command.getStatus() != RobotCommandStatus.PENDING || command.getTaskStep() == null) {
+            return List.of();
+        }
+        TaskStep step = command.getTaskStep();
+        Task task = step.getTask();
+        return trafficService.robotsStandingOnRoute(command.getRobot(), resolveTargetStation(task, step)).stream()
+                .map(robotId -> new YieldCandidate(task.getId(), robotId, taskAssignmentRepository.findByRobotIdAndStatus(robotId, TaskAssignmentStatus.ACTIVE)
+                        .map(assignment -> assignment.getTask().getId())
+                        .orElse(null)))
+                .toList();
+    }
+
+    /**
+     * @param requesterTaskId 기다리는 명령의 작업
+     * @param robotId         길을 막고 서 있는 로봇
+     * @param robotTaskId     그 로봇의 진행 중 작업(없으면 null)
+     */
+    public record YieldCandidate(Long requesterTaskId, Long robotId, Long robotTaskId) {
+    }
+
+    /**
+     * 47단계: 교통 대기 중인 명령(commandId)의 길을 막고 선 로봇을 길 밖으로 비키게 한다(REPOSITION 명령). 비키게 했으면 true.
+     * 비키는 로봇은 운영 중이면서 진행 중 작업이 없거나, 그 작업도 교통 대기 중이고 이 명령보다 늦게 기다리기 시작한 로봇이다 — 작업자 확인
+     * 단계에서 서 있거나 충전 중인 로봇은 옮기지 않고, 서로의 자리를 기다리는 두 로봇은 늦게 기다린 쪽이 비켜 교착이 풀린다(되돌려 비키지 않는다).
+     *
+     * <p>잠금 순서: 두 작업 행(id 순) → 기다리는 명령 행 → 비킬 로봇 행 → 그 로봇의 배정 행 → (계획 중) 물류센터 행. 교통 재시도(작업 → 명령 → 물류센터)·
+     * 배정(작업 → 로봇 → 배정 → 물류센터)과 같은 방향이다. 판단에 쓰는 값은 모두 잠근 뒤에 처음 읽는다(REPEATABLE READ 스냅숏이 잠금보다 앞서지 않게).
+     * 비키는 로봇의 결과는 이동과 같은 경로(시뮬레이터는 바로, MQTT는 {@link #applyCommandOutcome})로 반영돼 경로 예약이 풀린다.
+     */
+    @Transactional
+    public boolean yieldForWaitingCommand(Long commandId, YieldCandidate candidate) {
+        Map<Long, Task> lockedTasks = new LinkedHashMap<>();
+        Stream.of(candidate.requesterTaskId(), candidate.robotTaskId())
+                .filter(Objects::nonNull)
+                .distinct()
+                .sorted()
+                .forEach(id -> taskRepository.findByIdForUpdate(id).ifPresent(locked -> lockedTasks.put(id, locked)));
+        Task task = lockedTasks.get(candidate.requesterTaskId());
+        RobotCommand command = robotCommandRepository.findByIdForUpdate(commandId).orElse(null);
+        if (task == null || command == null || command.getStatus() != RobotCommandStatus.PENDING || command.getTaskStep() == null
+                || !command.getTaskStep().getTask().getId().equals(task.getId()) || candidate.robotId().equals(command.getRobot().getId())) {
+            return false;
+        }
+        Robot blocker = robotRepository.findByIdForUpdate(candidate.robotId()).orElse(null);
+        if (blocker == null || blocker.getLifecycleStatus() != RobotLifecycleStatus.IN_SERVICE) {
+            return false;
+        }
+        Long blockerTaskId = taskAssignmentRepository.findByRobotIdAndStatusForUpdate(blocker.getId(), TaskAssignmentStatus.ACTIVE)
+                .map(assignment -> assignment.getTask().getId())
+                .orElse(null);
+        if (!Objects.equals(blockerTaskId, candidate.robotTaskId())
+                || (blockerTaskId != null && !isWaitingForTrafficAfter(lockedTasks.get(blockerTaskId), commandId))) {
+            return false;
+        }
+        TaskStep step = command.getTaskStep();
+        if (task.getStatus() != TaskStatus.RUNNING || step.getStatus() != TaskStepStatus.RUNNING || !isLatestCommand(step, command)) {
+            return false;
+        }
+
+        TrafficService.Plan plan = trafficService.planReposition(command.getRobot(), resolveTargetStation(task, step), blocker);
+        if (plan.outcome() != TrafficService.Outcome.CLEAR) {
+            return false;
+        }
+        RobotCommand reposition = robotCommandRepository.save(new RobotCommand(
+                UUID.randomUUID().toString(), null, blocker, RobotCommandType.REPOSITION, plan.payloadJson()));
+        Instant now = Instant.now();
+        commandEventRepository.save(new CommandEvent(reposition, "YIELDING_FOR_TRAFFIC", null, now, now));
+        String destination = plan.route().getLast();
+        recordEvent(task, "TRAFFIC_YIELD_REQUESTED", task.getStatus(), task.getStatus(), null,
+                truncate(blocker.getCode() + "을(를) 노드 " + destination + "(으)로 비키게 했습니다", 500));
+        robotGateway.dispatch(reposition);
+        if (isFinal(reposition.getStatus())) {
+            finishReposition(reposition);
+        }
+        return true;
+    }
+
+    /** 47단계: 그 작업도 교통 대기 중이고(이동 단계의 최신 명령이 PENDING) 그 명령이 requesterCommandId보다 늦게 만들어졌다. */
+    private boolean isWaitingForTrafficAfter(Task task, Long requesterCommandId) {
+        if (task == null || task.getStatus() != TaskStatus.RUNNING) {
+            return false;
+        }
+        return taskStepRepository.findByTaskIdOrderByStepNoAsc(task.getId()).stream()
+                .filter(step -> step.getStatus() == TaskStepStatus.RUNNING && MOVE_STEP_TYPES.contains(step.getStepType()))
+                .findFirst()
+                .flatMap(step -> robotCommandRepository.findFirstByTaskStepIdOrderByIdDesc(step.getId()))
+                .filter(latest -> latest.getStatus() == RobotCommandStatus.PENDING && latest.getId() > requesterCommandId)
+                .isPresent();
+    }
+
+    private boolean isLatestCommand(TaskStep step, RobotCommand command) {
+        return robotCommandRepository.findFirstByTaskStepIdOrderByIdDesc(step.getId())
+                .map(latest -> latest.getId().equals(command.getId()))
+                .orElse(false);
+    }
+
+    /** 47단계: 비키는 이동이 성공·실패로 끝나면 경로 예약을 푼다(기다리던 명령이 다시 계획된다). 결과 불명이면 로봇이 경로 어딘가에 있을 수 있어 유지한다. */
+    private void finishReposition(RobotCommand command) {
+        if (command.getCommandType() == RobotCommandType.REPOSITION
+                && (command.getStatus() == RobotCommandStatus.SUCCEEDED || command.getStatus() == RobotCommandStatus.FAILED)) {
+            trafficService.releaseNodes(command.getRobot());
+        }
+    }
+
     private void abandonWaitingCommand(RobotCommand command, String reason) {
         command.abandon();
         Instant now = Instant.now();
@@ -784,7 +897,11 @@ public class TaskService {
     @Transactional
     public void applyCommandOutcome(RobotCommand command, RobotCommandStatus previousStatus) {
         TaskStep step = command.getTaskStep();
-        if (step == null || !isFinal(command.getStatus())) {
+        if (step == null) {
+            finishReposition(command); // 47단계: 작업과 무관한 비키기 이동
+            return;
+        }
+        if (!isFinal(command.getStatus())) {
             return;
         }
         Task task = step.getTask();

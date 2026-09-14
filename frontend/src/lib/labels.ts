@@ -71,6 +71,7 @@ const TASK_EVENT_TYPE: Record<string, string> = {
   RECOVERY_AUTO_RESUMED: "자동 재개(늦은 도착 보고)",
   TRAFFIC_WAITING: "교통 대기",
   TRAFFIC_CLEARED: "교통 대기 해제(출발)",
+  TRAFFIC_YIELD_REQUESTED: "길 막은 로봇 비키게 함",
 };
 
 const ALARM_TYPE: Record<AlarmType, string> = {

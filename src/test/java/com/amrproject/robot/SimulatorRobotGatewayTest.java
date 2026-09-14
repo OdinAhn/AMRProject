@@ -10,6 +10,7 @@ import com.amrproject.domain.entity.robot.RobotCommandStatus;
 import com.amrproject.domain.entity.robot.RobotCommandType;
 import com.amrproject.domain.entity.robot.RobotCurrentState;
 import com.amrproject.domain.entity.site.Site;
+import com.amrproject.repository.map.NodeRepository;
 import com.amrproject.repository.robot.CommandEventRepository;
 import com.amrproject.repository.robot.RobotCurrentStateRepository;
 import com.amrproject.repository.robot.RobotStateSnapshotRepository;
@@ -20,6 +21,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 import org.springframework.test.util.ReflectionTestUtils;
+import tools.jackson.databind.json.JsonMapper;
 
 import java.util.Optional;
 
@@ -48,7 +50,7 @@ class SimulatorRobotGatewayTest {
     void setUp() {
         gateway = new SimulatorRobotGateway(
                 commandEventRepository, robotCurrentStateRepository, robotStateSnapshotRepository, alarmService,
-                mapRouteService, simulatedMotionPublisher, robotStateEventRecorder
+                mapRouteService, simulatedMotionPublisher, robotStateEventRecorder, Mockito.mock(NodeRepository.class), JsonMapper.builder().build()
         );
 
         Site site = new Site("SITE-01", "테스트 물류센터");

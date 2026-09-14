@@ -4,6 +4,7 @@ import com.amrproject.repository.robot.RobotCommandRepository;
 import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
@@ -20,6 +21,9 @@ import java.util.concurrent.Executors;
  *   <li>그 밖의 변화(로봇이 서 있던 자리를 비킴 등)를 위해 주기적으로도. 첫 주기 실행은 한 주기 뒤다.</li>
  * </ul>
  * 두 경로가 동시에 돌아도 같은 명령은 작업·명령 행 잠금으로 한 번만 보내진다.
+ *
+ * <p>47단계: 여전히 막혀 있으면 길 위에 서 있는 로봇을 비키게 해 본다({@link TaskService#yieldForWaitingCommand},
+ * {@code app.traffic.yield-enabled}로 끌 수 있다). 비키는 이동이 끝나 예약이 풀리면 위의 이벤트로 바로 다시 계획된다.
  */
 @Component
 @ConditionalOnProperty(name = "app.traffic.enabled", havingValue = "true", matchIfMissing = true)
@@ -29,15 +33,21 @@ public class TrafficRetryScheduler {
 
     private final RobotCommandRepository robotCommandRepository;
     private final TaskService taskService;
+    private final boolean yieldEnabled;
     private final ExecutorService releasedExecutor = Executors.newSingleThreadExecutor(runnable -> {
         Thread thread = new Thread(runnable, "traffic-retry");
         thread.setDaemon(true);
         return thread;
     });
 
-    public TrafficRetryScheduler(RobotCommandRepository robotCommandRepository, TaskService taskService) {
+    public TrafficRetryScheduler(
+            RobotCommandRepository robotCommandRepository,
+            TaskService taskService,
+            @Value("${app.traffic.yield-enabled:true}") boolean yieldEnabled
+    ) {
         this.robotCommandRepository = robotCommandRepository;
         this.taskService = taskService;
+        this.yieldEnabled = yieldEnabled;
     }
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
@@ -54,7 +64,13 @@ public class TrafficRetryScheduler {
     public void retryWaiting() {
         for (Long commandId : robotCommandRepository.findWaitingMoveCommandIds()) {
             try {
-                taskService.retryWaitingCommand(commandId);
+                if (!taskService.retryWaitingCommand(commandId) && yieldEnabled) {
+                    for (TaskService.YieldCandidate candidate : taskService.findYieldCandidates(commandId)) {
+                        if (taskService.yieldForWaitingCommand(commandId, candidate)) {
+                            break;
+                        }
+                    }
+                }
             } catch (RuntimeException e) {
                 log.warn("교통 대기 명령 재시도 실패: commandId={}", commandId, e);
             }

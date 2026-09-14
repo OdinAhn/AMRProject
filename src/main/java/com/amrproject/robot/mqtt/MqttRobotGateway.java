@@ -502,7 +502,9 @@ public class MqttRobotGateway implements RobotGateway, MqttCallback {
     private String resolveTargetNodeId(RobotCommand command) {
         TaskStep step = command.getTaskStep();
         if (step == null) {
-            return "UNKNOWN";
+            // 47단계: 비키기 이동(REPOSITION)은 작업이 없고 경로의 마지막 노드가 목적지다
+            List<String> route = routeOf(command);
+            return route.isEmpty() ? "UNKNOWN" : route.getLast();
         }
         Task task = step.getTask();
         Station station = switch (step.getStepType()) {
