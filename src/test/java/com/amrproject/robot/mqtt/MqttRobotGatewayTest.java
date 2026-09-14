@@ -30,7 +30,10 @@ import org.testcontainers.utility.DockerImageName;
 import tools.jackson.databind.json.JsonMapper;
 
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
+import java.util.function.BooleanSupplier;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.http.MediaType.APPLICATION_JSON;
@@ -45,6 +48,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * 응답이 없으면 타임아웃 처리하는지 검증한다. 기본적으로 전체 스위트는 이 기능을 켜지 않으므로
  * (app.robot-gateway.mqtt.enabled=false가 기본) 이 클래스에서만 별도 Mosquitto 컨테이너와
  * 프로퍼티를 추가한다.
+ *
+ * <p>39단계: 명령이 비동기라 요청은 결과를 기다리지 않고 끝나고, 결과·타임아웃은 나중에 반영된다 — 결과는 폴링으로 확인한다.
+ * 타임아웃은 2초, 감시 주기는 0.3초로 줄였다.
  */
 @AutoConfigureMockMvc
 class MqttRobotGatewayTest extends AbstractIntegrationTest {
@@ -63,6 +69,8 @@ class MqttRobotGatewayTest extends AbstractIntegrationTest {
         registry.add("app.robot-gateway.mqtt.enabled", () -> "true");
         registry.add("app.robot-gateway.mqtt.broker-url", MqttRobotGatewayTest::brokerUrl);
         registry.add("app.robot-gateway.mqtt.manufacturer", () -> MANUFACTURER);
+        registry.add("app.robot-gateway.mqtt.command-timeout-seconds", () -> "2");
+        registry.add("app.robot-gateway.mqtt.command-timeout-check-ms", () -> "300");
     }
 
     @Autowired
@@ -98,12 +106,17 @@ class MqttRobotGatewayTest extends AbstractIntegrationTest {
             Robot robot = robotRepository.findById(robotId).orElseThrow();
             taskService.assignRobot(taskId, robot);
             taskService.start(taskId);
+            awaitUntil(() -> "SUCCEEDED".equals(stepStatus(taskId, 1)));
         }
 
         mockMvc.perform(get("/api/worker/tasks/{taskId}", taskId))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("RUNNING"))
-                .andExpect(jsonPath("$.steps[0].status").value("SUCCEEDED"));
+                .andExpect(jsonPath("$.steps[0].status").value("SUCCEEDED"))
+                .andExpect(jsonPath("$.steps[1].stepType").value("CONFIRM_LOAD"))
+                .andExpect(jsonPath("$.steps[1].status").value("RUNNING"));
+        assertThat(commandStatus(taskId)).isEqualTo("SUCCEEDED");
+        assertThat(robotCurrentStateRepository.findById(robotId).orElseThrow().getBatteryPct()).isEqualTo(88);
     }
 
     @Test
@@ -117,11 +130,84 @@ class MqttRobotGatewayTest extends AbstractIntegrationTest {
         // 가상 로봇을 띄우지 않는다 — 응답이 없어 타임아웃되는지 확인.
         Robot robot = robotRepository.findById(robotId).orElseThrow();
         taskService.assignRobot(taskId, robot);
+        Instant before = Instant.now();
+        taskService.start(taskId);
+        // 39단계: 요청(트랜잭션)은 결과를 기다리지 않고 바로 끝난다 — 예전엔 여기서 3초를 잠금을 쥔 채 기다렸다
+        assertThat(Duration.between(before, Instant.now())).isLessThan(Duration.ofSeconds(1));
+        mockMvc.perform(get("/api/worker/tasks/{taskId}", taskId))
+                .andExpect(jsonPath("$.status").value("RUNNING"))
+                .andExpect(jsonPath("$.steps[0].status").value("RUNNING"));
+
+        awaitUntil(() -> "RECOVERY_REQUIRED".equals(taskStatus(taskId)));
+        assertThat(commandStatus(taskId)).isEqualTo("UNKNOWN");
+    }
+
+    /**
+     * 39단계: 이동 중(명령 진행 중)에는 일시정지를 거절하고 버튼도 주지 않는다. 타임아웃 뒤 늦게 도착한 성공 결과는 명령 기록만 바꾸고,
+     * 이미 복구 필요로 간 작업을 되살리지 않는다(운영자가 recover로 결정).
+     */
+    @Test
+    void 이동_중에는_일시정지를_거절하고_타임아웃_뒤_늦은_결과는_작업을_바꾸지_않는다() throws Exception {
+        Long siteId = createSite("SITE-MQTT4", "MQTT 물류센터4");
+        Long originId = createStation(siteId, "ST-MQTT5", "입고", StationType.PICKUP);
+        Long destinationId = createStation(siteId, "ST-MQTT6", "출고", StationType.DROPOFF);
+        Long robotId = createRobot(siteId, "ROBOT-MQTT4", "MQTT로봇4");
+        Long taskId = createTask(originId, destinationId, "idem-mqtt-4");
+        Robot robot = robotRepository.findById(robotId).orElseThrow();
+        taskService.assignRobot(taskId, robot);
         taskService.start(taskId);
 
-        mockMvc.perform(get("/api/worker/tasks/{taskId}", taskId))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.status").value("RECOVERY_REQUIRED"));
+        mockMvc.perform(get("/api/admin/tasks/{taskId}", taskId))
+                .andExpect(jsonPath("$.allowedActions[?(@ == 'PAUSE')]").isEmpty());
+        mockMvc.perform(post("/api/admin/tasks/{taskId}/pause", taskId))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("TASK_COMMAND_IN_PROGRESS"));
+
+        awaitUntil(() -> "RECOVERY_REQUIRED".equals(taskStatus(taskId)));
+        String orderId = jdbcTemplate.queryForObject(
+                "select c.command_no from robot_commands c join task_steps s on s.id = c.task_step_id where s.task_id = ?", String.class, taskId);
+        publishState("ROBOT-MQTT4", new Vda5050State(orderId, false, List.of(), new Vda5050State.BatteryState(70.0)));
+
+        awaitUntil(() -> "SUCCEEDED".equals(commandStatus(taskId)));
+        assertThat(taskStatus(taskId)).isEqualTo("RECOVERY_REQUIRED");
+        assertThat(stepStatus(taskId, 1)).isEqualTo("RUNNING");
+    }
+
+    private void publishState(String robotCode, Vda5050State state) throws Exception {
+        MqttClient robotClient = new MqttClient(brokerUrl(), MqttClient.generateClientId(), new MemoryPersistence());
+        robotClient.connect();
+        try {
+            robotClient.publish("uagv/v2/" + MANUFACTURER + "/" + robotCode + "/state",
+                    new MqttMessage(objectMapper.writeValueAsString(state).getBytes(StandardCharsets.UTF_8)));
+        } finally {
+            robotClient.disconnect();
+            robotClient.close();
+        }
+    }
+
+    private String taskStatus(Long taskId) {
+        return jdbcTemplate.queryForObject("select status from tasks where id = ?", String.class, taskId);
+    }
+
+    private String stepStatus(Long taskId, int stepNo) {
+        return jdbcTemplate.queryForObject("select status from task_steps where task_id = ? and step_no = ?", String.class, taskId, stepNo);
+    }
+
+    private String commandStatus(Long taskId) {
+        return jdbcTemplate.queryForObject(
+                "select c.status from robot_commands c join task_steps s on s.id = c.task_step_id where s.task_id = ? order by c.id desc limit 1",
+                String.class, taskId);
+    }
+
+    /** 비동기 반영을 최대 10초 기다린다. */
+    private static void awaitUntil(BooleanSupplier condition) throws InterruptedException {
+        for (int i = 0; i < 100; i++) {
+            if (condition.getAsBoolean()) {
+                return;
+            }
+            Thread.sleep(100);
+        }
+        assertThat(condition.getAsBoolean()).as("10초 안에 조건이 충족되지 않음").isTrue();
     }
 
     /**
