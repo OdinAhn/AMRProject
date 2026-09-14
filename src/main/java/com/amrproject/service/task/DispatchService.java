@@ -20,10 +20,14 @@ import com.amrproject.repository.robot.RobotRepository;
 import com.amrproject.repository.site.StationRepository;
 import com.amrproject.repository.task.TaskAssignmentRepository;
 import com.amrproject.repository.task.TaskRepository;
+import com.amrproject.service.map.MapRouteService;
+import com.amrproject.service.map.MapRouteService.RouteGraph;
 import com.amrproject.service.site.SiteService;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import org.springframework.stereotype.Service;
@@ -47,6 +51,7 @@ public class DispatchService {
     private final StationRepository stationRepository;
     private final SiteService siteService;
     private final TaskService taskService;
+    private final MapRouteService mapRouteService;
 
     public DispatchService(
             TaskRepository taskRepository,
@@ -55,7 +60,8 @@ public class DispatchService {
             RobotCurrentStateRepository robotCurrentStateRepository,
             StationRepository stationRepository,
             SiteService siteService,
-            TaskService taskService
+            TaskService taskService,
+            MapRouteService mapRouteService
     ) {
         this.taskRepository = taskRepository;
         this.robotRepository = robotRepository;
@@ -64,24 +70,37 @@ public class DispatchService {
         this.stationRepository = stationRepository;
         this.siteService = siteService;
         this.taskService = taskService;
+        this.mapRouteService = mapRouteService;
     }
 
+    /**
+     * 38단계: 대기 작업을 우선순위 순으로 하나씩, 그 작업의 출발 작업장까지 <b>통로 거리가 가장 가까운</b> 배정 가능한 로봇에 맡긴다.
+     * 작업 단위로 욕심껏(greedy) 고르므로 사이클 전체의 이동 거리 합이 최소라는 보장은 없다 — 우선순위 높은 작업이 가까운 로봇을 먼저 가져간다.
+     * 활성 지도가 없거나 출발 작업장이 지도에 연결되지 않았으면 예전처럼 로봇 id 순서로 고른다.
+     */
     public DispatchResultResponse runCycle(Long siteId) {
         siteService.getById(siteId);
-        List<Robot> robots = robotRepository.findBySiteId(siteId);
+        List<Robot> robots = robotRepository.findBySiteId(siteId).stream()
+                .sorted(Comparator.comparing(Robot::getId))
+                .toList();
         Set<Long> assignedThisCycle = new HashSet<>();
+        Optional<Long> activeVersionId = mapRouteService.findActiveVersionId(siteId);
+        // 지도는 사이클마다 한 번만 읽는다(작업마다 다시 읽지 않음)
+        RouteGraph graph = activeVersionId.map(mapRouteService::loadGraph).orElse(null);
 
         List<Long> assignedTaskIds = new ArrayList<>();
+        List<DispatchResultResponse.Assignment> assignments = new ArrayList<>();
         List<Task> queuedTasks = taskRepository.findBySiteIdAndStatusOrderByPriorityDescCreatedAtAsc(siteId, TaskStatus.QUEUED);
         for (Task task : queuedTasks) {
-            for (Robot robot : robots) {
-                if (assignedThisCycle.contains(robot.getId()) || !isEligibleForAssignment(robot)) {
-                    continue;
-                }
+            List<Candidate> candidates = rankCandidates(task, robots, assignedThisCycle, activeVersionId.orElse(null), graph);
+            for (Candidate candidate : candidates) {
                 try {
-                    taskService.assignAndStart(task.getId(), robot.getId());
+                    taskService.assignAndStart(task.getId(), candidate.robot().getId());
                     assignedTaskIds.add(task.getId());
-                    assignedThisCycle.add(robot.getId());
+                    assignments.add(new DispatchResultResponse.Assignment(
+                            task.getId(), candidate.robot().getId(), candidate.robot().getCode(), candidate.roundedDistance()
+                    ));
+                    assignedThisCycle.add(candidate.robot().getId());
                     break;
                 } catch (InvalidStateTransitionException ex) {
                     // 이미 배정됐거나 목적지 station이 가득 찼다 — 다음 로봇으로 재시도.
@@ -106,23 +125,49 @@ public class DispatchService {
             }
         }
 
-        return new DispatchResultResponse(assignedTaskIds, chargeTaskIds);
+        return new DispatchResultResponse(assignedTaskIds, chargeTaskIds, assignments);
     }
 
-    private boolean isEligibleForAssignment(Robot robot) {
+    /**
+     * 배정 가능한 로봇을 출발 작업장까지의 통로 거리순으로 정렬한다. 위치(현재 노드)를 모르거나 활성 지도에서 출발지로 갈 길이 없는 로봇은
+     * 거리를 아는 로봇 뒤에 둔다. 거리가 같으면 로봇 id 순서다(안정 정렬이라 입력 순서 유지).
+     */
+    private List<Candidate> rankCandidates(Task task, List<Robot> robots, Set<Long> assignedThisCycle, Long activeVersionId, RouteGraph graph) {
+        Map<Long, Double> distancesToOrigin = graph == null ? Map.of()
+                : mapRouteService.findStationNodeId(task.getOriginStation().getId(), activeVersionId)
+                        .map(graph::distancesTo)
+                        .orElse(Map.of());
+        List<Candidate> candidates = new ArrayList<>();
+        for (Robot robot : robots) {
+            if (assignedThisCycle.contains(robot.getId())) {
+                continue;
+            }
+            eligibleState(robot).ifPresent(state -> candidates.add(new Candidate(
+                    robot,
+                    state.getCurrentNodeId() == null ? null : distancesToOrigin.get(state.getCurrentNodeId())
+            )));
+        }
+        candidates.sort(Comparator.comparing(Candidate::distance, Comparator.nullsLast(Comparator.naturalOrder())));
+        return candidates;
+    }
+
+    /** distance: 출발 작업장까지 통로 거리(지도 좌표 단위), 모르면 null */
+    private record Candidate(Robot robot, Double distance) {
+        Double roundedDistance() {
+            return distance == null ? null : Math.round(distance * 10) / 10.0;
+        }
+    }
+
+    /** 배정 가능하면 그 로봇의 현재 상태(위치 포함)를, 아니면 빈 값을 준다. */
+    private Optional<RobotCurrentState> eligibleState(Robot robot) {
         if (robot.getLifecycleStatus() != RobotLifecycleStatus.IN_SERVICE || hasActiveAssignment(robot)) {
-            return false;
+            return Optional.empty();
         }
-        Optional<RobotCurrentState> state = robotCurrentStateRepository.findById(robot.getId());
-        if (state.isEmpty()) {
-            return false;
-        }
-        RobotCurrentState current = state.get();
-        return current.getOperationMode() == OperationMode.AUTO
+        return robotCurrentStateRepository.findById(robot.getId()).filter(current -> current.getOperationMode() == OperationMode.AUTO
                 && current.getSafetyState() == SafetyState.NORMAL // 33단계: 비상·보호 정지 중인 로봇은 배정하지 않는다
                 && current.getConnectionState() == ConnectionState.ONLINE
                 && current.getLocalizationState() == LocalizationState.LOCALIZED
-                && current.getBatteryPct() > lowBatteryThreshold(robot);
+                && current.getBatteryPct() > lowBatteryThreshold(robot));
     }
 
     private boolean needsCharging(Robot robot) {

@@ -16,6 +16,7 @@ AMRProject 백엔드(Spring Boot)를 위한 관리자·작업자 화면. React 1
 | 25 | 지도 버전 상세를 SVG 캔버스 편집기(`MapCanvasEditor`)로 교체 |
 | 28 | 역할별 라우트 가드·404, 전역 실시간 갱신(SSE), 한글 라벨, 확인창·토스트, 사이드바 알람 배지·모바일 메뉴, 작업자 화면 개선, CI에서 lint·build |
 | 29 | 디스패치 화면 안내 문구(자동 실행 반영) |
+| 38 | 디스패치 결과에 작업별로 고른 로봇과 출발지까지 통로 거리 표시(위치 정보가 없으면 "등록 순서로 선택"), 안내 문구 갱신 |
 | 37 | 감사 로그(`/audit-logs`) — 한글 동작 이름(`lib/auditActions.ts`, 모르는 동작은 원래 값), 사용자 클릭·대상 종류·ID 필터, 대상 상세 링크, 결과 상태 배지 |
 | 36 | 로그인 실패(401 `INVALID_CREDENTIALS`)·잠김(429 `LOGIN_RATE_LIMITED`) 때 서버 메시지 표시 — `apiClient`가 401 본문에 공통 오류 코드가 있으면 그 메시지를 쓴다 |
 | 34 | 운영 통계(`/statistics`) — 기간 프리셋(오늘·7일·30일)·날짜 선택, KPI 타일, 일별 처리량 막대 차트(`DailyThroughputChart`), 로봇 가동률 표(`RobotUtilizationTable`), 발생 알람 표 |
